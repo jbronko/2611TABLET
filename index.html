@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablet Tasks</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --text: #1d1d1b; --muted: #6b6a65;
+    --accent: #c4622d; --border: #e3e1da; --done: #a3a19a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b19; --card: #262624; --text: #ecebe6; --muted: #9c9a92;
+      --accent: #e0814c; --border: #3a3936; --done: #6f6d66;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 16px; }
+  form { display: flex; gap: 8px; margin-bottom: 16px; }
+  input[type=text] {
+    flex: 1; min-width: 0; padding: 14px 16px; font: inherit; color: inherit;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button {
+    font: inherit; border: 0; border-radius: 12px; cursor: pointer;
+    min-height: 48px; padding: 0 20px;
+  }
+  .add { background: var(--accent); color: #fff; font-weight: 600; }
+  .filters { display: flex; gap: 8px; margin-bottom: 12px; }
+  .filters button { background: transparent; color: var(--muted); padding: 0 14px; border: 1px solid var(--border); }
+  .filters button[aria-pressed=true] { color: var(--text); border-color: var(--text); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px;
+  }
+  li input[type=checkbox] { width: 26px; height: 26px; accent-color: var(--accent); flex: none; }
+  li span { flex: 1; overflow-wrap: anywhere; }
+  li.done span { color: var(--done); text-decoration: line-through; }
+  .del { background: transparent; color: var(--muted); font-size: 24px; padding: 0 14px; }
+  .footer { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 16px; margin-top: 12px; }
+  .footer button { background: transparent; color: var(--muted); min-height: 40px; padding: 0 8px; }
+  .empty { color: var(--muted); text-align: center; padding: 32px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tablet Tasks</h1>
+  <p class="sub">A small to-do list, sized for touch. Saved in this browser.</p>
+
+  <form id="form">
+    <input id="input" type="text" placeholder="Add a task…" autocomplete="off" aria-label="New task">
+    <button class="add" type="submit">Add</button>
+  </form>
+
+  <div class="filters" role="group" aria-label="Filter">
+    <button data-filter="all" aria-pressed="true">All</button>
+    <button data-filter="active" aria-pressed="false">Active</button>
+    <button data-filter="done" aria-pressed="false">Done</button>
+  </div>
+
+  <ul id="list"></ul>
+  <p id="empty" class="empty" hidden>Nothing here yet.</p>
+
+  <div class="footer">
+    <span id="count"></span>
+    <button id="clear" type="button">Clear done</button>
+  </div>
+</main>
+
+<script>
+  const KEY = 'tablet-tasks';
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch {} };
+
+  let tasks = load();
+  if (!tasks.length) {
+    tasks = [
+      { id: 1, text: 'Try Claude Code from my tablet', done: true },
+      { id: 2, text: 'Ask for a new feature', done: false },
+      { id: 3, text: 'Push the changes to GitHub', done: false },
+    ];
+  }
+  let filter = 'all';
+
+  const $ = id => document.getElementById(id);
+
+  function render() {
+    const shown = tasks.filter(t => filter === 'all' || (filter === 'done' ? t.done : !t.done));
+    $('list').replaceChildren(...shown.map(t => {
+      const li = document.createElement('li');
+      li.className = t.done ? 'done' : '';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Mark done');
+      cb.onchange = () => { t.done = cb.checked; update(); };
+      const span = document.createElement('span');
+      span.textContent = t.text;
+      const del = document.createElement('button');
+      del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', 'Delete task');
+      del.onclick = () => { tasks = tasks.filter(x => x !== t); update(); };
+      li.append(cb, span, del);
+      return li;
+    }));
+    $('empty').hidden = shown.length > 0;
+    const left = tasks.filter(t => !t.done).length;
+    $('count').textContent = `${left} task${left === 1 ? '' : 's'} left`;
+  }
+
+  function update() { save(); render(); }
+
+  $('form').onsubmit = e => {
+    e.preventDefault();
+    const text = $('input').value.trim();
+    if (!text) return;
+    tasks.push({ id: Date.now(), text, done: false });
+    $('input').value = '';
+    update();
+  };
+
+  document.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => {
+    filter = b.dataset.filter;
+    document.querySelectorAll('[data-filter]').forEach(x => x.setAttribute('aria-pressed', x === b));
+    render();
+  });
+
+  $('clear').onclick = () => { tasks = tasks.filter(t => !t.done); update(); };
+
+  render();
+</script>
+</body>
+</html>
