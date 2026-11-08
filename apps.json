@@ -1,0 +1,12 @@
+[
+  {
+    "slug": "tide-pool",
+    "name": "Tide Pool",
+    "description": "A channel puzzle: lay channels across the sand so the tide fills every rock pool."
+  },
+  {
+    "slug": "tablet-tasks",
+    "name": "Tablet Tasks",
+    "description": "A small, touch-friendly to-do list."
+  }
+]

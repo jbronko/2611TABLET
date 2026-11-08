@@ -1,47 +1,51 @@
 # 2611tablet
 
-Small browser projects built with Claude Code from an Android tablet. Each one is a single HTML file
-with no build step and no dependencies.
+Small apps built with Claude Code from an Android tablet. Each one is an installable web app
+(a **Progressive Web App**, hosted on **GitHub Pages**): it gets a home-screen icon, opens full
+screen and works offline. No app store, no APK, no build step.
 
-## Run
+**All apps:** https://jbronko.github.io/2611TABLET/
+
+| App | What it is |
+| --- | --- |
+| [Tide Pool](https://jbronko.github.io/2611TABLET/tide-pool/) | A 12-level channel puzzle: lay channels so the tide fills every rock pool. |
+| [Tablet Tasks](https://jbronko.github.io/2611TABLET/tablet-tasks/) | A small, touch-friendly to-do list. |
+
+## Install an app on Android
+
+1. Open the app's link in Chrome on the tablet (or tap **Open** on the launcher page).
+2. Tap the ⋮ menu, then **Install app** (on some versions, **Add to Home screen**, then **Install**).
+3. Launch it from the home screen. After the first launch it works without internet.
+
+Updates download in the background and appear the next time you open the app.
+
+## Add a new app
+
+Ask Claude Code for one ("make me a new app called …"); `CLAUDE.md` has the full recipe. By hand:
 
 ```sh
-python3 -m http.server 8000
+node tools/new-app.js word-garden "Word Garden" --color "#4f7a3a" --description "A daily word game."
+# build the app in word-garden/index.html, draw word-garden/icon.svg, then:
+node tools/make-icons.js word-garden
+node tools/check-pwa.js word-garden   # installable + offline + no errors
 ```
 
-Then open http://localhost:8000 (Tablet Tasks) or http://localhost:8000/tide-pool/ (Tide Pool).
+Commit and push; the new app appears on the launcher page.
 
-## Tide Pool (`tide-pool/index.html`)
+## Hosting (one-time setup)
 
-A touch puzzle game. The sea runs along the top of the shore; lay channels across the sand so that
-when the tide comes in, water reaches every rock pool.
+On GitHub: **Settings → Pages → Source: Deploy from a branch**, choose the branch and **/ (root)**, Save.
+`.nojekyll` at the root makes Pages serve every file as-is.
+
+To run locally: `python3 -m http.server 8000` and open http://localhost:8000.
+
+## Tide Pool rules
 
 - Drag a channel from the tray onto the sand, or tap it in the tray and then tap a square.
 - Tap a placed channel to turn it. Drag it to another square to move it, or off the board to put it back.
-- Pieces with a dot are pinned: they can't be moved or turned. Rocks block the way.
-- Tap **Let the tide in** to test your layout. Pools take water from any channel that opens into them.
+- Pieces with a dot are pinned. Rocks block the way. Pools take water from any channel that opens into them.
 - Stars: 3 for filling every pool on the first tide, 2 within three tides, 1 after that.
 
-### Install on an Android tablet
-
-Tide Pool is an installable web app: it gets a home-screen icon, opens full screen and plays offline.
-It's hosted with GitHub Pages at **https://jbronko.github.io/2611TABLET/tide-pool/**.
-
-1. Open that address in Chrome on the tablet.
-2. Tap the ⋮ menu, then **Install app** (on some versions, **Add to Home screen**, then **Install**).
-3. Launch Tide Pool from the home screen or app drawer. After the first launch it works without internet.
-
-Updates are picked up in the background and appear the next time you open the app.
-
-To turn hosting on (one time): on GitHub, open the repo's **Settings → Pages**, set **Source** to
-**Deploy from a branch**, pick the branch that has these files and the **/ (root)** folder, and save.
-
-There are 12 levels, from 5×5 to 7×7. Progress is saved in the browser's `localStorage`.
-
-Levels are drawn as solved shores in the `LEVELS` array using box-drawing characters (`│ ─ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼`),
-`O` for pools, `#` for rocks and `.` for sand. Every non-pinned channel goes into the tray. In the
-browser console, `TidePool.validate()` checks that each level's drawn solution fills all its pools.
-
-## Tablet Tasks (`index.html`)
-
-A small, touch-friendly to-do list. Tasks are saved in the browser's `localStorage`.
+Levels are drawn as solved shores in the `LEVELS` array in `tide-pool/index.html` using box-drawing
+characters (`│ ─ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼`), `O` for pools, `#` for rocks and `.` for sand. Every non-pinned
+channel goes into the tray. In the browser console, `TidePool.validate()` checks each level is solvable.
