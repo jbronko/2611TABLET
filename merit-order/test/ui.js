@@ -271,6 +271,27 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 9. Design a plant: a custom battery at a chosen site; a hydro valley can only be used once.
+  {
+    const p = await page();
+    await newCompany(p, 'standard');
+    await state(p, () => { const S = MeritOrder.state; S.cash = 3e7; Object.assign(S.unlocked, { wind: true, ccgt: true, hydro: true }); MeritOrder.renderAll(); });
+    await p.click('#add-plant'); await p.click('[data-design="battery"]'); await p.waitForTimeout(200);
+    await p.click('[data-site="city"]');
+    await p.fill('#dz-mw', '37'); await p.press('#dz-mw', 'Enter');
+    await p.fill('#dz-mwh', '111'); await p.press('#dz-mwh', 'Enter');
+    await shot(p, 'design');
+    await p.click('#dz-build'); await p.waitForTimeout(200);
+    check('a custom 37 MW / 111 MWh battery at the city site', (await state(p, () => { const x = MeritOrder.state.plants.at(-1); return [x.mw, x.mwh, x.site].join(); })) === '37,111,city');
+    await p.click('#add-plant'); await p.click('[data-design="hydro"]'); await p.waitForTimeout(200);
+    await p.click('[data-site="kangaroo"]'); await p.click('#dz-build'); await p.waitForTimeout(200);
+    await p.click('#add-plant'); await p.click('[data-design="hydro"]'); await p.waitForTimeout(200);
+    check('a hydro valley can only be used once', await p.$eval('[data-site="kangaroo"]', x => x.disabled));
+    await p.click('[data-site="tumut"]'); await p.fill('#dz-mw', '5000'); await p.press('#dz-mw', 'Enter');
+    check('sizes are kept within the site\'s range', (await p.inputValue('#dz-mw')) === '1000');
+    await p.context().close();
+  }
+
   check('no errors on any page', errs.length === 0, errs.slice(0, 3).join(' | '));
   await browser.close(); server.close();
   console.log(fails ? `\n${fails} check(s) failed` : '\nAll browser checks passed');

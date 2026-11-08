@@ -14,22 +14,78 @@ const Sim = (() => {
 
   // ---- technologies (costs are scaled down so a company grows in days, not decades) ----
   const TECH = {
-    solar:   { name: 'Solar farm', short: 'Solar', color: '#c98500', sizes: [50, 100, 200], capex: 7500, build: 2, upkeep: 15, vc: 0, emis: 0, kind: 'vre',
+    solar:   { name: 'Solar farm', short: 'Solar', color: '#c98500', sizes: [50, 100, 200], range: [10, 400], connect: 50000, capexMW: 6500, capex: 7500, build: 2, upkeep: 15, vc: 0, emis: 0, kind: 'vre',
                blurb: 'Free sunshine. Every panel in the region floods the market at midday, so prices sag when you need them.' },
-    wind:    { name: 'Wind farm', short: 'Wind', color: '#199e70', sizes: [60, 120, 240], capex: 17000, build: 4, upkeep: 45, vc: 0, emis: 0, kind: 'vre',
+    wind:    { name: 'Wind farm', short: 'Wind', color: '#199e70', sizes: [60, 120, 240], range: [20, 500], connect: 80000, capexMW: 15700, capex: 17000, build: 4, upkeep: 45, vc: 0, emis: 0, kind: 'vre',
                blurb: 'Runs day and night while it blows, including the evening peak. Still weeks hurt.' },
-    battery: { name: 'Battery', short: 'Battery', color: '#9085e9', sizes: [25, 50, 100], hours: 2, capex: 9000, build: 1.5, upkeep: 18, vc: 5, eff: 0.86, kind: 'storage', fcas: true,
+    battery: { name: 'Battery', short: 'Battery', color: '#9085e9', sizes: [25, 50, 100], range: [5, 400], hours: 2, hoursRange: [0.5, 8], connect: 25000, capexMW: 3000, capexMWh: 2500, capex: 9000, build: 1.5, upkeep: 18, upkeepMW: 10, upkeepMWh: 4, vc: 5, eff: 0.86, kind: 'storage', fcas: true,
                blurb: 'Charges when power is cheap and sells into the peak. The best at frequency control.' },
-    peaker:  { name: 'Gas peaker', short: 'Peaker', color: '#d95926', sizes: [50, 150, 300], capex: 11000, build: 3, upkeep: 22, vc: 150, emis: 0.6, kind: 'thermal', fcas: true, outage: 0.006,
+    peaker:  { name: 'Gas peaker', short: 'Peaker', color: '#d95926', sizes: [50, 150, 300], range: [20, 600], connect: 50000, capexMW: 10000, capex: 11000, build: 3, upkeep: 22, vc: 150, emis: 0.6, kind: 'thermal', fcas: true, outage: 0.006,
                blurb: 'Dear to run, but on in minutes when prices spike. Insurance for heatwaves.' },
-    ccgt:    { name: 'Combined-cycle gas', short: 'CCGT', color: '#d95926', sizes: [200, 400], capex: 21000, build: 6, upkeep: 45, vc: 82, emis: 0.38, kind: 'thermal', ramp: 0.25, outage: 0.008,
+    ccgt:    { name: 'Combined-cycle gas', short: 'CCGT', color: '#d95926', sizes: [200, 400], range: [100, 800], connect: 200000, capexMW: 20000, capex: 21000, build: 6, upkeep: 45, vc: 82, emis: 0.38, kind: 'thermal', ramp: 0.25, outage: 0.008,
                blurb: 'Efficient gas for long evening and winter peaks. Pays when prices sit above $80.' },
-    hydro:   { name: 'Pumped hydro', short: 'Hydro', color: '#3987e5', sizes: [250, 500], hours: 8, capex: 19000, build: 10, upkeep: 35, vc: 3, eff: 0.78, kind: 'storage', fcas: true,
+    hydro:   { name: 'Pumped hydro', short: 'Hydro', color: '#3987e5', sizes: [250, 500], range: [100, 1000], hours: 8, capexMW: 8000, capex: 19000, build: 10, upkeep: 35, upkeepMW: 25, upkeepMWh: 1.25, vc: 3, eff: 0.78, kind: 'storage', fcas: true,
                blurb: 'Pumps water uphill when power is cheap and runs it back down for hours of firm supply.' },
     coal:    { name: 'Coal unit', short: 'Coal', color: '#a8692a', sizes: [660], capex: 0, build: 0, upkeep: 90, vc: 32, emis: 0.95, kind: 'thermal', minLoad: 0.45, ramp: 0.05, outage: 0.014, buyOnly: true,
                blurb: 'Cheap power around the clock, but slow to change output, prone to breakdowns and heavy on emissions.' },
   };
   const OTHER = { name: 'Other', short: 'Other', color: '#6f828c' };
+
+  // ---- sites: where you build changes what you get ----
+  // mlf: marginal loss factor (each MWh is paid price x mlf, and offers rank at offer / mlf, as in the
+  // NEM). res: sun or wind compared with average. room: MW the local network can take, for all your
+  // plants there. Pumped hydro sites have a fixed reservoir, a turbine range and room for one plant.
+  // The first site in each list is the balanced default.
+  const SITES = {
+    solar: [
+      { id: 'riverina', name: 'Riverina Flats', mlf: 0.96, res: 1.04, room: 400, blurb: 'Good sun, a fair way from the city.' },
+      { id: 'far-west', name: 'Far West Plains', mlf: 0.90, res: 1.12, room: 600, blurb: 'The strongest sun in the region, at the end of a long line.' },
+      { id: 'city-fringe', name: 'City Fringe', mlf: 1.01, res: 0.95, room: 150, blurb: 'Hazier, but right next to the load.' },
+    ],
+    wind: [
+      { id: 'tablelands', name: 'Northern Tablelands', mlf: 0.95, res: 1.10, room: 400, blurb: 'Steady winds on high country.' },
+      { id: 'cape', name: 'Cape Windy', mlf: 0.88, res: 1.25, room: 600, blurb: 'Roaring coastal winds, far from anyone who needs the power.' },
+      { id: 'ranges', name: 'Western Ranges', mlf: 1.00, res: 0.95, room: 200, blurb: 'Lighter winds, close to the main grid.' },
+    ],
+    battery: [
+      { id: 'hub', name: 'Regional Hub', mlf: 0.98, room: 400, blurb: 'A busy substation between the farms and the city.' },
+      { id: 'city', name: 'City Substation', mlf: 1.02, room: 200, connect: 1.4, blurb: 'Right at the load: the best loss factor, dear land.' },
+      { id: 'rez', name: 'Renewable Zone', mlf: 0.93, room: 600, connect: 0.7, blurb: 'Shares a connection with the wind and solar farms. Cheap to hook up.' },
+    ],
+    peaker: [
+      { id: 'gas-hub', name: 'Pipeline Hub', mlf: 0.98, room: 800, blurb: 'On the main gas pipeline.' },
+      { id: 'port', name: 'Port Industrial', mlf: 1.02, room: 400, connect: 1.4, blurb: 'Near the city and its peak demand.' },
+      { id: 'inland', name: 'Inland Junction', mlf: 0.93, room: 800, connect: 0.75, blurb: 'Cheap land and a cheap connection, a long way out.' },
+    ],
+    hydro: [
+      { id: 'wombat', name: 'Wombat Falls', mlf: 0.97, reservoir: 2000, mw: [150, 350], civil: 2750000, build: 10, blurb: 'A valley with room for a medium reservoir.' },
+      { id: 'kangaroo', name: 'Kangaroo Valley', mlf: 1.01, reservoir: 1200, mw: [100, 200], civil: 1600000, build: 8, blurb: 'Small, close to the city.' },
+      { id: 'snowy', name: 'Snowy Creek', mlf: 0.94, reservoir: 4000, mw: [250, 500], civil: 4500000, build: 12, blurb: 'A big alpine reservoir.' },
+      { id: 'tumut', name: 'Tumut Gorge', mlf: 0.92, reservoir: 9000, mw: [400, 1000], civil: 9000000, build: 16, blurb: 'Huge, remote and slow to build.' },
+    ],
+  };
+  SITES.ccgt = SITES.peaker;
+  const LEGACY = { id: 'legacy', name: 'Original site', mlf: 1, res: 1, room: Infinity, blurb: '' };
+  function siteOf(tech, id) { return (SITES[tech] || []).find(x => x.id === id) || (id === 'legacy' || !SITES[tech] ? LEGACY : SITES[tech][0]); }
+  function siteUsed(S, tech, id) { return S.plants.reduce((a, p) => a + ((p.site === id && (SITES[p.tech] === SITES[tech])) ? p.mw : 0), 0); }
+  // How many MW a new plant can have at this site (hydro: its turbine range, one plant only).
+  function siteRoom(S, tech, id) {
+    const st = siteOf(tech, id), T = TECH[tech];
+    if (tech === 'hydro') return S.plants.some(p => p.tech === 'hydro' && p.site === id) ? 0 : st.mw[1];
+    return Math.max(0, Math.min(T.range ? T.range[1] : Infinity, st.room - siteUsed(S, tech, id)));
+  }
+  function siteFor(S, tech, mw) {   // the first site that can take this size
+    for (const st of SITES[tech] || [LEGACY]) {
+      if (tech === 'hydro') { if (siteRoom(S, tech, st.id) && mw >= st.mw[0] && mw <= st.mw[1]) return st.id; }
+      else if (siteRoom(S, tech, st.id) >= mw) return st.id;
+    }
+    return null;
+  }
+  function buildDays(tech, mw, siteId) {
+    const T = TECH[tech];
+    if (tech === 'hydro') { const st = siteOf(tech, siteId); return Math.round(st.build * (0.85 + 0.15 * mw / st.mw[0]) * 2) / 2; }
+    return Math.round(T.build * Math.min(3, 0.75 + 0.25 * mw / T.sizes[0]) * 2) / 2;
+  }
   const TECH_ORDER = ['peaker', 'ccgt', 'hydro', 'coal', 'battery', 'wind', 'solar'];   // stacking order (palette validated)
 
   const NAMES = {
@@ -134,7 +190,11 @@ const Sim = (() => {
     S.contracts ||= []; S.difficulty ||= 'standard';
     if (!S.contractOffers) makeContractOffers(S);
     for (const k of ['contracts', 'repairs', 'interest', 'capPay']) S.today[k] ??= 0;
-    for (const p of S.plants) { p.life ||= freshLife(); p.capital ??= p.value || 0; }
+    for (const p of S.plants) {
+      p.life ||= freshLife(); p.capital ??= p.value || 0;
+      if (!p.site) { p.site = 'legacy'; p.mlf = 1; p.res = 1; }
+      if (TECH[p.tech].kind === 'storage' && p.mwh == null) { p.mwh = p.mw * (p.hours ?? TECH[p.tech].hours); delete p.hours; }
+    }
     S.retired ||= [];
     if (!S.cptBuf) { seedCpt(S); delete S.cpt; if (S.apc && S.cptSum <= CPT) S.apc = false; }
     if ((S.v || 1) < 3) {
@@ -201,7 +261,7 @@ const Sim = (() => {
 
   // A plant that has been given notice keeps running until it closes.
   const running = p => p.status === 'online' || p.status === 'retiring';
-  const hoursOf = p => p.hours ?? TECH[p.tech].hours;
+  const hoursOf = p => p.mwh ? p.mwh / p.mw : p.hours ?? TECH[p.tech].hours;
 
   // ---- bids ----
   // Supply bands: {mw, price, tech, owner, ref}. Elastic demand bands: {mw, price, ref}.
@@ -282,7 +342,7 @@ const Sim = (() => {
       const T = TECH[p.tech];
       if (T.kind === 'vre') {
         // upgrades: trackers and repowering lift output about 20%, never above the plant's rating
-        const cf = p.tech === 'solar' ? c.sun : c.wind * (p.site || 1);
+        const cf = (p.tech === 'solar' ? c.sun : c.wind) * (p.res ?? 1);
         const mw = Math.min(p.mw, p.mw * cf * (p.upg ? 1.2 : 1));
         const price = p.bid === 'nonneg' ? 0 : p.bid === 'custom' ? (p.price ?? 0) : FLOOR;
         if (mw > 0.1) supply.push({ mw, price, tech: p.tech, owner: 'player', ref: p });
@@ -309,6 +369,9 @@ const Sim = (() => {
         if (ch > 0.5 && st.charge > -Infinity) demandBids.push({ mw: ch, price: st.charge, ref: p, owner: 'player' });
       }
     }
+    // offers from your plants rank at the regional reference node: offer / loss factor (as in the NEM)
+    for (const b of supply) if (b.owner === 'player' && b.ref.mlf && b.ref.mlf !== 1) { b.offer = b.price; b.price = Math.min(CAP, Math.max(FLOOR, b.price / b.ref.mlf)); }
+    for (const d of demandBids) if (d.owner === 'player' && d.ref.mlf && d.ref.mlf !== 1) { d.offer = d.price; d.price = Math.min(CAP, Math.max(FLOOR, d.price / d.ref.mlf)); }
     // a hair of tie-breaking so equal bids share in a stable order
     supply.forEach((b, i) => { b.key = b.price + i * 1e-7; });
     return { supply, demandBids };
@@ -416,9 +479,10 @@ const Sim = (() => {
       if (b.owner !== 'player') continue;
       const p = b.ref, t = T[p.tech];
       out.set(p, (out.get(p) || 0) + b.out);
-      rev += b.out * res.price * H;
+      const paid = b.out * res.price * (p.mlf ?? 1) * H;   // energy is paid at the price times the site's loss factor
+      rev += paid;
       cost += b.out * vcOf(S, p) * H;
-      const L = p.life; L.sales += b.out * res.price * H; L.fuel += b.out * vcOf(S, p) * H; L.energy += b.out * H;
+      const L = p.life; L.sales += paid; L.fuel += b.out * vcOf(S, p) * H; L.energy += b.out * H;
       emis += b.out * emisOf(p) * H;
       mine += b.out;
       if (b.storage) p.soc = Math.max(0, p.soc - b.out * H);
@@ -426,8 +490,8 @@ const Sim = (() => {
     for (const db of demandBids) {
       if (db.owner !== 'player' || !db.take) continue;
       const p = db.ref, t = T[p.tech];
-      rev -= db.take * res.price * H;
-      p.life.charging += db.take * res.price * H;
+      rev -= db.take * res.price * (p.mlf ?? 1) * H;
+      p.life.charging += db.take * res.price * (p.mlf ?? 1) * H;
       p.soc = Math.min(p.mw * hoursOf(p), p.soc + db.take * H * t.eff);
       out.set(p, (out.get(p) || 0) - db.take);
     }
@@ -442,8 +506,8 @@ const Sim = (() => {
       }
     }
     // per-plant money (for the plant cards)
-    for (const b of supply) if (b.owner === 'player') b.ref.today.money += b.out * (res.price - vcOf(S, b.ref)) * H;
-    for (const db of demandBids) if (db.owner === 'player' && db.take) db.ref.today.money -= db.take * res.price * H;
+    for (const b of supply) if (b.owner === 'player') b.ref.today.money += b.out * (res.price * (b.ref.mlf ?? 1) - vcOf(S, b.ref)) * H;
+    for (const db of demandBids) if (db.owner === 'player' && db.take) db.ref.today.money -= db.take * res.price * (db.ref.mlf ?? 1) * H;
     for (const o of fc.offers) if (o.owner === 'player' && o.take) o.ref.today.money += o.take * fc.price * H;
 
     // rivals' state
@@ -635,25 +699,34 @@ const Sim = (() => {
     if (S.retired.length > 20) S.retired.length = 20;
   }
 
-  function upkeepOf(S, p) {
-    const T = TECH[p.tech];
-    const extra = p.upg ? (UPGRADES[p.tech].upkeep || 1) : 1;
-    return p.mw * T.upkeep * extra * diff(S).upkeep;
+  function upkeepFor(S, tech, mw, mwh) {
+    const T = TECH[tech];
+    return (T.upkeepMW ? mw * T.upkeepMW + (mwh ?? mw * T.hours) * T.upkeepMWh : mw * T.upkeep) * diff(S).upkeep;
   }
+  function upkeepOf(S, p) { return upkeepFor(S, p.tech, p.mw, TECH[p.tech].kind === 'storage' ? (p.mwh ?? p.mw * hoursOf(p)) : undefined); }
 
   // ---- upgrades: one per plant ----
   const UPGRADES = {
     solar:   { name: 'Single-axis trackers', cost: 0.3, days: 0.5, blurb: 'Panels follow the sun for about 20% more energy, mostly early and late in the day when prices are better.' },
     wind:    { name: 'Repower with taller turbines', cost: 0.35, days: 1, blurb: 'Bigger rotors catch lighter winds for about 20% more energy.' },
-    battery: { name: 'Extend to 4 hours', cost: 0.45, days: 1, upkeep: 1.3, blurb: 'Doubles the storage so it can cover the whole evening peak and hold a reserve.' },
+    battery: { name: 'Add 2 hours of storage', days: 1, blurb: 'More cells on the same connection, so it can cover more of the evening peak and hold a reserve.' },
     peaker:  { name: 'Fast-start controls', cost: 0.2, days: 0.5, blurb: 'Offers twice as much frequency control and breaks down half as often.' },
     ccgt:    { name: 'Efficiency upgrade', cost: 0.2, days: 1, blurb: 'New blades and controls cut running cost and emissions by about 12%.' },
-    hydro:   { name: 'Extra turbine', cost: 0.3, days: 2, upkeep: 1.15, blurb: 'A fourth turbine adds 25% more power from the same reservoir.' },
+    hydro:   { name: 'Extra turbine', days: 2, blurb: 'Another turbine adds 25% more power from the same reservoir, as far as the site allows.' },
     coal:    { name: 'Flexible operation retrofit', fixed: 600000, days: 3, blurb: 'Turns down to 30% and changes output twice as fast, so it loses less money when prices go negative.' },
   };
-  function upgradeCost(S, p) { const U = UPGRADES[p.tech]; return U.fixed ? Math.round(U.fixed * diff(S).capex) : Math.round(p.value * U.cost / 100) * 100; }
+  function upgradeCost(S, p) {
+    const U = UPGRADES[p.tech], T = TECH[p.tech], m = S.costMult[p.tech] * diff(S).capex;
+    if (U.fixed) return Math.round(U.fixed * diff(S).capex);
+    if (p.tech === 'battery') return Math.round(T.capexMWh * 2 * p.mw * m / 100) * 100;
+    if (p.tech === 'hydro') return Math.round(T.capexMW * (hydroUpgradeMW(p) - p.mw) * 1.2 * m / 100) * 100;
+    return Math.round(p.value * U.cost / 100) * 100;
+  }
+  function hydroUpgradeMW(p) { const st = siteOf('hydro', p.site); return Math.min(st.mw ? st.mw[1] : Infinity, Math.round(p.mw * 1.25)); }
+  // Can this plant still be upgraded? (A hydro plant already at its site's limit can't.)
+  function canUpgrade(p) { return !p.upg && !(p.tech === 'hydro' && hydroUpgradeMW(p) <= p.mw) && !(p.tech === 'battery' && hoursOf(p) + 2 > TECH.battery.hoursRange[1]); }
   function upgrade(S, p) {
-    if (p.upg || p.status !== 'online') return { ok: false, why: 'unavailable' };
+    if (p.upg || p.status !== 'online' || !canUpgrade(p)) return { ok: false, why: 'unavailable' };
     const cost = upgradeCost(S, p);
     if (S.cash < cost) return { ok: false, why: 'cash' };
     S.cash -= cost; p.value += cost; p.capital += cost;
@@ -664,8 +737,8 @@ const Sim = (() => {
   }
   function finishUpgrade(S, p) {
     p.status = 'online';
-    if (p.tech === 'battery') p.hours = 4;
-    if (p.tech === 'hydro') { const e = p.mw * hoursOf(p); p.mw = Math.round(p.mw * 1.25); p.hours = e / p.mw; }
+    if (p.tech === 'battery') p.mwh = (p.mwh ?? p.mw * hoursOf(p)) + 2 * p.mw;
+    if (p.tech === 'hydro') { p.mwh = p.mwh ?? p.mw * hoursOf(p); p.mw = hydroUpgradeMW(p); }
     addNews(S, 'good', `${p.name} is back with its upgrade: ${UPGRADES[p.tech].name.toLowerCase()}.`);
   }
 
@@ -824,24 +897,51 @@ const Sim = (() => {
   function declineOffer(S) { S.offer = null; }
 
   // ---- building and closing ----
-  function priceOf(S, tech, mw) { return Math.round(TECH[tech].capex * S.costMult[tech] * diff(S).capex * mw / 100) * 100; }
+  // Building cost: a fixed connection (scaled by the site), power (per MW) and, for storage, energy
+  // (per MWh). Pumped hydro pays its site's civil works instead of a connection.
+  function priceOf(S, tech, mw, opts = {}) {
+    const T = TECH[tech], st = siteOf(tech, opts.site || siteFor(S, tech, mw) || 'legacy');
+    let c;
+    if (tech === 'hydro') c = (st.civil ?? 2750000) + T.capexMW * mw;
+    else c = T.connect * (st.connect ?? 1) + T.capexMW * mw + (T.capexMWh || 0) * (opts.mwh ?? mw * (T.hours || 0));
+    return Math.round(c * S.costMult[tech] * diff(S).capex / 100) * 100;
+  }
+  // Why a design can't be built, or null if it can.
+  function buildProblem(S, tech, mw, opts = {}) {
+    const T = TECH[tech];
+    if (!S.unlocked[tech] || T.buyOnly) return 'locked';
+    if (tech !== 'hydro' && (mw < T.range[0] || mw > T.range[1])) return 'size';
+    const site = opts.site || siteFor(S, tech, mw);
+    if (!site) return 'site';
+    const st = siteOf(tech, site);
+    if (tech === 'hydro') { if (mw < st.mw[0] || mw > st.mw[1]) return 'size'; if (!siteRoom(S, tech, site)) return 'site'; }
+    else { if (mw < T.range[0] || mw > T.range[1]) return 'size'; if (mw > siteRoom(S, tech, site)) return 'room'; }
+    if (tech === 'battery') { const h = (opts.mwh ?? mw * T.hours) / mw; if (h < T.hoursRange[0] - 1e-9 || h > T.hoursRange[1] + 1e-9) return 'hours'; }
+    if (S.cash < priceOf(S, tech, mw, { ...opts, site })) return 'cash';
+    return null;
+  }
   function nameFor(S, tech) {
     const list = NAMES[tech], k = S.nameUse[tech] || 0; S.nameUse[tech] = k + 1;
     const base = list[k % list.length] + (k >= list.length ? ` ${Math.floor(k / list.length) + 1}` : '');
     return `${base} ${tech === 'solar' ? 'Solar' : tech === 'wind' ? 'Wind' : tech === 'battery' ? 'Battery' : tech === 'peaker' ? 'Peaker' : tech === 'ccgt' ? 'Gas' : 'Hydro'}`;
   }
-  function build(S, tech, mw) {
+  // build(S, tech, mw, { site, mwh }): site defaults to the first that fits; storage MWh to the
+  // standard hours (pumped hydro: the site's reservoir).
+  function build(S, tech, mw, opts = {}) {
     const T = TECH[tech];
-    if (!S.unlocked[tech] || T.buyOnly) return { ok: false, why: 'locked' };
-    const cost = priceOf(S, tech, mw);
-    if (S.cash < cost) return { ok: false, why: 'cash' };
+    mw = Math.round(mw);
+    const why = buildProblem(S, tech, mw, opts);
+    if (why) return { ok: false, why };
+    const site = opts.site || siteFor(S, tech, mw), st = siteOf(tech, site);
+    const mwh = T.kind !== 'storage' ? undefined : tech === 'hydro' ? st.reservoir : Math.round(opts.mwh ?? mw * T.hours);
+    const cost = priceOf(S, tech, mw, { site, mwh }), days = buildDays(tech, mw, site);
     S.cash -= cost;
-    const p = { id: `p${S.t}_${S.plants.length}`, tech, mw, name: nameFor(S, tech), status: 'building', buildLeft: T.build, built: S.t, value: cost,
+    const p = { id: `p${S.t}_${S.plants.length}`, tech, mw, mwh, site, mlf: st.mlf, res: st.res ?? 1, name: nameFor(S, tech), status: 'building', buildLeft: days, buildDays: days, built: S.t, value: cost,
       bid: T.kind === 'vre' ? 'nonneg' : T.kind === 'thermal' ? (tech === 'peaker' ? 'peak' : 'cost') : undefined,
-      strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mw * T.hours * 0.5 : 0, last: 0, fcas: T.fcas ? true : undefined, today: { energy: 0, money: 0 },
+      strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mwh * 0.5 : 0, last: 0, fcas: T.fcas ? true : undefined, today: { energy: 0, money: 0 },
       capital: cost, life: freshLife() };
     S.plants.push(p);
-    addNews(S, 'info', `Construction has started on ${p.name} (${fmtMW(mw)}). It connects in ${T.build} day${T.build === 1 ? '' : 's'}.`);
+    addNews(S, 'info', `Construction has started on ${p.name} (${fmtMW(mw)}${mwh ? `, ${Math.round(mwh).toLocaleString()} MWh` : ''}) at ${st.name}. It connects in ${days} day${days === 1 ? '' : 's'}.`);
     checkMissions(S);
     return { ok: true, plant: p };
   }
@@ -1020,7 +1120,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, year, time: clock(hourOf(S)) };
   }
 
-  return { IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

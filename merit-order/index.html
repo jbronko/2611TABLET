@@ -210,6 +210,14 @@
   .sizes button { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-2); font-weight: 700; font-size: 13.5px; color: var(--ink-2); }
   .sizes button[aria-pressed="true"] { border-color: var(--amber); color: var(--ink); background: rgba(242, 163, 58, 0.14); }
   .card .lock { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .card .btn-quiet { min-height: 44px; }
+  .site-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+  .site { text-align: left; display: grid; gap: 3px; align-content: start; padding: 12px; border-radius: 12px; background: var(--panel-2); border: 2px solid var(--line); min-height: 48px; }
+  .site[aria-pressed="true"] { border-color: var(--amber); background: rgba(242, 163, 58, 0.1); }
+  .site[disabled] { opacity: 0.45; }
+  .site b { font-size: 15px; } .site span { font-size: 13px; color: var(--ink-2); } .site small { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .design-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin-top: 6px; }
+  .design-row .bidbox input { width: 6ch; }
   .card.locked .head, .card.locked p { opacity: 0.55; }
   .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px; padding: 4px; }
   .seg button { min-height: 44px; border-radius: 9px; font-weight: 700; font-size: 13.5px; color: var(--ink-2); padding: 4px 8px; line-height: 1.15; }
@@ -435,6 +443,7 @@
   const running = p => p.status === 'online' || p.status === 'retiring';
   const diffOf = S => Sim.DIFFICULTY[S.difficulty] || Sim.DIFFICULTY.standard;
   const fmtDollars = v => `${v < 0 ? '−' : ''}$${Math.abs(Math.round(v)).toLocaleString('en-AU')}`;   // exact, for bids
+  const fmtHours = p => { const h = hoursOf(p); return Math.abs(h - Math.round(h)) < 0.05 ? String(Math.round(h)) : h.toFixed(1); };
   const goalCount = () => Sim.GOALS.filter(g => S.goalsDone[g.id] !== undefined).length;
   const MS_PER_INTERVAL = 1250;     // 1x: one game day is 6 real minutes
 
@@ -743,7 +752,7 @@
       $('plants').innerHTML = `<button type="button" class="add-plant" id="add-plant"><svg class="i"><use href="#i-plus"/></svg>Build a plant</button>` + S.plants.map(p => {
         const T = TECH[p.tech];
         return `<button type="button" class="plant" data-plant="${p.id}">
-          <div class="top">${dot(p.tech)}<div style="min-width:0"><div class="name">${esc(p.name)}</div><div class="sub">${T.short} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${hoursOf(p)} h` : ''}</div></div></div>
+          <div class="top">${dot(p.tech)}<div style="min-width:0"><div class="name">${esc(p.name)}</div><div class="sub">${T.short} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${fmtHours(p)} h` : ''}</div></div></div>
           <div class="bar"><i></i></div>
           <div class="row"><span class="status"></span><span class="num money"></span></div>
         </button>`;
@@ -882,26 +891,114 @@
     const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'];
     $('tech-grid').innerHTML = order.map(t => {
       const T = TECH[t], unlocked = !!S.unlocked[t];
-      const size = chosenSize[t] || T.sizes[0], cost = Sim.priceOf(S, t, size);
+      const size = chosenSize[t] || T.sizes[0], site = Sim.siteFor(S, t, size), st = site && Sim.siteOf(t, site);
+      const mwh = T.kind !== 'storage' ? undefined : t === 'hydro' ? (st ? st.reservoir : size * T.hours) : size * T.hours;
+      const cost = Sim.priceOf(S, t, size, { site, mwh });
       const goal = Sim.GOALS.find(g => g.unlock === t);
       const vc = T.kind === 'thermal' ? `${fmtPrice(T.vc * (S.fuelMult || 1))}/MWh` : T.kind === 'storage' ? `${Math.round(T.eff * 100)}% round trip` : 'Free';
+      const why = Sim.buildProblem(S, t, size, { site, mwh });
+      const label = why === 'cash' ? `Need ${fmtMoney(cost - S.cash)} more` : why ? 'No site has room for this size' : `Build for ${fmtMoney(cost)}`;
       return `<div class="card ${unlocked ? '' : 'locked'}">
         <div class="head">${dot(t)}<b>${T.name}</b></div>
         <p>${T.blurb}</p>
         ${unlocked ? `<div class="sizes" role="group" aria-label="Size">${T.sizes.map(s => `<button type="button" data-size="${t}:${s}" aria-pressed="${s === size}">${fmtMW(s)}</button>`).join('')}</div>
-        <dl class="stats"><dt>Build cost</dt><dd>${fmtMoney(cost)}</dd><dt>Build time</dt><dd>${T.build} day${T.build === 1 ? '' : 's'}</dd>
-          <dt>${T.kind === 'storage' ? 'Storage' : 'Running cost'}</dt><dd>${T.kind === 'storage' ? `${T.hours} hours · ${vc}` : vc}</dd>
-          <dt>Upkeep</dt><dd>${fmtMoney(T.upkeep * size * diffOf(S).upkeep)}/day</dd><dt>Emissions</dt><dd>${T.emis ? `${T.emis} t/MWh` : 'None'}</dd></dl>
-        <button type="button" class="btn btn-primary" data-build="${t}" ${S.cash < cost ? 'disabled' : ''}>${S.cash < cost ? `Need ${fmtMoney(cost - S.cash)} more` : `Build for ${fmtMoney(cost)}`}</button>`
+        <dl class="stats"><dt>Build cost</dt><dd>${fmtMoney(cost)}</dd><dt>Build time</dt><dd>${st ? Sim.buildDays(t, size, site) : T.build} days</dd>
+          <dt>Site</dt><dd>${st ? `${st.name} · ×${st.mlf.toFixed(2)}` : 'none free'}</dd>
+          <dt>${T.kind === 'storage' ? 'Storage' : 'Running cost'}</dt><dd>${T.kind === 'storage' ? `${(mwh / size).toFixed(1)} hours · ${vc}` : vc}</dd>
+          <dt>Upkeep</dt><dd>${fmtMoney(Sim.upkeepFor(S, t, size, mwh))}/day</dd><dt>Emissions</dt><dd>${T.emis ? `${T.emis} t/MWh` : 'None'}</dd></dl>
+        <button type="button" class="btn btn-primary" data-build="${t}" ${why ? 'disabled' : ''}>${label}</button>
+        <button type="button" class="btn btn-quiet" data-design="${t}">Custom size and site</button>`
         : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>Unlock: ${goal ? goal.text.toLowerCase() : 'later'}</div>`}
       </div>`;
     }).join('');
   }
   $('tech-grid').addEventListener('click', e => {
     const s = e.target.closest('[data-size]'); if (s) { const [t, mw] = s.dataset.size.split(':'); chosenSize[t] = +mw; renderBuild(); return; }
+    const d = e.target.closest('[data-design]'); if (d) { openDesign(d.dataset.design); return; }
     const b = e.target.closest('[data-build]'); if (!b) return;
     const t = b.dataset.build, r = Sim.build(S, t, chosenSize[t] || TECH[t].sizes[0]);
     if (r.ok) { closeSheets(); renderAll(); save(); toast(`Construction started on ${r.plant.name}.`); }
+  });
+
+  // --- design a plant: choose the site, the MW and (for storage) the MWh ---
+  let design = null;
+  const resText = (t, st) => st.res == null ? '' : `${t === 'solar' ? 'sun' : 'wind'} ${st.res >= 1 ? '+' : '−'}${Math.round(Math.abs(st.res - 1) * 100)}% · `;
+  function designLimits() {
+    const T = TECH[design.tech], st = Sim.siteOf(design.tech, design.site);
+    if (design.tech === 'hydro') return { lo: st.mw[0], hi: st.mw[1] };
+    return { lo: T.range[0], hi: Math.max(T.range[0], Math.min(T.range[1], Sim.siteRoom(S, design.tech, design.site))) };
+  }
+  function openDesign(t) {
+    const T = TECH[t], sites = Sim.SITES[t];
+    const site = (sites.find(st => Sim.siteRoom(S, t, st.id) >= (t === 'hydro' ? 1 : T.range[0])) || sites[0]).id;
+    design = { tech: t, site, mw: chosenSize[t] || T.sizes[0], hours: T.hours };
+    info(`Design a ${T.name.toLowerCase()}`, `<p>${T.blurb}</p>
+      <h3>Site</h3><div class="site-grid" id="dz-sites"></div>
+      <h3>Size</h3><div id="dz-size"></div>
+      <h3>Cost</h3><dl class="stats" id="dz-stats"></dl>
+      <p class="note">The loss factor is what each MWh is worth at that site: a farm at ×0.90 is paid 90% of the price for everything it sells (and a battery pays 90% for what it buys). Sites far from the city often have better sun or wind but lower loss factors. Each site's network can only take so many MW.</p>
+      <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="dz-back" style="flex:1">All technologies</button><button type="button" class="btn btn-primary" id="dz-build" style="flex:1.4"></button></div>`);
+    $('dz-back').onclick = openBuild;
+    $('dz-build').onclick = () => {
+      const r = Sim.build(S, design.tech, design.mw, { site: design.site, mwh: designMWh() });
+      if (r.ok) { closeSheets(); renderAll(); save(); toast(`Construction started on ${r.plant.name}.`); }
+    };
+    renderDesign(true);
+  }
+  function designMWh() {
+    const T = TECH[design.tech];
+    if (T.kind !== 'storage') return undefined;
+    return design.tech === 'hydro' ? Sim.siteOf('hydro', design.site).reservoir : Math.round(design.mw * design.hours);
+  }
+  function renderDesign(all) {
+    const t = design.tech, T = TECH[t];
+    if (all) {
+      $('dz-sites').innerHTML = Sim.SITES[t].map(st => {
+        const room = Sim.siteRoom(S, t, st.id), full = t === 'hydro' ? !room : room < T.range[0];
+        const detail = t === 'hydro' ? `${st.reservoir.toLocaleString()} MWh reservoir · ${st.mw[0]}–${st.mw[1]} MW · ×${st.mlf.toFixed(2)}${full ? ' · already built' : ''}`
+          : `${resText(t, st)}loss factor ×${st.mlf.toFixed(2)} · ${full ? 'no room left' : `${fmtMW(room)} free`}`;
+        return `<button type="button" class="site" data-site="${st.id}" aria-pressed="${st.id === design.site}" ${full ? 'disabled' : ''}><b>${st.name}</b><span>${st.blurb}</span><small>${detail}</small></button>`;
+      }).join('');
+      const L = designLimits();
+      design.mw = Math.min(L.hi, Math.max(L.lo, design.mw));
+      const mwRow = `<div class="design-row"><input type="range" min="${L.lo}" max="${L.hi}" step="1" value="${design.mw}" data-dz="mw" aria-label="Power in MW">
+        <span class="bidbox"><input type="number" id="dz-mw" data-dzn="mw" min="${L.lo}" max="${L.hi}" step="1" value="${design.mw}" enterkeyhint="done"><span>MW</span></span></div>`;
+      const hRow = t === 'battery' ? `<div class="design-row"><input type="range" min="${T.hoursRange[0]}" max="${T.hoursRange[1]}" step="0.5" value="${design.hours}" data-dz="hours" aria-label="Storage hours">
+        <span class="bidbox"><input type="number" id="dz-mwh" data-dzn="mwh" min="1" step="1" value="${designMWh()}" enterkeyhint="done"><span>MWh</span></span></div>` : '';
+      $('dz-size').innerHTML = `<p class="note" style="margin:0">${fmtMW(L.lo)} to ${fmtMW(L.hi)}${t === 'battery' ? `, and ${T.hoursRange[0]} to ${T.hoursRange[1]} hours of storage` : ''}${t === 'hydro' ? '. The reservoir is fixed by the valley; more turbines empty it faster' : ''}.</p>${mwRow}${hRow}`;
+    }
+    const mwh = designMWh(), cost = Sim.priceOf(S, t, design.mw, { site: design.site, mwh }), st = Sim.siteOf(t, design.site);
+    const m = S.costMult[t] * diffOf(S).capex, money = v => fmtMoney(Math.round(v * m / 100) * 100);
+    $('dz-stats').innerHTML = `${t === 'hydro' ? `<dt>Dam, tunnels and reservoir</dt><dd>${money(st.civil)}</dd>` : `<dt>Connection</dt><dd>${money(T.connect * (st.connect ?? 1))}</dd>`}
+      <dt>Power: ${fmtMW(design.mw)}</dt><dd>${money(T.capexMW * design.mw)}</dd>
+      ${T.capexMWh ? `<dt>Storage: ${mwh.toLocaleString()} MWh</dt><dd>${money(T.capexMWh * mwh)}</dd>` : ''}
+      <dt><b>Total</b></dt><dd>${fmtMoney(cost)}</dd>
+      ${T.kind === 'storage' ? `<dt>Storage</dt><dd>${(mwh / design.mw).toFixed(1)} hours</dd>` : ''}
+      <dt>Build time</dt><dd>${Sim.buildDays(t, design.mw, design.site)} days</dd>
+      <dt>Upkeep</dt><dd>${fmtMoney(Sim.upkeepFor(S, t, design.mw, mwh))}/day</dd>
+      <dt>Loss factor</dt><dd>×${st.mlf.toFixed(2)}</dd>`;
+    const why = Sim.buildProblem(S, t, design.mw, { site: design.site, mwh });
+    const b = $('dz-build');
+    b.disabled = !!why;
+    b.textContent = why === 'cash' ? `Need ${fmtMoney(cost - S.cash)} more` : why === 'room' ? 'Not enough room at this site' : why ? 'Can’t build this' : `Build for ${fmtMoney(cost)}`;
+  }
+  $('i-body').addEventListener('click', e => {
+    const b = e.target.closest('[data-site]'); if (!b || !design || b.disabled) return;
+    design.site = b.dataset.site; renderDesign(true);
+  });
+  $('i-body').addEventListener('input', e => {
+    const el = e.target.closest('[data-dz]'); if (!el || !design) return;
+    if (el.dataset.dz === 'mw') { design.mw = Math.round(+el.value); $('dz-mw').value = design.mw; }
+    else { design.hours = +el.value; }
+    const box = $('dz-mwh'); if (box) box.value = designMWh();
+    renderDesign(false);
+  });
+  $('i-body').addEventListener('change', e => {
+    const el = e.target.closest('[data-dzn]'); if (!el || !design) return;
+    const L = designLimits(), T = TECH[design.tech];
+    if (el.dataset.dzn === 'mw') design.mw = Math.min(L.hi, Math.max(L.lo, Math.round(+el.value || design.mw)));
+    else { const mwh = Math.round(+el.value || designMWh()); design.hours = Math.min(T.hoursRange[1], Math.max(T.hoursRange[0], mwh / design.mw)); }
+    renderDesign(true);
   });
 
   // --- plant detail ---
@@ -912,7 +1009,7 @@
     const p = S.plants.find(x => x.id === plantOpen); if (!p) { closeSheets(); return; }
     sheetStatus = p.status;
     const T = TECH[p.tech];
-    $('p-top').innerHTML = `${dot(p.tech)}<div style="min-width:0"><div class="name" style="font-size:19px">${esc(p.name)}</div><div class="sub">${T.name} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${hoursOf(p)} hours` : ''} · ${plantStatus(p)}</div></div>`;
+    $('p-top').innerHTML = `${dot(p.tech)}<div style="min-width:0"><div class="name" style="font-size:19px">${esc(p.name)}</div><div class="sub">${T.name} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${Math.round(p.mwh ?? p.mw * hoursOf(p)).toLocaleString()} MWh, ${fmtHours(p)} hours` : ''} · ${plantStatus(p)}</div></div>`;
     const today = p.today || { energy: 0, money: 0 };
     $('p-kv').innerHTML = `<div><span>Earned today</span><b class="${today.money >= 0 ? 'up' : 'down'}">${fmtMoney(today.money)}</b></div>
       <div><span>${T.kind === 'storage' ? 'Net energy today' : 'Energy today'}</span><b>${Math.round(today.energy).toLocaleString()} MWh</b></div>
@@ -960,13 +1057,14 @@
         ${L.repairs ? row('Repairs', -L.repairs) : ''}
         ${row('Operating profit', profit, true)}
       </tbody></table>
-      <p class="note">${Math.round(L.energy).toLocaleString()} MWh sold${avg != null ? ` at an average of ${fmtPrice(avg)}/MWh` : ''}. Contracts, interest and fines are counted for the whole company.</p>`;
+      <p class="note">${Math.round(L.energy).toLocaleString()} MWh sold${avg != null ? ` for an average of ${fmtPrice(avg)}/MWh` : ''}. Built at ${esc(Sim.siteOf(p.tech, p.site || 'legacy').name)}, loss factor ×${(p.mlf ?? 1).toFixed(2)}. Contracts, interest and fines are counted for the whole company.</p>`;
   }
   function upgradeCard(p) {
     const U = Sim.UPGRADES[p.tech];
     if (!U || p.status === 'retiring') return '';
     if (p.status === 'upgrading') return `<div class="upgrade"><b>${U.name}</b><p>Work under way. Back in ${Math.max(0.1, p.upgLeft).toFixed(1)} days.</p></div>`;
     if (p.upg) return `<div class="upgrade"><b>Upgraded: ${U.name.toLowerCase()}</b><p>${U.blurb}</p></div>`;
+    if (!Sim.canUpgrade(p)) return `<div class="upgrade"><b>${U.name}</b><p>${p.tech === 'hydro' ? 'This site can’t take another turbine.' : 'It already has as much storage as one connection allows.'}</p></div>`;
     const cost = Sim.upgradeCost(S, p), can = S.cash >= cost && p.status === 'online';
     const extra = U.upkeep ? ` · upkeep +${Math.round((U.upkeep - 1) * 100)}%` : '';
     return `<div class="upgrade"><b>Upgrade: ${U.name.toLowerCase()}</b><p>${U.blurb}</p>
@@ -1192,6 +1290,7 @@
       <p><b style="color:var(--ink)">Batteries and hydro</b> charge when power is cheap and sell into the peak. They, and gas peakers, can also earn by staying ready for frequency control.</p>
       <p><b style="color:var(--ink)">The dashed line on the price chart is the forecast</b> for the next six hours, worked out from today's weather and offers. Surprises like breakdowns aren't in it.</p>
       <p><b style="color:var(--ink)">Contracts</b> trade some upside for certainty. A swap fixes the price you get on part of your output; a cap pays you a premium every day but you pay out when prices spike above $300, so only sell caps you can cover with plant that will be running.</p>
+      <p><b style="color:var(--ink)">Sites and loss factors:</b> choose where to build. Far-off sites often have better sun or wind, but a lower loss factor: at ×0.90 each MWh is paid 90% of the price. Each site's network can take only so many MW, and each pumped hydro valley holds one scheme with a fixed reservoir. Tap <b style="color:var(--ink)">Custom size and site</b> to set the exact MW, and MWh for batteries.</p>
       <p><b style="color:var(--ink)">Upgrades:</b> every plant has one. Open the plant to see it. It costs money and takes the plant offline for a while.</p>
       <p><b style="color:var(--ink)">The rules:</b> plants take days to build and connect; coal must give 5 days' notice to close; the market operator may ask you to promise reserve before a heatwave and fines you if you can't deliver; and every 30 days your emissions are checked against a target that tightens each year.</p>
       <p><b style="color:var(--ink)">Price limits:</b> as in the real NEM for 2026-27, prices run from ${fmtPrice(FLOOR)} (the floor) to ${fmtPrice(CAP)}/MWh (the cap). If the last 7 days of prices add up past a threshold, the market operator holds prices at ${fmtPrice(Sim.APC)} until the week's total falls back. The real threshold is ${fmtMoney(Sim.REAL_CPT)}, about 8 hours at the cap; the game uses ${fmtMoney(Sim.CPT)}, about 3 hours, because its market is spikier.</p>
@@ -1403,7 +1502,7 @@
     if (kv[0]) { kv[0].textContent = fmtMoney(today.money); kv[0].className = today.money >= 0 ? 'up' : 'down'; }
     if (kv[1]) kv[1].textContent = `${Math.round(today.energy).toLocaleString()} MWh`;
     const soc = $('p-bid').querySelector('.soc i'); if (soc) soc.style.width = `${Math.round(p.soc / (p.mw * hoursOf(p)) * 100)}%`;
-    const sub = $('p-top').querySelector('.sub'); if (sub) sub.textContent = `${T.name} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${hoursOf(p)} hours` : ''} · ${plantStatus(p)}`;
+    const sub = $('p-top').querySelector('.sub'); if (sub) sub.textContent = `${T.name} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${Math.round(p.mwh ?? p.mw * hoursOf(p)).toLocaleString()} MWh, ${fmtHours(p)} hours` : ''} · ${plantStatus(p)}`;
     if (S.t % 6 === 0) $('p-life').innerHTML = lifeBlock(p);
   }
   let resized = false;

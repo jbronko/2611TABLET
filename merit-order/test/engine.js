@@ -186,6 +186,27 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('doing nothing never earns more than one star', scored.every(x => x.stars <= 1));
 }
 
+// 13. Custom builds on sites: costs, room, one scheme per hydro valley, loss factors paid in full.
+{
+  const S = Sim.create(8, { cash: 1e9 }); Object.assign(S.unlocked, { wind: true, hydro: true });
+  const bat = Sim.priceOf(S, 'battery', 37, { site: 'city', mwh: 111 });
+  check('custom battery cost = connection + MW + MWh', bat === Math.round((25000 * 1.4 + 37 * 3000 + 111 * 2500) / 100) * 100, Sim.fmtMoney(bat));
+  const a = Sim.build(S, 'solar', 100, { site: 'city-fringe' }), b = Sim.build(S, 'solar', 60, { site: 'city-fringe' });
+  const h1 = Sim.build(S, 'hydro', 350, { site: 'wombat' }), h2 = Sim.build(S, 'hydro', 200, { site: 'wombat' });
+  check('site room and one scheme per hydro valley', a.ok && b.why === 'room' && h1.ok && h2.why === 'site' && Sim.build(S, 'solar', 500).why === 'size' && Sim.build(S, 'battery', 50, { mwh: 500 }).why === 'hours');
+  h1.plant.status = 'online';
+  check('a hydro scheme at its valley\'s limit can\'t add turbines', !Sim.canUpgrade(h1.plant) && h1.plant.mwh === 2000);
+  // every MWh is paid price x loss factor
+  const T = Sim.create(9); const far = Sim.build(T, 'solar', 50, { site: 'far-west' }).plant;
+  for (let k = 0; k < 3 * Sim.IPD; k++) Sim.step(T);
+  let expect = far.life.sales, got = 0;
+  for (let k = 0; k < Sim.IPD; k++) { const r = Sim.step(T); for (const x of r.supply) if (x.ref === far) got += x.out * r.res.price * 0.90 * Sim.H; }
+  check('energy is paid at price x loss factor', Math.abs(far.life.sales - expect - got) < 1e-6 && far.mlf === 0.9, `${Sim.fmtMoney(far.life.sales - expect)} in a day`);
+  // an old plant without a site keeps its old economics
+  const O = Sim.create(10); const op = Sim.build(O, 'battery', 25).plant; delete op.site; delete op.mlf; delete op.res; op.hours = 2; delete op.mwh; Sim.migrate(O);
+  check('old plants move to their original site unchanged', op.site === 'legacy' && op.mlf === 1 && op.mwh === 50);
+}
+
 // 10. Speed: a big company's 7-day catch-up (what runs when the app opens after a week away).
 {
   const S = Sim.create(1, { cash: 1e9 });
