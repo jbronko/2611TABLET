@@ -7,208 +7,381 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="theme-color" content="#e9eff1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0d171c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#08262e">
 <meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Figtree:wght@500;600;700&display=swap">
 <style>
-  /* Layout: a full-screen beach canvas with a slim control bar above it. The beach itself looks the
-     same in both themes (it's sand and sea); only the chrome around it follows the theme. */
+  /* Layout: the living beach fills the screen and every control floats over it on dark sea-glass
+     panels. The game keeps one daylight look in both system themes, so colours are set explicitly.
+     Tools sit on the right edge in landscape and along the bottom in portrait, away from the pools. */
   :root {
-    --bg: #e9eff1; --panel: #ffffff; --ink: #142229; --muted: #55666e; --line: #cfd9dd;
-    --accent: #1f7fa6; --on-accent: #ffffff; --sun: #d99a17; --good: #2c8a5a;
-    --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --radius: 14px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0d171c; --panel: #16242b; --ink: #dfeaee; --muted: #93a6ae; --line: #284049;
-      --accent: #46b3dc; --on-accent: #0b1a20; --sun: #f0c04a; --good: #5cc48e;
-      color-scheme: dark;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0d171c; --panel: #16242b; --ink: #dfeaee; --muted: #93a6ae; --line: #284049;
-    --accent: #46b3dc; --on-accent: #0b1a20; --sun: #f0c04a; --good: #5cc48e;
+    --ink: #f3f8f7;
+    --ink-2: rgba(236, 245, 243, 0.76);
+    --ink-3: rgba(236, 245, 243, 0.52);
+    --glass: rgba(8, 33, 41, 0.6);
+    --glass-solid: rgba(8, 29, 36, 0.94);
+    --edge: rgba(255, 255, 255, 0.13);
+    --seaglass: #6fe0d2;
+    --seaglass-ink: #04282a;
+    --sun: #f7c75a;
+    --night: #061c23;
+    --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-ui: "Figtree", "Segoe UI", Roboto, system-ui, sans-serif;
+    --r-lg: 24px;
+    --r-md: 16px;
+    --st: env(safe-area-inset-top, 0px);
+    --sr: env(safe-area-inset-right, 0px);
+    --sb: env(safe-area-inset-bottom, 0px);
+    --sl: env(safe-area-inset-left, 0px);
     color-scheme: dark;
   }
-
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  html, body { height: 100%; overscroll-behavior: none; }
+  html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.4 var(--font-body);
+    background: var(--night); color: var(--ink);
+    font: 500 16px/1.45 var(--font-ui);
+    -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
   }
-  button, canvas, .bar { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-  button {
-    font: inherit; color: inherit; cursor: pointer; border-radius: 12px;
-    min-height: 48px; min-width: 48px; padding: 0 14px; border: 1px solid var(--line); background: var(--panel);
-  }
-  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  .primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 700; }
-  .eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+  button, canvas, .hud, .menu { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  :focus-visible { outline: 3px solid var(--seaglass); outline-offset: 3px; }
+  svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  svg.fill { fill: currentColor; stroke: none; }
 
-  /* ---- Level select ---- */
+  #world, #overlay { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #world { touch-action: none; }
+  #overlay { pointer-events: none; }
+
+  .glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid var(--edge);
+    box-shadow: 0 14px 36px rgba(0, 12, 16, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 54px; padding: 0 22px; border-radius: var(--r-md);
+    font-weight: 700; font-size: 17px; letter-spacing: 0.01em;
+    transition: transform 0.12s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .btn:active, .tool:active, .icon-btn:active, .card:active, .row-btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--seaglass); color: var(--seaglass-ink); box-shadow: 0 10px 28px rgba(111, 224, 210, 0.25); }
+  .btn-quiet { background: rgba(255, 255, 255, 0.07); border: 1px solid var(--edge); }
+  .icon-btn { width: 48px; height: 48px; border-radius: 50%; display: inline-grid; place-items: center; transition: transform 0.12s ease; }
+
+  /* ---------- Title screen ---------- */
   .menu {
-    max-width: 980px; margin: 0 auto; display: grid; gap: 20px;
-    padding-block: max(24px, env(safe-area-inset-top, 0px)) max(32px, env(safe-area-inset-bottom, 0px));
-    padding-left: max(16px, env(safe-area-inset-left, 0px));
-    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    position: fixed; inset: 0; z-index: 5; display: grid; align-items: center;
+    background: linear-gradient(90deg, rgba(4, 21, 27, 0.92) 0%, rgba(4, 21, 27, 0.66) 36%, rgba(4, 21, 27, 0) 64%);
+    padding: max(32px, var(--st)) max(24px, var(--sr)) max(32px, var(--sb)) max(56px, calc(var(--sl) + 24px));
+    animation: fade 0.5s ease both;
   }
-  .menu h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.05; margin: 2px 0 6px; letter-spacing: -0.01em; }
-  .menu .lede { margin: 0; color: var(--muted); max-width: 60ch; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
-  .tile {
-    display: grid; gap: 4px; align-content: start; text-align: left; padding: 14px 16px; min-height: 108px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  .menu-inner { width: min(100%, 440px); display: grid; gap: 34px; }
+  .menu h1 {
+    margin: 10px 0 0; font: 800 clamp(56px, 8vw, 92px)/0.9 var(--font-display);
+    letter-spacing: -0.035em; text-wrap: balance;
   }
-  .tile .num { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .tile .stars { color: var(--sun); letter-spacing: 2px; }
-  .tile .stars .off { color: var(--line); }
-  .tile .locked { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-  .tile:disabled { opacity: 0.5; cursor: default; }
-  .tile.sandbox { grid-column: 1 / -1; min-height: 0; grid-template-columns: 1fr auto; align-items: center; }
-  .tile.sandbox .num { font-size: 22px; }
-  .howto { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-  .howto h2 { font-size: 17px; margin: 0 0 6px; }
-  .howto ul { margin: 0; padding-left: 20px; color: var(--muted); display: grid; gap: 4px; }
+  .menu h1 span { color: var(--seaglass); }
+  .tagline { margin: 18px 0 0; font-size: 18px; color: var(--ink-2); max-width: 32ch; }
+  .menu-actions { display: grid; gap: 12px; }
+  .continue { justify-content: space-between; min-height: 72px; padding: 0 22px 0 24px; text-align: left; }
+  .continue .ct { display: grid; gap: 1px; }
+  .continue .ct b { font-size: 19px; }
+  .continue .ct small { font-size: 14px; font-weight: 600; opacity: 0.72; }
+  .continue .play { width: 40px; height: 40px; border-radius: 50%; background: rgba(4, 40, 42, 0.12); display: grid; place-items: center; }
+  .menu-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .menu-foot { display: flex; align-items: center; gap: 18px; color: var(--ink-3); font-size: 15px; font-weight: 600; }
+  .menu-foot .stars-total { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .menu-foot .stars-total svg { width: 18px; height: 18px; color: var(--sun); }
+  .link { color: var(--ink-2); font-weight: 650; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.3); text-underline-offset: 4px; min-height: 44px; }
+  .menu-foot .icon-btn { margin-left: auto; width: 44px; height: 44px; }
+  @media (orientation: portrait) {
+    .menu {
+      align-items: end;
+      background: linear-gradient(0deg, rgba(4, 21, 27, 0.94) 0%, rgba(4, 21, 27, 0.7) 42%, rgba(4, 21, 27, 0) 72%);
+      padding: max(24px, var(--st)) max(24px, var(--sr)) max(36px, calc(var(--sb) + 20px)) max(24px, var(--sl));
+    }
+    .menu-inner { width: min(100%, 560px); margin: 0 auto; gap: 26px; }
+  }
 
-  /* ---- Play screen ---- */
-  .play { position: fixed; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--bg); }
-  .bar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: 8px;
-    padding-left: max(12px, env(safe-area-inset-left, 0px));
-    padding-right: max(12px, env(safe-area-inset-right, 0px));
+  /* ---------- Sheets (beaches, how to play, pause, results) ---------- */
+  .sheet-backdrop {
+    position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+    background: rgba(2, 14, 18, 0.5);
+    padding: max(16px, var(--st)) max(16px, var(--sr)) max(16px, var(--sb)) max(16px, var(--sl));
+    animation: fade 0.2s ease both;
   }
-  .title { display: grid; min-width: 0; flex: 1 1 90px; }
-  .title strong { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tide { display: grid; gap: 4px; min-width: 100px; flex: 0 1 220px; }
-  .tide-track { position: relative; height: 22px; }
-  @media (max-width: 900px) {
-    /* narrow screens: the tide meter gets its own row under the buttons */
-    .tide { order: 10; flex: 1 1 240px; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
-    .sandbox-tools { order: 9; }
+  .sheet {
+    width: min(100%, 900px); max-height: 100%; overflow: auto; overscroll-behavior: contain;
+    border-radius: var(--r-lg); padding: 22px 24px 24px;
+    background: var(--glass-solid); border: 1px solid var(--edge);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+    animation: rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
-  .tide-track svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-  .tide-track path { fill: none; stroke: var(--line); stroke-width: 2; }
-  .tide-track .done { stroke: var(--accent); }
-  .tide-dot { position: absolute; left: 0; top: 91%; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); transform: translate(-50%, -50%); }
-  .tools { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .tools button { border: 0; border-radius: 0; background: var(--panel); padding: 0 12px; }
-  .tools button + button { border-left: 1px solid var(--line); }
-  .tools button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 700; }
-  #depth[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 700; }
-  .icon-btn { padding: 0; width: 48px; display: inline-grid; place-items: center; }
-  .icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-  .stage {
-    position: relative; display: grid; place-items: center; min-height: 0;
-    padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+  .sheet.narrow { width: min(100%, 420px); }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .sheet h2 { margin: 0; font: 800 30px/1.1 var(--font-display); letter-spacing: -0.015em; text-wrap: balance; }
+  .sheet .icon-btn { background: rgba(255, 255, 255, 0.07); }
+
+  .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 780px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card {
+    position: relative; text-align: left; border-radius: var(--r-md); overflow: hidden;
+    background: rgba(255, 255, 255, 0.05); border: 1px solid var(--edge);
+    display: grid; transition: transform 0.12s ease, border-color 0.2s ease;
   }
-  #beach { display: block; touch-action: none; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.18); }
+  .card:hover:not(:disabled) { border-color: rgba(111, 224, 210, 0.55); }
+  .card canvas { width: 100%; aspect-ratio: 3 / 2; display: block; background: #0d3a44; }
+  .card .meta { padding: 10px 12px 12px; display: grid; gap: 4px; }
+  .card .num { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+  .card .name { font: 700 18px/1.15 var(--font-display); letter-spacing: -0.005em; }
+  .card .stars { display: flex; gap: 3px; height: 18px; color: var(--sun); }
+  .card .stars svg { width: 18px; height: 18px; }
+  .card .stars .off { color: rgba(255, 255, 255, 0.16); }
+  .card:disabled { cursor: default; }
+  .card:disabled canvas { filter: grayscale(0.85) brightness(0.45); }
+  .card .lock { position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: rgba(4, 21, 27, 0.75); color: var(--ink-2); }
+  .card .lock svg { width: 18px; height: 18px; }
+  .card.wide { grid-column: 1 / -1; grid-template-columns: minmax(140px, 220px) 1fr; align-items: center; }
+  .card.wide .meta { padding: 14px 18px; }
+  .card.wide p { margin: 0; color: var(--ink-2); font-size: 15px; }
+
+  .steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 640px) { .steps { grid-template-columns: 1fr; } }
+  .step { display: grid; grid-template-columns: 48px 1fr; gap: 14px; padding: 16px; border-radius: var(--r-md); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--edge); }
+  .step .badge { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: rgba(111, 224, 210, 0.14); color: var(--seaglass); }
+  .step h3 { margin: 2px 0 4px; font: 700 18px/1.2 var(--font-display); }
+  .step p { margin: 0; color: var(--ink-2); font-size: 15px; }
+
+  .list { display: grid; gap: 10px; }
+  .row-btn {
+    display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 0 18px;
+    border-radius: 14px; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--edge);
+    text-align: left; font-weight: 650; font-size: 17px; transition: transform 0.12s ease;
+  }
+  .row-btn .switch { margin-left: auto; width: 48px; height: 30px; border-radius: 99px; background: rgba(255, 255, 255, 0.2); position: relative; transition: background-color 0.2s ease; flex: none; }
+  .row-btn .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); transition: transform 0.2s ease; }
+  .row-btn[aria-checked="true"] .switch { background: var(--seaglass); }
+  .row-btn[aria-checked="true"] .switch::after { transform: translateX(18px); }
+  .list .btn { width: 100%; }
+
+  .result { text-align: center; display: grid; gap: 16px; padding: 30px 26px 24px; }
+  .result h2 { font-size: 34px; }
+  .big-stars { display: flex; justify-content: center; gap: 12px; margin: 4px 0; }
+  .big-stars svg { width: 58px; height: 58px; color: rgba(255, 255, 255, 0.14); }
+  .big-stars svg.on { color: var(--sun); filter: drop-shadow(0 6px 16px rgba(247, 199, 90, 0.35)); animation: pop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+  .big-stars svg.on:nth-child(2) { animation-delay: 0.16s; }
+  .big-stars svg.on:nth-child(3) { animation-delay: 0.32s; }
+  .pool-rows { display: grid; gap: 10px; text-align: left; }
+  .pool-row { display: grid; grid-template-columns: 64px 1fr 46px; gap: 12px; align-items: center; font-variant-numeric: tabular-nums; font-weight: 650; }
+  .pool-row .bar { height: 10px; border-radius: 99px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+  .pool-row .bar i { display: block; height: 100%; border-radius: inherit; background: var(--seaglass); transform-origin: left center; animation: grow 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.25s both; }
+  .pool-row .bar i.full { background: var(--sun); }
+  .pool-row .pct { text-align: right; color: var(--ink-2); }
+  .result p { margin: 0; color: var(--ink-2); }
+  .result .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  .result .actions .btn-primary { grid-column: 1 / -1; }
+
+  /* ---------- In-game HUD ---------- */
+  .hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; animation: fade 0.35s ease both; }
+  .hud > * { pointer-events: auto; }
+  .topbar {
+    position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: max(14px, var(--st)) max(14px, var(--sr)) 0 max(14px, var(--sl));
+  }
+  .topbar > * { pointer-events: auto; }
+  .chip { display: flex; align-items: center; gap: 6px; padding: 5px 20px 5px 5px; border-radius: 999px; min-width: 0; }
+  .chip .t { display: grid; min-width: 0; }
+  .chip .t .k { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+  .chip .t .n { font: 700 18px/1.15 var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tide-pill { display: flex; align-items: center; gap: 12px; padding: 9px 18px 9px 14px; border-radius: 999px; }
+  .tide-pill .moon { color: var(--sun); }
+  .tide-pill .tx { display: grid; line-height: 1.15; }
+  .tide-pill .tx b { font-size: 15px; }
+  .tide-pill .tx span { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .curve { position: relative; width: 104px; height: 30px; flex: none; }
+  .curve svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .curve path { fill: none; stroke-width: 2; stroke-linecap: round; }
+  .curve .base { stroke: rgba(255, 255, 255, 0.22); }
+  .curve .done { stroke: var(--seaglass); }
+  .curve .dot { position: absolute; width: 11px; height: 11px; border-radius: 50%; background: var(--seaglass); box-shadow: 0 0 0 3px rgba(111, 224, 210, 0.25); transform: translate(-50%, -50%); }
+
+  .dock { position: absolute; display: flex; gap: 4px; padding: 6px; border-radius: 26px; }
+  .dock.side { right: max(14px, var(--sr)); top: 50%; transform: translateY(-50%); flex-direction: column; }
+  .dock.bottom { bottom: max(14px, var(--sb)); left: 50%; transform: translateX(-50%); }
+  .tool {
+    width: 72px; height: 64px; border-radius: 20px; display: grid; place-items: center; align-content: center; gap: 2px;
+    font-size: 12.5px; font-weight: 700; color: var(--ink-2); transition: background-color 0.18s ease, color 0.18s ease, transform 0.12s ease;
+  }
+  .tool[aria-pressed="true"] { background: var(--seaglass); color: var(--seaglass-ink); }
+  .dock .sep { flex: none; background: var(--edge); }
+  .dock.side .sep { height: 1px; margin: 4px 10px; }
+  .dock.bottom .sep { width: 1px; margin: 10px 4px; }
+  .hud:not(.is-sandbox) .sandbox-only { display: none; }
+
   .toast {
-    position: absolute; left: 50%; top: 16px; transform: translateX(-50%); max-width: min(92%, 520px);
-    background: rgba(10, 30, 40, 0.78); color: #f2f8fa; padding: 10px 16px; border-radius: 12px;
-    font-size: 15px; text-align: center; pointer-events: none; transition: opacity 0.6s;
+    position: absolute; left: 50%; top: calc(max(14px, var(--st)) + 76px); transform: translateX(-50%);
+    width: max-content; max-width: min(540px, calc(100% - 32px)); padding: 12px 20px; border-radius: 18px;
+    font-size: 16px; font-weight: 600; text-align: center; pointer-events: none; transition: opacity 0.5s ease;
   }
-  .sandbox-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+  @media (max-width: 720px) {
+    .curve { display: none; }
+    .chip .t .k { display: none; }
+  }
+  @media (max-width: 480px) {
+    .tool { width: 56px; font-size: 11px; }
+    .tide-pill { padding: 8px 14px 8px 12px; }
+  }
 
-  /* ---- Results card ---- */
-  .overlay {
-    position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
-    background: color-mix(in srgb, var(--bg) 55%, transparent);
-    padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px) scale(0.98); } }
+  @keyframes pop { from { opacity: 0; transform: scale(0.3) rotate(-20deg); } }
+  @keyframes grow { from { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; }
   }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 26px 22px; width: min(100%, 400px); display: grid; gap: 12px; text-align: center; }
-  .card h2 { margin: 0; font-size: 24px; }
-  .card p { margin: 0; color: var(--muted); }
-  .big-stars { font-size: 44px; letter-spacing: 6px; color: var(--sun); line-height: 1; }
-  .big-stars .off { color: var(--line); }
-  .card .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  .card .row button { flex: 1 1 120px; }
-  .pool-results { display: grid; gap: 4px; font-variant-numeric: tabular-nums; color: var(--muted); }
 </style>
 </head>
 <body>
 
-<main class="menu" id="menu">
-  <header>
-    <div class="eyebrow">A sand and water game</div>
-    <h1>Tide Digger</h1>
-    <p class="lede">Dig channels with your finger to lead the incoming tide into the rock pools. When the tide goes back out, the pools need to stay full.</p>
-  </header>
-  <div class="tiles" id="tiles"></div>
-  <section class="howto">
-    <h2>How to play</h2>
-    <ul>
-      <li>Drag a finger across the sand to dig. Sand piles up along the edges of your trench. Use more fingers to dig faster.</li>
-      <li>The tide starts coming in when you first dig. Waves wash up the beach and fill anything that's low enough.</li>
-      <li>Water carves its own path: fast water washes sand away, slow water drops it, and thin walls collapse.</li>
-      <li>Switch to <strong>Build</strong> to pile sand into dams, and <strong>Smooth</strong> to flatten it.</li>
-      <li>Stars come from how full the pools still are once the tide has gone out. Dam the gap to keep more water in.</li>
-    </ul>
-  </section>
-</main>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8.5 5.8v12.4a.8.8 0 0 0 1.2.7l9.6-6.2a.8.8 0 0 0 0-1.4L9.7 5.1a.8.8 0 0 0-1.2.7z"/></symbol>
+  <symbol id="i-dig" viewBox="0 0 24 24"><path d="M12 3v8.5"/><path d="M9.5 3h5"/><path d="M7 11.5h10v2.3a5 5 0 0 1-10 0z"/></symbol>
+  <symbol id="i-build" viewBox="0 0 24 24"><path d="M3 19.5h18"/><path d="M5 19.5c1.6-4.2 4-6.5 7-6.5s5.4 2.3 7 6.5"/><path d="M12 3.5v6M9.5 6 12 3.5 14.5 6"/></symbol>
+  <symbol id="i-smooth" viewBox="0 0 24 24"><path d="M3 8.5c2-2.2 4-2.2 6 0s4 2.2 6 0 4-2.2 6 0"/><path d="M12 11.5v4M9.5 13.5 12 16 14.5 13.5"/><path d="M3 20h18"/></symbol>
+  <symbol id="i-depth" viewBox="0 0 24 24"><path d="M12 3.5 3 8l9 4.5L21 8z"/><path d="M3 12l9 4.5 9-4.5"/><path d="M3 16l9 4.5 9-4.5"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 14c2.5 0 3-4 6-4s3.5 4 6 4 3.5-4 6-4"/><path d="M2 19c2.5 0 3-2 6-2s3.5 2 6 2 3.5-2 6-2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.3-5.4"/><path d="M4.5 4v4.6h4.6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.3 6.3 0 0 0 10 10z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.8 5.7 6.3.9-4.55 4.43 1.07 6.27L12 16.95 6.38 19.9l1.07-6.27L2.9 9.2l6.3-.9z"/></symbol>
+  <symbol id="i-exit" viewBox="0 0 24 24"><path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14"/><path d="M10 8l-4 4 4 4M6 12h10"/></symbol>
+</svg>
 
-<section class="play" id="play" hidden>
-  <div class="bar">
-    <button type="button" class="icon-btn" id="back" aria-label="All beaches">
-      <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
-    </button>
-    <div class="title">
-      <span class="eyebrow" id="level-num">Beach 1 of 8</span>
-      <strong id="level-name">First Dig</strong>
-    </div>
-    <div class="tide" aria-live="off">
-      <span class="eyebrow" id="tide-label">Low tide</span>
-      <div class="tide-track">
-        <svg viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true">
-          <path id="tide-curve" d=""/>
-          <path id="tide-done" class="done" d=""/>
-        </svg>
-        <span class="tide-dot" id="tide-dot"></span>
+<canvas id="world" aria-label="Beach. Drag across the sand to dig."></canvas>
+<canvas id="overlay" aria-hidden="true"></canvas>
+
+<main class="menu" id="menu">
+  <div class="menu-inner">
+    <header>
+      <div class="eyebrow">A sand and sea game</div>
+      <h1>Tide <span>Digger</span></h1>
+      <p class="tagline">Carve channels in the sand with your fingertip and lead the tide into the rock pools.</p>
+    </header>
+    <div class="menu-actions">
+      <button type="button" class="btn btn-primary continue" id="continue">
+        <span class="ct"><b id="cont-k">Start</b><small id="cont-sub">Beach 1 · First Dig</small></span>
+        <span class="play"><svg class="i fill"><use href="#i-play"/></svg></span>
+      </button>
+      <div class="menu-row">
+        <button type="button" class="btn btn-quiet" id="open-beaches">All beaches</button>
+        <button type="button" class="btn btn-quiet" id="open-sandbox">Sandbox</button>
       </div>
     </div>
-    <div class="tools" role="group" aria-label="Tool">
-      <button type="button" data-tool="dig" aria-pressed="true">Dig</button>
-      <button type="button" data-tool="build" aria-pressed="false">Build</button>
-      <button type="button" data-tool="smooth" aria-pressed="false">Smooth</button>
+    <div class="menu-foot">
+      <span class="stars-total" id="stars-total"><svg class="i fill"><use href="#i-star"/></svg><span>0 of 24</span></span>
+      <button type="button" class="link" id="open-howto">How to play</button>
+      <button type="button" class="icon-btn btn-quiet sound-btn" id="menu-sound" aria-label="Sound on" aria-pressed="false"><svg class="i"><use href="#i-sound"/></svg></button>
     </div>
-    <div class="sandbox-tools" id="sandbox-tools" hidden>
-      <button type="button" id="wave">Send a wave</button>
-      <button type="button" id="tide-speed">Tide: normal</button>
+  </div>
+</main>
+
+<section class="hud" id="hud" hidden>
+  <div class="topbar">
+    <div class="chip glass">
+      <button type="button" class="icon-btn" id="back" aria-label="Pause and show options"><svg class="i"><use href="#i-back"/></svg></button>
+      <div class="t"><span class="k" id="level-num">Beach 1</span><span class="n" id="level-name">First Dig</span></div>
     </div>
-    <button type="button" id="depth" aria-pressed="false">Depth</button>
-    <button type="button" class="icon-btn" id="pause" aria-label="Pause">
-      <svg viewBox="0 0 24 24" id="pause-icon"><path d="M9 6v12M15 6v12"/></svg>
-    </button>
-    <button type="button" class="icon-btn" id="restart" aria-label="Start this beach again">
-      <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v5h5"/></svg>
-    </button>
-    <button type="button" class="icon-btn" id="mute" aria-label="Sound on" aria-pressed="false">
-      <svg viewBox="0 0 24 24" id="mute-icon"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9a4 4 0 0 1 0 6"/></svg>
-    </button>
+    <div class="tide-pill glass" aria-live="off">
+      <svg class="i moon"><use href="#i-moon"/></svg>
+      <div class="tx"><b id="tide-label">Low tide</b><span id="tide-time">Dig to begin</span></div>
+      <div class="curve" aria-hidden="true">
+        <svg viewBox="0 0 100 30" preserveAspectRatio="none"><path class="base" id="tide-curve" d=""/><path class="done" id="tide-done" d=""/></svg>
+        <span class="dot" id="tide-dot"></span>
+      </div>
+    </div>
+    <button type="button" class="icon-btn glass" id="pause" aria-label="Pause"><svg class="i"><use href="#i-pause"/></svg></button>
   </div>
-  <div class="stage" id="stage">
-    <canvas id="beach" aria-label="Beach. Drag to dig."></canvas>
-    <div class="toast" id="toast"></div>
+
+  <div class="dock glass side" id="dock" role="toolbar" aria-label="Tools">
+    <button type="button" class="tool" data-tool="dig" aria-pressed="true"><svg class="i"><use href="#i-dig"/></svg><span>Dig</span></button>
+    <button type="button" class="tool" data-tool="build" aria-pressed="false"><svg class="i"><use href="#i-build"/></svg><span>Build</span></button>
+    <button type="button" class="tool" data-tool="smooth" aria-pressed="false"><svg class="i"><use href="#i-smooth"/></svg><span>Smooth</span></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" class="tool" id="depth" aria-pressed="false"><svg class="i"><use href="#i-depth"/></svg><span>Depth</span></button>
+    <span class="sep sandbox-only" aria-hidden="true"></span>
+    <button type="button" class="tool sandbox-only" id="wave"><svg class="i"><use href="#i-wave"/></svg><span>Wave</span></button>
+    <button type="button" class="tool sandbox-only" id="tide-speed"><svg class="i"><use href="#i-clock"/></svg><span id="tide-speed-label">Tide ×1</span></button>
   </div>
+
+  <div class="toast glass" id="toast" hidden></div>
 </section>
 
-<div class="overlay" id="results" hidden>
-  <div class="card" role="dialog" aria-labelledby="res-title">
+<div class="sheet-backdrop" id="sheet-beaches" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="beaches-title">
+    <header class="sheet-head">
+      <h2 id="beaches-title">Beaches</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="cards" id="cards"></div>
+  </section>
+</div>
+
+<div class="sheet-backdrop" id="sheet-howto" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="howto-title" style="width: min(100%, 760px)">
+    <header class="sheet-head">
+      <h2 id="howto-title">How to play</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="steps">
+      <div class="step"><span class="badge"><svg class="i"><use href="#i-dig"/></svg></span><div><h3>Dig with your finger</h3><p>Drag across the sand to carve a channel. The sand piles up along its edges. Use more fingers to dig faster.</p></div></div>
+      <div class="step"><span class="badge"><svg class="i"><use href="#i-moon"/></svg></span><div><h3>The tide comes in</h3><p>It starts rising the moment you dig. Waves wash up the beach and fill anything that lies low enough.</p></div></div>
+      <div class="step"><span class="badge"><svg class="i"><use href="#i-wave"/></svg></span><div><h3>Water shapes the sand</h3><p>Fast water carves, slow water drops its sand, and thin walls collapse. Freshly dug sand holds a steep edge until it dries.</p></div></div>
+      <div class="step"><span class="badge"><svg class="i"><use href="#i-build"/></svg></span><div><h3>Keep the water in</h3><p>Stars come from how full the pools are once the tide goes back out. Use Build to pile sand into a pool’s gap after it fills.</p></div></div>
+      <div class="step" style="grid-column: 1 / -1"><span class="badge"><svg class="i"><use href="#i-depth"/></svg></span><div><h3>Check your depth</h3><p>Turn on Depth to tint the sand the high tide can reach. If your channel is tinted all the way from the sea to the pool, the water will get there.</p></div></div>
+    </div>
+  </section>
+</div>
+
+<div class="sheet-backdrop" id="sheet-pause" hidden>
+  <section class="sheet narrow" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+    <header class="sheet-head"><h2 id="pause-title">Paused</h2></header>
+    <div class="list">
+      <button type="button" class="btn btn-primary" id="resume"><svg class="i fill"><use href="#i-play"/></svg>Resume</button>
+      <button type="button" class="row-btn" id="restart"><svg class="i"><use href="#i-restart"/></svg>Start this beach again</button>
+      <button type="button" class="row-btn" id="sw-depth" role="switch" aria-checked="false"><svg class="i"><use href="#i-depth"/></svg>Depth view<span class="switch"></span></button>
+      <button type="button" class="row-btn" id="sw-sound" role="switch" aria-checked="true"><svg class="i"><use href="#i-sound"/></svg>Sound<span class="switch"></span></button>
+      <button type="button" class="row-btn" id="quit"><svg class="i"><use href="#i-exit"/></svg>Leave this beach</button>
+    </div>
+  </section>
+</div>
+
+<div class="sheet-backdrop" id="sheet-results" hidden>
+  <section class="sheet narrow result" role="dialog" aria-modal="true" aria-labelledby="res-title">
+    <div class="eyebrow" id="res-eyebrow">Beach 1 · First Dig</div>
     <div class="big-stars" id="res-stars"></div>
     <h2 id="res-title">The tide has gone out</h2>
-    <div class="pool-results" id="res-pools"></div>
+    <div class="pool-rows" id="res-pools"></div>
     <p id="res-text"></p>
-    <div class="row">
-      <button type="button" class="primary" id="res-next">Next beach</button>
-      <button type="button" id="res-retry">Try again</button>
-      <button type="button" id="res-menu">All beaches</button>
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="res-next">Next beach</button>
+      <button type="button" class="btn btn-quiet" id="res-retry">Try again</button>
+      <button type="button" class="btn btn-quiet" id="res-menu">Beaches</button>
     </div>
-  </div>
+  </section>
 </div>
 
 <script>
@@ -600,23 +773,9 @@
     }
   }
 
-  // =====================================================================================
-  // Rendering
-  // =====================================================================================
-  const canvas = document.getElementById('beach'), ctx = canvas.getContext('2d');
+  // Simple 2D renderer: used when WebGL2 isn't available.
   const off = document.createElement('canvas'); off.width = W; off.height = H;
   const octx = off.getContext('2d'), img = octx.createImageData(W, H), px = img.data;
-  let scale = 6, dpr = 1;
-  const particles = [];
-
-  function spray(cx, cy, amount) {
-    if (particles.length > 160) return;
-    const n = Math.min(4, 1 + Math.floor(amount * 6));
-    for (let k = 0; k < n; k++) {
-      const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 7;
-      particles.push({ x: cx + Math.cos(a) * BRUSH * 0.6, y: cy + Math.sin(a) * BRUSH * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, z: 0, vz: 4 + Math.random() * 4, life: 1 });
-    }
-  }
 
   // Display-only masks, softened with a small blur so edges between wet and dry sand, rock and
   // sand don't show the grid's stair steps when scaled up.
@@ -727,94 +886,6 @@
     octx.putImageData(img, 0, 0);
   }
 
-  // Beach cells to canvas pixels. In portrait the beach is turned a quarter turn (sea on the left)
-  // so it fills the screen; the physics doesn't change.
-  const toScreen = (x, y, s) => rotated ? [y * s, (W - x) * s] : [x * s, y * s];
-  function draw() {
-    renderBeach();
-    const s = scale * dpr;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (rotated) ctx.setTransform(0, -1, 1, 0, 0, canvas.height);
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(off, 0, 0, W * s, H * s);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    // flying sand
-    for (let k = particles.length - 1; k >= 0; k--) {
-      const p = particles[k];
-      p.x += p.vx / 60; p.y += p.vy / 60; p.vz -= 30 / 60; p.z = Math.max(0, p.z + p.vz / 60); p.life -= 1 / 40;
-      if (p.life <= 0 || (p.z === 0 && p.vz < 0)) { particles.splice(k, 1); continue; }
-      const [qx, qy] = toScreen(p.x, p.y, s);
-      ctx.fillStyle = `rgba(170,140,95,${Math.min(1, p.life * 1.4)})`;
-      ctx.beginPath(); ctx.arc(qx, qy - p.z * 0.6 * s, Math.max(1.2, s * 0.22), 0, 7); ctx.fill();
-    }
-    // pool fill labels
-    if (!level.sandbox) {
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `700 ${Math.round(Math.max(13, s * 2.1))}px system-ui, sans-serif`;
-      pools.forEach(p => {
-        p.shown += (poolFill(p) - p.shown) * 0.12;   // ease the number so sloshing doesn't make it jitter
-        const f = p.shown, [x, y] = toScreen(p.x, p.y, s);
-        ctx.lineWidth = Math.max(2, s * 0.35);
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.beginPath(); ctx.arc(x, y, (POOL_R + RIM_W + 1) * s, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = f >= 0.78 ? '#7ee0a8' : f >= 0.22 ? '#ffffff' : 'rgba(255,255,255,0.0)';
-        ctx.beginPath(); ctx.arc(x, y, (POOL_R + RIM_W + 1) * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, f)); ctx.stroke();
-        ctx.fillStyle = 'rgba(8,28,36,0.55)';
-        const label = `${Math.round(f * 100)}%`, tw = ctx.measureText(label).width + s * 1.6;
-        ctx.beginPath(); ctx.roundRect(x - tw / 2, y - s * 1.6, tw, s * 3.2, s * 1.6); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.fillText(label, x, y + 1);
-      });
-    }
-    // finger rings
-    ctx.lineWidth = Math.max(1.5, dpr * 1.5); ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-    for (const f of fingers.values()) { const [qx, qy] = toScreen(f.x, f.y, s); ctx.beginPath(); ctx.arc(qx, qy, BRUSH * s, 0, Math.PI * 2); ctx.stroke(); }
-  }
-
-  let rotated = false;
-  function layout() {
-    const stage = document.getElementById('stage').getBoundingClientRect();
-    const availW = Math.max(100, stage.width - 16), availH = Math.max(100, stage.height - 16);
-    rotated = availH > availW * 1.1;
-    const cw = rotated ? H : W, ch = rotated ? W : H;
-    scale = Math.max(2, Math.min(availW / cw, availH / ch));
-    dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.style.width = `${Math.floor(cw * scale)}px`; canvas.style.height = `${Math.floor(ch * scale)}px`;
-    canvas.width = Math.floor(cw * scale * dpr); canvas.height = Math.floor(ch * scale * dpr);
-    // keep the light coming from the screen's upper left whichever way the beach is turned
-    if (rotated) { LX = 0.62; LY = -0.45; GX = -1.0; GY = 0.7; } else { LX = -0.45; LY = -0.62; GX = 0.7; GY = 1.0; }
-  }
-  window.addEventListener('resize', () => { if (!$('play').hidden) layout(); });
-
-  // =====================================================================================
-  // Input
-  // =====================================================================================
-  function toCell(e) {
-    const r = canvas.getBoundingClientRect();
-    if (rotated) return [W - (e.clientY - r.top) / r.height * W, (e.clientX - r.left) / r.width * H];
-    return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H];
-  }
-  let lastBuzz = 0;
-  canvas.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
-    const [x, y] = toCell(e);
-    fingers.set(e.pointerId, { x, y, px: x, py: y });
-    audio.start();
-    hideToast();
-  });
-  canvas.addEventListener('pointermove', e => {
-    const f = fingers.get(e.pointerId); if (!f) return;
-    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    const last = evs[evs.length - 1] || e;
-    const [x, y] = toCell(last); f.x = x; f.y = y;
-    const now = performance.now();
-    if (tool === 'dig' && now - lastBuzz > 90 && navigator.vibrate) { lastBuzz = now; try { navigator.vibrate(6); } catch {} }
-  });
-  const lift = e => { fingers.delete(e.pointerId); };
-  canvas.addEventListener('pointerup', lift);
-  canvas.addEventListener('pointercancel', lift);
-  canvas.addEventListener('contextmenu', e => e.preventDefault());
-
   // =====================================================================================
   // Sound: surf made from filtered noise that swells with each wave, plus a sandy scrape
   // while digging. Starts on the first touch (browsers require that).
@@ -856,162 +927,708 @@
   };
 
   // =====================================================================================
-  // Screens and controls
+  // Rendering. The beach is drawn on the GPU (WebGL2): every pixel samples the simulation
+  // fields with smooth filtering and gets its own lighting, sand grain, wind ripples, rock
+  // texture, water colour by depth, moving ripples, sun glints, caustics and foam. Devices
+  // without WebGL2 fall back to the simpler 2D renderer above.
   // =====================================================================================
   const $ = id => document.getElementById(id);
-  let levelIndex = 0;
+  let worldCanvas = $('world');
+  const overlay = $('overlay'), ov = overlay.getContext('2d');
 
-  function showMenu() {
-    stopLoop();
-    $('menu').hidden = false; $('play').hidden = true; $('results').hidden = true;
-    let open = 0; while (open < LEVELS.length && store.stars[open]) open++;
-    const tiles = LEVELS.map((def, i) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'tile'; b.id = `beach-${i + 1}`;
-      b.disabled = i > open;
-      const st = store.stars[i] || 0;
-      b.innerHTML = `<span class="num">${i + 1}</span><span class="name"></span>` + (b.disabled ? '<span class="locked">Locked</span>' :
-        `<span class="stars" aria-label="${st} of 3 stars">${'★'.repeat(st)}<span class="off">${'★'.repeat(3 - st)}</span></span>`);
-      b.querySelector('.name').textContent = def.name;
-      b.onclick = () => startLevel(i);
-      return b;
+  const particles = [];
+  function spray(cx, cy, amount) {
+    if (particles.length > 160) return;
+    const n = Math.min(4, 1 + Math.floor(amount * 6));
+    for (let k = 0; k < n; k++) {
+      const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 7;
+      particles.push({ x: cx + Math.cos(a) * BRUSH * 0.6, y: cy + Math.sin(a) * BRUSH * 0.6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, z: 0, vz: 4 + Math.random() * 4, life: 1 });
+    }
+  }
+
+  const VS = `#version 300 es
+in vec2 aPos;
+uniform vec2 uRes;
+out vec2 vPix;
+void main() {
+  vPix = vec2((aPos.x * 0.5 + 0.5) * uRes.x, (0.5 - aPos.y * 0.5) * uRes.y);
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+  const FS = `#version 300 es
+precision highp float;
+uniform sampler2D uA, uB, uS;
+uniform vec2 uSize, uRes;
+uniform vec3 uRowX, uRowY, uL;
+uniform float uTime, uHigh, uDepth, uVignette, uSunRise;
+in vec2 vPix;
+out vec4 outColor;
+
+vec4 tA(vec2 p) { return texture(uA, (p + 0.5) / uSize); }
+vec4 tB(vec2 p) { return texture(uB, (p + 0.5) / uSize); }
+float tS(vec2 p) { return texture(uS, (p + 0.5) / uSize).r; }
+
+float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int k = 0; k < 3; k++) { v += a * vnoise(p); p = p * 2.07 + 13.7; a *= 0.5; } return v; }
+// Soft shadows: walk toward the sun through the smoothed height field.
+float sunShadow(vec2 p, float h0) {
+  vec2 dir = normalize(uL.xy);
+  float s = 0.0, j = hash(vPix);   // a little per-pixel jitter hides the step pattern
+  for (int k = 1; k <= 11; k++) {
+    float d = (float(k) + j - 0.5) * 0.8;
+    float hq = tA(p + dir * d).r;
+    s = max(s, clamp((hq - (h0 + 0.04 + d * uSunRise)) * 1.4, 0.0, 1.0));
+  }
+  return s;
+}
+vec2 ngrad(vec2 p) { float c = vnoise(p); return vec2(vnoise(p + vec2(0.15, 0.0)) - c, vnoise(p + vec2(0.0, 0.15)) - c) / 0.15; }
+
+void main() {
+  vec3 pix = vec3(vPix, 1.0);
+  vec2 p = vec2(dot(uRowX, pix), dot(uRowY, pix));
+  vec2 pc = clamp(p, vec2(0.0), uSize - 1.0);
+  float outside = length(p - pc);
+
+  vec4 a = tA(pc), b = tB(pc);
+  vec4 ax = tA(pc + vec2(1.0, 0.0)), aX = tA(pc - vec2(1.0, 0.0)), ay = tA(pc + vec2(0.0, 1.0)), aY = tA(pc - vec2(0.0, 1.0));
+  float g = a.r, w = a.g, wetv = a.b, foam = a.a;
+  float relief = b.r, shade = sunShadow(pc, a.r);
+  // crisp, smooth outlines for rock and the pool basins
+  float rock = smoothstep(0.28, 0.62, b.g), pool = smoothstep(0.28, 0.62, b.b);
+  vec2 grad = vec2(ax.r - aX.r, ay.r - aY.r) * 0.5;
+  float dug = max(0.0, tS(pc) - g);
+  float t = uTime;
+
+  // Fine surface detail: wind ripples on dry, untouched sand; bumpy texture on rock.
+  float untouched = (1.0 - smoothstep(0.04, 0.25, dug)) * (1.0 - smoothstep(0.35, 0.85, wetv)) * (1.0 - rock) * (1.0 - pool);
+  vec2 rdir = vec2(0.62, 1.85);
+  float phase = dot(p, rdir) * 1.55 + fbm(p * 0.28) * 6.0;
+  vec2 detail = rdir * 1.55 * cos(phase) * 0.03 * untouched;
+  if (rock > 0.01) detail += ngrad(p * 1.4) * 0.22 * rock;
+  vec3 n = normalize(vec3(-(grad + detail) * 1.9, 1.0));
+
+  // Materials: sun-bleached sand darkening as it gets wet and as you dig deeper; rock; pool stone.
+  float grain = 0.6 * hash(floor(vPix * 0.8)) + 0.4 * vnoise(p * 6.0);
+  vec3 sandC = mix(vec3(0.93, 0.84, 0.66), vec3(0.68, 0.56, 0.39), smoothstep(0.0, 1.0, wetv));
+  sandC = mix(sandC, vec3(0.54, 0.42, 0.28), clamp(dug / 3.6, 0.0, 0.55));
+  sandC *= 0.93 + 0.12 * grain;
+  sandC *= mix(vec3(1.0), vec3(1.04, 1.0, 0.93), fbm(p * 0.12));
+  vec3 rockC = mix(vec3(0.36, 0.35, 0.33), vec3(0.62, 0.60, 0.56), fbm(p * 0.8)) * (0.84 + 0.2 * vnoise(p * 3.5) + 0.08 * grain);
+  vec3 poolC = mix(vec3(0.27, 0.31, 0.30), vec3(0.21, 0.33, 0.24), smoothstep(0.35, 0.7, fbm(p * 0.55 + 4.0)));
+  vec3 albedo = mix(mix(sandC, rockC, rock), poolC, pool);
+
+  vec3 sunC = vec3(1.0, 0.95, 0.86);
+  float diff = max(dot(n, uL), 0.0);
+  float ao = clamp(1.0 + relief * 0.3, 0.7, 1.16);
+  float sh = 1.0 - 0.52 * shade;
+  vec3 lit = albedo * (vec3(0.50, 0.56, 0.62) * (0.55 + 0.45 * n.z) * 0.64 * ao + sunC * diff * 0.86 * sh);
+
+  vec3 col = lit;
+  if (w > 0.003) {
+    // water surface: the simulated slope plus small moving ripples
+    // water slope over a wider span, so tiny cell-to-cell sloshing doesn't show as blocks
+    vec2 sgrad = grad + vec2(tA(pc + vec2(2.0, 0.0)).g - tA(pc - vec2(2.0, 0.0)).g, tA(pc + vec2(0.0, 2.0)).g - tA(pc - vec2(0.0, 2.0)).g) * 0.25;
+    vec2 rip = ngrad(p * 0.8 + vec2(t * 0.35, t * 0.22)) + ngrad(p * 1.7 - vec2(t * 0.42, -t * 0.3)) * 0.6;
+    vec3 wn = normalize(vec3(-(sgrad * 1.2 + rip * clamp(w * 1.5, 0.0, 1.0) * 0.12), 1.0));
+    // caustics dancing on the bed of shallow water
+    vec2 pr = p + wn.xy * min(w, 1.2) * 1.4;
+    float c1 = vnoise(pr * 0.75 + vec2(t * 0.30, t * 0.21)), c2 = vnoise(pr * 1.05 - vec2(t * 0.25, -t * 0.33) + 5.1);
+    float caus = pow(clamp(1.0 - abs(c1 - c2) * 2.6, 0.0, 1.0), 5.0) * exp(-w * 1.0) * smoothstep(0.12, 0.4, w);
+    vec3 bed = lit * (1.0 + caus * 0.5);
+    // light absorbed with depth: shallows turn turquoise, deep water dark teal
+    vec3 trans = exp(-w * vec3(2.1, 0.66, 0.44));
+    vec3 wc = bed * trans + vec3(0.035, 0.27, 0.34) * (1.0 - trans);
+    float fres = 0.02 + 0.98 * pow(1.0 - wn.z, 5.0);
+    wc = mix(wc, vec3(0.70, 0.85, 0.92), clamp(fres * 1.5 + 0.05, 0.0, 0.5));
+    vec3 hv = normalize(uL + vec3(0.0, 0.0, 1.0));
+    float nh = max(dot(wn, hv), 0.0);
+    wc += sunC * (pow(nh, 220.0) * 2.4 + pow(nh, 30.0) * 0.08) * smoothstep(0.0, 0.1, w);
+    // lacy foam on fast water and breaking waves
+    float lace = vnoise(p * 0.45 + vec2(t * 0.12, -t * 0.09)) * 0.65 + vnoise(p * 1.1 - vec2(t * 0.2, 0.0)) * 0.35;
+    float fm = smoothstep(0.25, 1.1, foam) * smoothstep(0.3, 0.7, lace + foam * 0.25) * smoothstep(0.0, 0.04, w);
+    wc = mix(wc, vec3(0.95, 0.98, 0.98) * (0.86 + 0.14 * diff), fm * 0.85);
+    col = mix(lit, wc, smoothstep(0.008, 0.07, w));
+  } else if (foam > 0.05) {
+    float lace = vnoise(p * 0.45) * 0.65 + vnoise(p * 1.1) * 0.35;
+    col = mix(col, vec3(0.92, 0.94, 0.92), smoothstep(0.25, 1.1, foam) * smoothstep(0.4, 0.75, lace) * 0.4);
+  }
+
+  if (uDepth > 0.5) {
+    // sand the high tide can reach turns blue-grey; contour lines every unit of height
+    float below = (1.0 - rock) * smoothstep(uHigh + 0.12, uHigh - 0.12, g) * (1.0 - smoothstep(0.02, 0.12, w));
+    col = mix(col, vec3(0.36, 0.55, 0.70), below * 0.6);
+    float d = abs(fract(g + 0.5) - 0.5) / max(fwidth(g), 1e-4);
+    col *= 1.0 - 0.3 * (1.0 - smoothstep(0.5, 1.5, d)) * (1.0 - smoothstep(0.03, 0.2, w));
+  }
+
+  col = mix(col, vec3(0.02, 0.09, 0.11), clamp(outside * 0.08, 0.0, 0.9));
+  vec2 uv = vPix / uRes - 0.5;
+  col *= 1.0 - uVignette * smoothstep(0.3, 0.85, length(uv * vec2(1.0, 0.85)));
+  outColor = vec4(col, 1.0);
+}`;
+
+  let gl = null, ctx2d = null, U = {}, texA = null, texB = null, texS = null, staticDirty = true;
+  const bufA = new Float32Array(N * 4), bufB = new Float32Array(N * 4);
+  const LZ_GL = 0.55;
+
+  function makeTex(internal, format) {
+    const tx = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tx);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internal, W, H, 0, format, gl.HALF_FLOAT, null);
+    return tx;
+  }
+  function initGL() {
+    let g = null;
+    try { g = worldCanvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' }); } catch { g = null; }
+    if (!g) return false;
+    gl = g;
+    const shader = (type, src) => {
+      const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.warn(gl.getShaderInfoLog(s)); return null; }
+      return s;
+    };
+    const vs = shader(gl.VERTEX_SHADER, VS), fs = shader(gl.FRAGMENT_SHADER, FS);
+    if (!vs || !fs) return failGL();
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.warn(gl.getProgramInfoLog(prog)); return failGL(); }
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'aPos');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    for (const k of ['uA', 'uB', 'uS', 'uSize', 'uRes', 'uRowX', 'uRowY', 'uL', 'uTime', 'uHigh', 'uDepth', 'uVignette', 'uSunRise']) U[k] = gl.getUniformLocation(prog, k);
+    gl.activeTexture(gl.TEXTURE0); texA = makeTex(gl.RGBA16F, gl.RGBA);
+    gl.activeTexture(gl.TEXTURE1); texB = makeTex(gl.RGBA16F, gl.RGBA);
+    gl.activeTexture(gl.TEXTURE2); texS = makeTex(gl.R16F, gl.RED);
+    gl.uniform1i(U.uA, 0); gl.uniform1i(U.uB, 1); gl.uniform1i(U.uS, 2);
+    gl.uniform2f(U.uSize, W, H);
+    staticDirty = true;
+    return true;
+  }
+  function failGL() {
+    gl = null;
+    // a canvas that already has a WebGL context can't switch to 2D, so swap in a fresh one
+    const c = document.createElement('canvas');
+    c.id = 'world'; c.setAttribute('aria-label', worldCanvas.getAttribute('aria-label'));
+    worldCanvas.replaceWith(c); worldCanvas = c; bindWorldInput();
+    return false;
+  }
+
+  // Water at the very edge of the swash flicks between wet and dry from one frame to the next;
+  // averaging over neighbouring cells and the last few frames gives a calm, natural edge.
+  const waterS = new Float32Array(N), foamS = new Float32Array(N), groundD = new Float32Array(N);
+  let fieldsFresh = true;
+  function prepareFields(instant) {
+    for (let i = 0; i < N; i++) {
+      ground[i] = bed[i] + sand[i];
+      const s = sand[i], k = kind[i];
+      wetD[i] = wet[i];
+      rockD[i] = k === 1 ? Math.max(0, 1 - s / 0.3) : 0;
+      poolD[i] = k === 2 ? Math.max(0, 1 - s / 0.3) : 0;
+    }
+    waterD.set(water); foamD.set(foam);
+    blur3(wetD); blur3(rockD); blur3(poolD); blur3(waterD); blur3(waterD); blur3(foamD); blur3(foamD); blur3(foamD);
+    const keep = instant || fieldsFresh ? 0 : 0.55;
+    for (let i = 0; i < N; i++) {
+      waterS[i] = waterS[i] * keep + waterD[i] * (1 - keep);
+      foamS[i] = foamS[i] * keep + foamD[i] * (1 - keep);
+    }
+    fieldsFresh = false;
+    groundD.set(ground); blur3(groundD);   // round off the grid's stair steps for drawing
+    if (instant || (renderCount++ & 1) === 0) {
+      smoothG.set(ground); blur3(smoothG); blur3(smoothG);
+      for (let i = 0; i < N; i++) relief[i] = ground[i] - smoothG[i];
+    }
+  }
+  function uploadGL() {
+    for (let i = 0, j = 0; i < N; i++, j += 4) {
+      bufA[j] = groundD[i]; bufA[j + 1] = waterS[i]; bufA[j + 2] = wetD[i]; bufA[j + 3] = foamS[i];
+      bufB[j] = relief[i]; bufB[j + 1] = rockD[i]; bufB[j + 2] = poolD[i]; bufB[j + 3] = 0;
+    }
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.FLOAT, bufA);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.FLOAT, bufB);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, texS);
+    if (staticDirty) { gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RED, gl.FLOAT, startGround); staticDirty = false; }
+  }
+  function drawGL(vw, vh, rowX, rowY, time, depth, vignette) {
+    gl.viewport(0, 0, vw, vh);
+    gl.uniform2f(U.uRes, vw, vh);
+    gl.uniform3fv(U.uRowX, rowX); gl.uniform3fv(U.uRowY, rowY);
+    const l = Math.hypot(LX, LY, LZ_GL);
+    gl.uniform3f(U.uL, LX / l, LY / l, LZ_GL / l);
+    gl.uniform1f(U.uTime, time); gl.uniform1f(U.uHigh, level.high);
+    gl.uniform1f(U.uDepth, depth ? 1 : 0); gl.uniform1f(U.uVignette, vignette); gl.uniform1f(U.uSunRise, SUN_RISE);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  // ---- view: the beach covers the screen (cropping a little if needed); in portrait it is
+  //      turned a quarter turn, sea on the left, so it fills the tall screen ----
+  const view = { w: 1, h: 1, s: 8, ox: 0, oy: 0, rotated: false, rs: 1, dpr: 1 };
+  const deviceRatio = () => window.devicePixelRatio || 1;
+  let renderScale = Math.min(deviceRatio(), 1.5);
+  const maxRenderScale = () => Math.min(deviceRatio(), 2);
+
+  function layout() {
+    const w = window.innerWidth, h = window.innerHeight, rot = h > w * 1.1;
+    const dw = rot ? H : W, dh = rot ? W : H;
+    const cover = Math.max(w / dw, h / dh), contain = Math.min(w / dw, h / dh);
+    const s = cover / contain <= 1.16 ? cover : contain;
+    Object.assign(view, { w, h, s, rotated: rot, ox: (w - dw * s) / 2, oy: (h - dh * s) / 2 });
+    if (rot) { LX = 0.62; LY = -0.45; GX = -1.0; GY = 0.7; } else { LX = -0.45; LY = -0.62; GX = 0.7; GY = 1.0; }
+    $('dock').classList.toggle('side', !rot); $('dock').classList.toggle('bottom', rot);
+    sizeCanvases();
+  }
+  function sizeCanvases() {
+    view.rs = renderScale; view.dpr = Math.min(2, deviceRatio());
+    worldCanvas.width = Math.max(1, Math.round(view.w * view.rs)); worldCanvas.height = Math.max(1, Math.round(view.h * view.rs));
+    overlay.width = Math.round(view.w * view.dpr); overlay.height = Math.round(view.h * view.dpr);
+  }
+  window.addEventListener('resize', layout);
+  const worldToCss = (x, y) => view.rotated ? [view.ox + y * view.s, view.oy + (W - x) * view.s] : [view.ox + x * view.s, view.oy + y * view.s];
+  const cssToWorld = (cx, cy) => view.rotated ? [W - (cy - view.oy) / view.s, (cx - view.ox) / view.s] : [(cx - view.ox) / view.s, (cy - view.oy) / view.s];
+  function viewRows() {
+    const k = 1 / (view.rs * view.s);
+    return view.rotated
+      ? [[0, -k, W + view.oy / view.s], [k, 0, -view.ox / view.s]]
+      : [[k, 0, -view.ox / view.s], [0, k, -view.oy / view.s]];
+  }
+
+  function render() {
+    const showDepth = depthView && scene === 'play';
+    if (gl) {
+      prepareFields(false); uploadGL();
+      const [rx, ry] = viewRows();
+      drawGL(worldCanvas.width, worldCanvas.height, rx, ry, clock, showDepth, 0.24);
+    } else if (ctx2d) {
+      const keep = depthView; depthView = showDepth; renderBeach(); depthView = keep;
+      const c = ctx2d, k = view.s * view.rs;
+      c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = '#05181e'; c.fillRect(0, 0, worldCanvas.width, worldCanvas.height);
+      if (view.rotated) c.setTransform(0, -k, k, 0, view.ox * view.rs, (view.oy + W * view.s) * view.rs);
+      else c.setTransform(k, 0, 0, k, view.ox * view.rs, view.oy * view.rs);
+      c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+      c.drawImage(off, 0, 0);
+    }
+    drawOverlay();
+  }
+
+  // ---- overlay: flying sand, finger rings, pool gauges and the first-beach guide ----
+  const STAR_AT = [0.22, 0.48, 0.78];
+  function drawOverlay() {
+    const d = view.dpr, s = view.s;
+    ov.setTransform(1, 0, 0, 1, 0, 0); ov.clearRect(0, 0, overlay.width, overlay.height);
+    ov.setTransform(d, 0, 0, d, 0, 0);
+    for (let k = particles.length - 1; k >= 0; k--) {
+      const p = particles[k];
+      p.x += p.vx / 60; p.y += p.vy / 60; p.vz -= 0.5; p.z = Math.max(0, p.z + p.vz / 60); p.life -= 1 / 40;
+      if (p.life <= 0 || (p.z === 0 && p.vz < 0)) { particles.splice(k, 1); continue; }
+      const [qx, qy] = worldToCss(p.x, p.y);
+      ov.fillStyle = `rgba(214, 186, 136, ${Math.min(1, p.life * 1.4)})`;
+      ov.beginPath(); ov.arc(qx, qy - p.z * 0.6 * s, Math.max(1.3, s * 0.2), 0, Math.PI * 2); ov.fill();
+    }
+    if (scene !== 'play') return;
+    if (!level.sandbox) pools.forEach(drawGauge);
+    for (const f of fingers.values()) {
+      const [qx, qy] = worldToCss(f.x, f.y);
+      ov.lineWidth = 2; ov.strokeStyle = 'rgba(255, 255, 255, 0.6)'; ov.fillStyle = 'rgba(255, 255, 255, 0.07)';
+      ov.beginPath(); ov.arc(qx, qy, BRUSH * s, 0, Math.PI * 2); ov.fill(); ov.stroke();
+    }
+    if (coachOn) drawCoach();
+  }
+
+  function drawGauge(p) {
+    p.shown += (poolFill(p) - p.shown) * 0.12;     // ease the number so sloshing doesn't make it jitter
+    const f = Math.min(1, p.shown), [cx, cy] = worldToCss(p.x, p.y), R = (POOL_R + RIM_W + 1.5) * view.s;
+    const lw = Math.max(5, view.s * 0.55), full = f >= STAR_AT[2];
+    ov.lineCap = 'round';
+    ov.lineWidth = lw; ov.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ov.beginPath(); ov.arc(cx, cy, R, 0, Math.PI * 2); ov.stroke();
+    if (f > 0.004) {
+      ov.strokeStyle = full ? '#f7c75a' : '#6fe0d2';
+      ov.shadowColor = 'rgba(0, 0, 0, 0.3)'; ov.shadowBlur = 6;
+      ov.beginPath(); ov.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * f); ov.stroke();
+      ov.shadowBlur = 0;
+    }
+    for (const at of STAR_AT) {           // a marker on the ring for each star
+      const a = -Math.PI / 2 + Math.PI * 2 * at, mx = cx + Math.cos(a) * R, my = cy + Math.sin(a) * R;
+      ov.fillStyle = f >= at ? '#f7c75a' : 'rgba(5, 24, 30, 0.92)';
+      ov.strokeStyle = f >= at ? 'rgba(5, 24, 30, 0.6)' : 'rgba(255, 255, 255, 0.75)'; ov.lineWidth = 1.5;
+      ov.beginPath(); ov.arc(mx, my, lw * 0.75, 0, Math.PI * 2); ov.fill(); ov.stroke();
+    }
+    const label = `${Math.round(f * 100)}%`;
+    ov.font = '700 14px Figtree, system-ui, sans-serif';
+    const tw = ov.measureText(label).width + 18, th = 26, ly = cy + R + lw / 2 + 8;
+    ov.fillStyle = 'rgba(5, 24, 30, 0.8)';
+    ov.beginPath(); ov.roundRect(cx - tw / 2, ly, tw, th, th / 2); ov.fill();
+    ov.fillStyle = full ? '#f7c75a' : '#ffffff'; ov.textAlign = 'center'; ov.textBaseline = 'middle';
+    ov.fillText(label, cx, ly + th / 2 + 0.5);
+  }
+
+  // A ghost finger tracing the first channel, shown on the first beach until you dig.
+  let coachOn = false;
+  function drawCoach() {
+    const route = level.routes && level.routes[0];
+    if (!route || !pools[0]) return;
+    // start in the sea, then follow the route to the pool's gap
+    const pts = [worldToCss(route[0][0] * W, 0.3 * H), ...route.map(([fx, fy]) => worldToCss(fx * W, fy * H)), worldToCss(pools[0].notch.x, pools[0].notch.y)];
+    const lens = []; let total = 0;
+    for (let k = 1; k < pts.length; k++) { const l = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); lens.push(l); total += l; }
+    const T = 2.8, ph = (performance.now() / 1000 % T) / T;
+    const move = Math.min(1, Math.max(0, (ph - 0.12) / 0.62)), e = move < 0.5 ? 2 * move * move : 1 - Math.pow(-2 * move + 2, 2) / 2;
+    let dist = e * total, k = 0;
+    while (k < lens.length - 1 && dist > lens[k]) { dist -= lens[k]; k++; }
+    const tt = lens[k] ? dist / lens[k] : 0;
+    const fx = pts[k][0] + (pts[k + 1][0] - pts[k][0]) * tt, fy = pts[k][1] + (pts[k + 1][1] - pts[k][1]) * tt;
+    const alpha = ph < 0.08 ? ph / 0.08 : ph > 0.86 ? Math.max(0, 1 - (ph - 0.86) / 0.12) : 1;
+    ov.save(); ov.globalAlpha = alpha;
+    ov.setLineDash([2, 12]); ov.lineCap = 'round'; ov.lineWidth = 5; ov.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ov.beginPath(); ov.moveTo(pts[0][0], pts[0][1]);
+    for (let j = 1; j <= k; j++) ov.lineTo(pts[j][0], pts[j][1]);
+    ov.lineTo(fx, fy); ov.stroke(); ov.setLineDash([]);
+    const press = ph > 0.06 && ph < 0.8 ? 1 : 0.7;
+    ov.shadowColor = 'rgba(0, 0, 0, 0.35)'; ov.shadowBlur = 14; ov.shadowOffsetY = 4;
+    ov.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ov.beginPath(); ov.arc(fx, fy, 16 * press + 4, 0, Math.PI * 2); ov.fill();
+    ov.shadowBlur = 0; ov.shadowOffsetY = 0;
+    ov.strokeStyle = 'rgba(255, 255, 255, 0.5)'; ov.lineWidth = 2;
+    ov.beginPath(); ov.arc(fx, fy, 30 + 10 * (1 - press), 0, Math.PI * 2); ov.stroke();
+    ov.restore();
+  }
+
+  // =====================================================================================
+  // Input: fingers on the beach dig, build or smooth
+  // =====================================================================================
+  let lastBuzz = 0;
+  function bindWorldInput() {
+    worldCanvas.addEventListener('pointerdown', e => {
+      audio.start();
+      if (scene !== 'play' || paused || finished) return;
+      e.preventDefault();
+      try { worldCanvas.setPointerCapture(e.pointerId); } catch {}
+      const [x, y] = cssToWorld(e.clientX, e.clientY);
+      fingers.set(e.pointerId, { x, y, px: x, py: y });
+      if (coachOn || !toastSticky) hideToast();
     });
-    const sb = document.createElement('button'); sb.type = 'button'; sb.className = 'tile sandbox'; sb.id = 'beach-sandbox';
-    sb.innerHTML = '<span><span class="num">Sandbox beach</span><br><span class="name">No pools, no score. Dig, build and play with the tide.</span></span><span class="eyebrow">Free play</span>';
-    sb.onclick = () => startLevel(-1);
-    $('tiles').replaceChildren(...tiles, sb);
+    worldCanvas.addEventListener('pointermove', e => {
+      const f = fingers.get(e.pointerId); if (!f) return;
+      const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      const last = evs[evs.length - 1] || e;
+      [f.x, f.y] = cssToWorld(last.clientX, last.clientY);
+      const now = performance.now();
+      if (tool === 'dig' && now - lastBuzz > 90 && navigator.vibrate) { lastBuzz = now; try { navigator.vibrate(6); } catch {} }
+    });
+    const lift = e => { fingers.delete(e.pointerId); };
+    worldCanvas.addEventListener('pointerup', lift);
+    worldCanvas.addEventListener('pointercancel', lift);
+    worldCanvas.addEventListener('contextmenu', e => e.preventDefault());
+    worldCanvas.addEventListener('webglcontextlost', e => { e.preventDefault(); gl = null; });
+    worldCanvas.addEventListener('webglcontextrestored', () => { initGL(); });
+  }
+
+  // =====================================================================================
+  // Screens
+  // =====================================================================================
+  let scene = 'menu', levelIndex = 0;
+  const HINTS = [
+    'Drag from the sea to the gap in the pool’s rocky rim.',
+    'Two pools this time. Give each one its own channel.',
+    'Rock can’t be dug. Find a way between the boulders.',
+    'A dune stands in the way. Dig deep to get the water through it.',
+    'This pool’s gap faces sideways. Bring your channel round to it.',
+    'The pool sits far up the beach. Start digging early.',
+    'Three pools and one tide. Work quickly.',
+    'A spring tide: the sea comes in higher than ever. Use it.',
+  ];
+
+  function starSvg(on) { return `<svg class="i fill ${on ? 'on' : 'off'}" aria-hidden="true"><use href="#i-star"/></svg>`; }
+  const totalStars = () => LEVELS.reduce((a, _, i) => a + (store.stars[i] || 0), 0);
+  const firstOpen = () => { let i = 0; while (i < LEVELS.length && store.stars[i]) i++; return i; };
+
+  function digPath(path, passes) {
+    for (let p = 0; p < passes; p++) for (let k = 0; k < path.length - 1; k++) {
+      const [ax, ay] = path[k], [bx, by] = path[k + 1];
+      const len = Math.hypot((bx - ax) * W, (by - ay) * H), n = Math.ceil(len / 0.9);
+      for (let s = 0; s <= n; s++) stamp((ax + (bx - ax) * s / n) * W, (ay + (by - ay) * s / n) * H, 'dig', DIG_RATE * 0.55);
+    }
+  }
+  // the reference dig for pool k: its route, then on through the gap to the pool's edge
+  function digRoute(k, passes) {
+    const r = level.routes[k], p = pools[k];
+    const inner = [(p.x + (p.notch.x - p.x) * 0.7) / W, (p.y + (p.notch.y - p.y) * 0.7) / H];
+    digPath([...r, [p.notch.x / W, p.notch.y / H], inner], passes);
+  }
+
+  // The title screen shows a living beach: three channels already dug, the tide flowing in and out.
+  const MENU_BEACH = { ...LEVELS[6], sandbox: true, tide: 64 };
+  function startMenuScene() {
+    level = MENU_BEACH; buildBeach(level); staticDirty = true; fieldsFresh = true;
+    level.routes.forEach((_, k) => digRoute(k, 6));
+    tideOn = true; tideT = level.tide * 0.3; clock = 0; finished = false; paused = false; tideRate = 1; waveBoost = 0;
+    seaLevel = tideLevel(tideT);
+    for (let k = 0; k < 40; k++) for (let s = 0; s < SUBSTEPS; s++) waterStep(DT);
+    fingers.clear(); particles.length = 0; coachOn = false;
+  }
+
+  function show(name) {
+    scene = name;
+    $('menu').hidden = name !== 'menu';
+    $('hud').hidden = name !== 'play';
+    closeSheets();
+  }
+  function goMenu() {
+    startMenuScene(); show('menu'); refreshMenu(); startLoop();
+  }
+  function refreshMenu() {
+    const i = Math.min(firstOpen(), LEVELS.length - 1), any = totalStars() > 0;
+    $('cont-k').textContent = !any ? 'Start' : firstOpen() >= LEVELS.length ? 'Play again' : 'Continue';
+    $('cont-sub').textContent = `Beach ${i + 1} · ${LEVELS[i].name}`;
+    $('continue').dataset.level = i;
+    $('stars-total').lastElementChild.textContent = `${totalStars()} of ${LEVELS.length * 3}`;
   }
 
   function startLevel(i) {
     levelIndex = i; level = i < 0 ? SANDBOX : LEVELS[i];
-    buildBeach(level);
+    buildBeach(level); staticDirty = true; fieldsFresh = true;
     tideOn = false; tideT = 0; clock = 0; finished = false; paused = false; tideRate = 1; waveBoost = 0;
     seaLevel = level.low;
-    for (let k = 0; k < 90; k++) { simFrameQuiet(); }   // let the sea settle before play
+    for (let k = 0; k < 90; k++) simFrameQuiet();
     fingers.clear(); particles.length = 0;
-    $('menu').hidden = true; $('play').hidden = false; $('results').hidden = true;
-    $('level-num').textContent = level.sandbox ? 'Free play' : `Beach ${i + 1} of ${LEVELS.length}`;
+    show('play');
+    const hud = $('hud'); hud.classList.toggle('is-sandbox', !!level.sandbox);
+    $('level-num').textContent = level.sandbox ? 'Free play' : `Beach ${i + 1}`;
     $('level-name').textContent = level.name;
-    $('sandbox-tools').hidden = !level.sandbox;
-    $('tide-speed').textContent = 'Tide: normal';
-    setPaused(false);
-    drawTideCurve();
-    showToast(level.sandbox ? 'Dig, build and play. The tide comes and goes forever here.'
-      : pools.length > 1 ? 'Dig channels from the sea to each rock pool. The tide starts rising when you dig.'
-      : 'Dig a channel from the sea to the rock pool. The tide starts rising when you dig.');
+    $('tide-speed-label').textContent = 'Tide ×1';
+    drawTideCurve(); lastMeter = -1;
+    coachOn = i === 0;
+    showToast(level.sandbox ? 'No pools and no score. Dig, build and send in waves.' : HINTS[i], coachOn);
     layout();
     startLoop();
   }
   function simFrameQuiet() { // settle the sea without advancing the game clock
     seaLevel = tideLevel(0);
-    for (let s = 0; s < SUBSTEPS; s++) { waterStep(DT); }
+    for (let s = 0; s < SUBSTEPS; s++) waterStep(DT);
     foamAndWet(DT);
   }
-  function startTide() { tideOn = true; }
+  function startTide() {
+    if (!tideOn) { tideOn = true; if (coachOn) { coachOn = false; hideToast(); } }
+  }
 
   function finish() {
-    finished = true;
-    hideToast();
+    finished = true; hideToast(); fingers.clear();
+    pools.forEach(p => { p.shown = poolFill(p); });
     const f = fills(), avg = f.reduce((a, b) => a + b, 0) / f.length, st = starsFor(avg);
     store.stars[levelIndex] = Math.max(store.stars[levelIndex] || 0, st); saveStore();
-    $('res-stars').innerHTML = `${'★'.repeat(st)}<span class="off">${'★'.repeat(3 - st)}</span>`;
+    $('res-eyebrow').textContent = `Beach ${levelIndex + 1} · ${level.name}`;
+    $('res-stars').innerHTML = [0, 1, 2].map(k => starSvg(k < st)).join('');
     $('res-stars').setAttribute('aria-label', `${st} of 3 stars`);
-    $('res-title').textContent = st ? 'The tide has gone out' : 'The pools ran dry';
-    $('res-pools').innerHTML = f.map((v, k) => `<span>Pool ${k + 1}: ${Math.round(v * 100)}% full</span>`).join('');
+    $('res-title').textContent = ['The pools ran dry', 'A good start', 'Nicely done', 'Brimming'][st];
+    $('res-pools').innerHTML = f.map((v, k) => {
+      const pct = Math.round(v * 100);
+      return `<div class="pool-row"><span>Pool ${k + 1}</span><span class="bar"><i class="${v >= STAR_AT[2] ? 'full' : ''}" style="width:${Math.max(2, pct)}%"></i></span><span class="pct">${pct}%</span></div>`;
+    }).join('');
     const silted = pools.map(poolSilt).findIndex(v => v > 0.15);
-    $('res-text').textContent = st === 3 ? 'Brimming. Beautifully done.'
-      : silted >= 0 ? `Sand washed into pool ${silted + 1} and took up room the water needed. Keep the gap clear and let the water arrive gently.`
-      : st ? 'Pile sand into the gap once a pool is full, so the water can’t drain back out.'
-      : 'Dig deeper, below where the high tide reaches, so the water can flow all the way in.';
+    $('res-text').textContent = st === 3 ? 'Every pool is full to the brim.'
+      : silted >= 0 ? `Sand washed into pool ${silted + 1} and took up room the water needed.`
+      : st ? 'Once a pool fills, pile sand into its gap with Build so the water can’t drain out.'
+      : 'Dig deeper, below the high-tide line, so the water can reach the pools. Depth shows where that is.';
     const last = levelIndex >= LEVELS.length - 1;
     $('res-next').hidden = !st || last;
-    $('results').hidden = false;
-    ($('res-next').hidden ? $('res-retry') : $('res-next')).focus();
+    openSheet('results');
   }
 
   // ---- tide meter ----
-  function drawTideCurve() {
-    let d = '';
-    for (let k = 0; k <= 50; k++) { const t = k / 50; d += `${k ? 'L' : 'M'}${t * 100},${20 - 18 * (0.5 - 0.5 * Math.cos(2 * Math.PI * t))}`; }
-    $('tide-curve').setAttribute('d', d);
+  const curveY = ph => 26 - 22 * (0.5 - 0.5 * Math.cos(2 * Math.PI * ph));
+  function curvePath(to) {
+    let d = ''; const steps = Math.max(1, Math.round(to * 60));
+    for (let k = 0; k <= steps; k++) { const ph = to * k / steps; d += `${k ? 'L' : 'M'}${(ph * 100).toFixed(2)},${curveY(ph).toFixed(2)}`; }
+    return d;
   }
+  function drawTideCurve() { $('tide-curve').setAttribute('d', curvePath(1)); }
   let lastMeter = -1;
-  function updateMeter() {
+  const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  function updateHud() {
+    if (scene !== 'play') return;
     const T = level.tide, ph = level.sandbox ? (tideT % T) / T : Math.min(1, tideT / T);
-    if (Math.abs(ph - lastMeter) < 0.002 && tideOn) return;
-    lastMeter = ph;
-    let d = '';
-    const steps = Math.max(1, Math.round(ph * 50));
-    for (let k = 0; k <= steps; k++) { const t = ph * k / steps; d += `${k ? 'L' : 'M'}${t * 100},${20 - 18 * (0.5 - 0.5 * Math.cos(2 * Math.PI * t))}`; }
-    $('tide-done').setAttribute('d', d);
-    $('tide-dot').style.left = `${ph * 100}%`; $('tide-dot').style.top = `${(20 - 18 * (0.5 - 0.5 * Math.cos(2 * Math.PI * ph))) / 22 * 100}%`;
-    const left = Math.max(0, Math.ceil(T - tideT));
-    $('tide-label').textContent = !tideOn ? 'Low tide · waiting'
-      : level.sandbox ? (ph < 0.45 ? 'Tide rising' : ph < 0.55 ? 'High tide' : 'Tide falling')
-      : tideT >= T ? 'Tide out · settling'
-      : `${ph < 0.45 ? 'Rising' : ph < 0.55 ? 'High tide' : 'Falling'} · ${left}s`;
+    const phaseName = ph < 0.42 ? 'Tide rising' : ph < 0.58 ? 'High tide' : ph < 1 ? 'Tide falling' : 'Tide out';
+    const label = !tideOn ? 'Low tide' : phaseName;
+    const time = !tideOn ? (level.sandbox ? 'Starts when you dig' : 'Dig to begin') : level.sandbox ? (tideRate ? `Speed ×${tideRate}` : 'Paused') : tideT >= T ? 'Settling' : `${fmt(Math.ceil(T - tideT))} left`;
+    if ($('tide-label').textContent !== label) $('tide-label').textContent = label;
+    if ($('tide-time').textContent !== time) $('tide-time').textContent = time;
+    if (Math.abs(ph - lastMeter) > 0.003) {
+      lastMeter = ph;
+      $('tide-done').setAttribute('d', curvePath(ph));
+      const dot = $('tide-dot'); dot.style.left = `${ph * 100}%`; dot.style.top = `${curveY(ph) / 30 * 100}%`;
+    }
   }
 
   // ---- toast ----
-  let toastTimer = 0;
-  function showToast(t) { const el = $('toast'); el.textContent = t; el.hidden = false; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 6000); }
-  function hideToast() { const el = $('toast'); el.style.opacity = 0; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 600); }
+  let toastTimer = 0, toastSticky = false;
+  function showToast(text, sticky = false) {
+    const el = $('toast'); el.textContent = text; el.hidden = false;
+    requestAnimationFrame(() => { el.style.opacity = 1; });
+    toastSticky = sticky; clearTimeout(toastTimer);
+    if (!sticky) toastTimer = setTimeout(hideToast, 6500);
+  }
+  function hideToast() {
+    const el = $('toast'); el.style.opacity = 0; toastSticky = false; clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 500);
+  }
 
-  // ---- buttons ----
+  // ---- sheets ----
+  let openSheetId = null;
+  function openSheet(id) {
+    closeSheets();
+    openSheetId = id; const el = $(`sheet-${id}`); el.hidden = false;
+    const focusable = el.querySelector('.btn-primary:not([hidden]), [data-close], button'); if (focusable) focusable.focus({ preventScroll: true });
+  }
+  function closeSheets() { document.querySelectorAll('.sheet-backdrop').forEach(s => { s.hidden = true; }); openSheetId = null; }
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
+  document.querySelectorAll('.sheet-backdrop').forEach(bd => bd.addEventListener('pointerdown', e => {
+    if (e.target === bd && openSheetId !== 'results') { if (openSheetId === 'pause') resume(); else closeSheets(); }
+  }));
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (openSheetId === 'pause') resume(); else if (openSheetId && openSheetId !== 'results') closeSheets();
+    else if (scene === 'play' && !finished) pauseGame();
+  });
+
+  // ---- beach picker with rendered previews ----
+  const cardCanvases = [];
+  function buildCards() {
+    const cards = LEVELS.map((def, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'card'; b.id = `beach-${i + 1}`;
+      b.innerHTML = `<canvas width="420" height="280" aria-hidden="true"></canvas><span class="lock" hidden><svg class="i"><use href="#i-lock"/></svg></span>` +
+        `<span class="meta"><span class="num">Beach ${i + 1}</span><span class="name"></span><span class="stars"></span></span>`;
+      b.querySelector('.name').textContent = def.name;
+      b.onclick = () => startLevel(i);
+      cardCanvases[i] = b.querySelector('canvas');
+      return b;
+    });
+    const sb = document.createElement('button'); sb.type = 'button'; sb.className = 'card wide'; sb.id = 'beach-sandbox';
+    sb.innerHTML = '<canvas width="420" height="280" aria-hidden="true"></canvas><span class="meta"><span class="num">Free play</span><span class="name">Sandbox beach</span><p>No pools and no score. Dig, build and send in waves for as long as you like.</p></span>';
+    sb.onclick = () => startLevel(-1);
+    cardCanvases[LEVELS.length] = sb.querySelector('canvas');
+    $('cards').replaceChildren(...cards, sb);
+  }
+  function refreshCards() {
+    const open = firstOpen();
+    LEVELS.forEach((_, i) => {
+      const b = $(`beach-${i + 1}`), st = store.stars[i] || 0, locked = i > open;
+      b.disabled = locked; b.querySelector('.lock').hidden = !locked;
+      b.querySelector('.stars').innerHTML = [0, 1, 2].map(k => starSvg(k < st)).join('');
+      b.setAttribute('aria-label', `Beach ${i + 1}, ${LEVELS[i].name}, ${locked ? 'locked' : `${st} of 3 stars`}`);
+    });
+  }
+  function renderPreview(def, canvas) {
+    buildBeach(def); level = def; staticDirty = true; fieldsFresh = true;
+    for (let i = 0; i < N; i++) { water[i] = kind[i] === 2 ? 0 : Math.max(0, def.low + 0.3 - bed[i] - sand[i]); foam[i] = 0; }
+    const keep = [LX, LY]; LX = -0.45; LY = -0.62;
+    const tw = canvas.width, th = canvas.height, c = canvas.getContext('2d');
+    if (gl && worldCanvas.width >= tw && worldCanvas.height >= th) {
+      prepareFields(true); uploadGL();
+      drawGL(tw, th, [W / tw, 0, -0.5], [0, H / th, -0.5], 4, false, 0);
+      c.drawImage(worldCanvas, 0, worldCanvas.height - th, tw, th, 0, 0, tw, th);
+    } else {
+      const dv = depthView; depthView = false; renderBeach(); depthView = dv;
+      c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; c.drawImage(off, 0, 0, tw, th);
+    }
+    [LX, LY] = keep;
+  }
+  function renderPreviews() {
+    LEVELS.forEach((def, i) => renderPreview(def, cardCanvases[i]));
+    renderPreview(SANDBOX, cardCanvases[LEVELS.length]);
+  }
+
+  // ---- pause ----
+  function pauseGame() { if (scene !== 'play' || finished) return; paused = true; fingers.clear(); syncSwitches(); openSheet('pause'); }
+  function resume() { closeSheets(); paused = false; lastT = 0; acc = 0; }
+  $('pause').onclick = pauseGame;
+  $('back').onclick = pauseGame;
+  $('resume').onclick = resume;
+  $('restart').onclick = () => startLevel(levelIndex);
+  $('quit').onclick = goMenu;
+  document.addEventListener('visibilitychange', () => { if (document.hidden && scene === 'play') pauseGame(); });
+
+  // ---- results ----
+  $('res-retry').onclick = () => startLevel(levelIndex);
+  $('res-next').onclick = () => startLevel(levelIndex + 1);
+  $('res-menu').onclick = () => { goMenu(); refreshCards(); openSheet('beaches'); };
+
+  // ---- title screen ----
+  $('continue').onclick = () => startLevel(+$('continue').dataset.level || 0);
+  $('open-beaches').onclick = () => { refreshCards(); openSheet('beaches'); };
+  $('open-sandbox').onclick = () => startLevel(-1);
+  $('open-howto').onclick = () => openSheet('howto');
+
+  // ---- tools ----
   document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => {
     tool = b.dataset.tool;
     document.querySelectorAll('[data-tool]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
   });
-  function setPaused(p) {
-    paused = p;
-    $('pause').setAttribute('aria-label', p ? 'Resume' : 'Pause');
-    $('pause-icon').innerHTML = p ? '<path d="M8 5l11 7-11 7z"/>' : '<path d="M9 6v12M15 6v12"/>';
+  function setDepth(on) {
+    store.depthView = on; saveStore(); depthView = on; syncSwitches();
+    if (on && scene === 'play') showToast('Blue-grey sand lies below the high-tide line, so the tide can reach it. Lines mark each step of height.');
   }
-  $('pause').onclick = () => setPaused(!paused);
-  $('restart').onclick = () => startLevel(levelIndex);
-  $('back').onclick = showMenu;
-  $('res-menu').onclick = showMenu;
-  $('res-retry').onclick = () => startLevel(levelIndex);
-  $('res-next').onclick = () => startLevel(levelIndex + 1);
+  $('depth').onclick = () => setDepth(!depthView);
+  $('sw-depth').onclick = () => setDepth(!depthView);
   $('wave').onclick = () => { waveBoost = 1.2; audio.start(); };
-  const SPEEDS = [[1, 'normal'], [2.5, 'fast'], [0, 'stopped'], [0.5, 'slow']];
+  const SPEEDS = [1, 2, 4, 0, 0.5];
   $('tide-speed').onclick = () => {
-    const k = (SPEEDS.findIndex(s => s[0] === tideRate) + 1) % SPEEDS.length;
-    tideRate = SPEEDS[k][0]; $('tide-speed').textContent = `Tide: ${SPEEDS[k][1]}`; tideOn = true;
+    tideRate = SPEEDS[(SPEEDS.indexOf(tideRate) + 1) % SPEEDS.length]; tideOn = true;
+    $('tide-speed-label').textContent = tideRate ? `Tide ×${tideRate}` : 'Tide off';
   };
-  function syncMute() {
-    $('mute').setAttribute('aria-pressed', String(!!store.muted));
-    $('mute').setAttribute('aria-label', store.muted ? 'Sound off' : 'Sound on');
-    $('mute-icon').innerHTML = store.muted ? '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/>' : '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9a4 4 0 0 1 0 6"/>';
+  function setMuted(m) { store.muted = m; saveStore(); audio.start(); audio.setMuted(m); syncSwitches(); }
+  $('menu-sound').onclick = () => setMuted(!store.muted);
+  $('sw-sound').onclick = () => setMuted(!store.muted);
+  function syncSwitches() {
+    $('depth').setAttribute('aria-pressed', String(!!depthView));
+    $('sw-depth').setAttribute('aria-checked', String(!!depthView));
+    $('sw-sound').setAttribute('aria-checked', String(!store.muted));
+    const ms = $('menu-sound'); ms.setAttribute('aria-pressed', String(!!store.muted)); ms.setAttribute('aria-label', store.muted ? 'Sound off' : 'Sound on');
+    ms.querySelector('use').setAttribute('href', store.muted ? '#i-mute' : '#i-sound');
   }
-  $('mute').onclick = () => { store.muted = !store.muted; saveStore(); syncMute(); audio.start(); audio.setMuted(store.muted); };
-  syncMute();
-  function syncDepth() { depthView = !!store.depthView; $('depth').setAttribute('aria-pressed', String(depthView)); }
-  $('depth').onclick = () => {
-    store.depthView = !store.depthView; saveStore(); syncDepth();
-    if (depthView) showToast('Blue-grey sand is below the high-tide line, so the tide can reach it. Lines mark each step of height.');
-  };
-  syncDepth();
-  document.addEventListener('visibilitychange', () => { if (document.hidden && !$('play').hidden) setPaused(true); });
+  depthView = !!store.depthView;
+  document.addEventListener('pointerdown', () => audio.start(), { once: true });
 
-  // ---- main loop ----
-  let raf = 0, acc = 0, lastT = 0, simMs = 0;
+  // =====================================================================================
+  // Main loop. Slower tablets automatically draw fewer pixels to keep the motion smooth.
+  // =====================================================================================
+  let raf = 0, acc = 0, lastT = 0, simMs = 0, frameAvg = 16, lastAdapt = 0;
   function loop(t) {
     raf = requestAnimationFrame(loop);
     const dt = Math.min(0.1, (t - (lastT || t)) / 1000); lastT = t;
-    if (!paused && !finished) {
+    if (scene === 'play' && !paused && !finished) {
       acc += dt;
       let n = 0;
       const t0 = performance.now();
       while (acc >= 1 / 60 && n < 2) { simFrame(); acc -= 1 / 60; n++; }
-      if (n === 2) acc = 0;     // slow device: let the game run slower instead of piling up work
+      if (n === 2) acc = 0;
       if (n) simMs = simMs * 0.9 + (performance.now() - t0) / n * 0.1;
-    } else if (finished) {
-      // keep the water moving gently behind the results card
-      if (!paused) simFrame();
+    } else if (!paused) {
+      simFrame();       // the title-screen beach and the beach behind the results keep moving
     }
-    draw();
-    updateMeter();
+    render();
+    updateHud();
     audio.update();
+    if (gl && dt > 0) {
+      frameAvg = frameAvg * 0.95 + dt * 1000 * 0.05;
+      if (t - lastAdapt > 2500) {
+        lastAdapt = t;
+        if (frameAvg > 22 && renderScale > 0.6) { renderScale = Math.max(0.6, renderScale * 0.85); sizeCanvases(); }
+        else if (frameAvg < 15 && renderScale < maxRenderScale()) { renderScale = Math.min(maxRenderScale(), renderScale * 1.1); sizeCanvases(); }
+      }
+    }
   }
   function startLoop() { if (!raf) { lastT = 0; acc = 0; raf = requestAnimationFrame(loop); } }
   function stopLoop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
@@ -1020,24 +1637,11 @@
   window.TideDigger = {
     LEVELS, W, H,
     load(i) { startLevel(i); stopLoop(); },
-    // dig along a path given in beach fractions, several passes, like a finger dragging
-    dig(path, passes = 4) {
-      for (let p = 0; p < passes; p++) for (let k = 0; k < path.length - 1; k++) {
-        const [ax, ay] = path[k], [bx, by] = path[k + 1];
-        const len = Math.hypot((bx - ax) * W, (by - ay) * H), n = Math.ceil(len / 0.9);
-        for (let s = 0; s <= n; s++) stamp((ax + (bx - ax) * s / n) * W, (ay + (by - ay) * s / n) * H, 'dig', DIG_RATE * 0.55);
-      }
-      startTide();
-    },
+    dig(path, passes = 4) { digPath(path, passes); startTide(); },
     build(x, y, amount = 3) { for (let k = 0; k < 20; k++) stamp(x * W, y * H, 'build', amount / 20); },
     notch(k) { return [pools[k].notch.x / W, pools[k].notch.y / H]; },
-    // the reference dig for pool k: its route, then on through the gap to the pool's edge
-    solve(k, passes = 6) {
-      const r = level.routes[k], p = pools[k], last = r[r.length - 1];
-      const inner = [(p.x + (p.notch.x - p.x) * 0.7) / W, (p.y + (p.notch.y - p.y) * 0.7) / H];
-      this.dig([...r, [p.notch.x / W, p.notch.y / H], inner], passes);
-      void last;
-    },
+    solve(k, passes = 6) { digRoute(k, passes); startTide(); },
+    groundAt(fx, fy) { const i = Math.round(fy * H) * W + Math.round(fx * W); return bed[i] + sand[i]; },
     run(seconds) { const n = Math.round(seconds * 60); for (let k = 0; k < n && !finished; k++) simFrame(); },
     get tideT() { return tideT; },
     fills, silts: () => pools.map(poolSilt), stars: () => starsFor(fills().reduce((a, b) => a + b, 0) / Math.max(1, pools.length)),
@@ -1045,29 +1649,26 @@
     sandMass() { let m = 0; for (let i = 0; i < N; i++) m += sand[i] + sed[i]; return m; },
     healthy() { for (let i = 0; i < N; i++) if (!(water[i] >= 0) || !(sand[i] >= 0) || !Number.isFinite(sed[i])) return false; return true; },
     simMs: () => simMs,
-    // along a path: the highest channel-bottom point (what water must get over) and water depth there
-    pathProfile(path) {
-      let worst = -Infinity, at = null, wAt = 0;
-      for (let k = 0; k < path.length - 1; k++) {
-        const [ax, ay] = path[k], [bx, by] = path[k + 1], n = Math.ceil(Math.hypot((bx - ax) * W, (by - ay) * H));
-        for (let s = 0; s <= n; s++) {
-          const x = Math.round((ax + (bx - ax) * s / n) * W), y = Math.round((ay + (by - ay) * s / n) * H), i = y * W + x;
-          const g = bed[i] + sand[i]; if (g > worst) { worst = g; at = [x, y]; wAt = water[i]; }
-        }
-      }
-      return { worst: +worst.toFixed(2), at, water: +wAt.toFixed(2), sea: +seaLevel.toFixed(2) };
-    },
-    groundAt(fx, fy) { const i = Math.round(fy * H) * W + Math.round(fx * W); return bed[i] + sand[i]; },
     timeFrames(n) { const t0 = performance.now(); for (let k = 0; k < n; k++) simFrame(); return (performance.now() - t0) / n; },
-    draw,
+    draw: () => { render(); updateHud(); },
+    renderer: () => gl ? 'webgl2' : '2d',
+    renderMs(n) { const t0 = performance.now(); for (let k = 0; k < n; k++) render(); if (gl) gl.finish(); return (performance.now() - t0) / n; },
   };
 
-  showMenu();
+  // ---- start up ----
+  bindWorldInput();
+  layout();
+  if (!initGL()) ctx2d = worldCanvas.getContext('2d');
+  layout();
+  buildCards();
+  renderPreviews();
+  syncSwitches();
+  goMenu();
 
   // Offline support when installed to the home screen (served over http/https only).
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* The app still works online without it. */ });
+      navigator.serviceWorker.register('sw.js').catch(() => { /* The game still works online without it. */ });
     });
   }
 })();
