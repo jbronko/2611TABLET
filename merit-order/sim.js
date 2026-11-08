@@ -8,7 +8,7 @@ const Sim = (() => {
   const IPD = 288;                 // dispatch intervals per day
   const H = 5 / 60;                // hours per interval
   const FLOOR = -1000;             // market price floor, $/MWh
-  const CAP = 20000;               // market price cap (stylised), $/MWh
+  const CAP = 23200;               // market price cap, $/MWh (NEM 2026-27)
   const START_DOY = 304;          // the game starts on 1 November (late spring)
   const AWAY_CAP_DAYS = 7;         // most game days simulated while the app was closed
 
@@ -106,7 +106,7 @@ const Sim = (() => {
       difficulty,
       cash: opts.cash ?? DIFFICULTY[difficulty].cash,
       contracts: [], contractOffers: [],
-      plants: [], rivals: rivalFleet(), nameUse: {},
+      plants: [], retired: [], rivals: rivalFleet(), nameUse: {},
       wx: { wind: 0.33, cloud: 0.85, temp: 0, noise: 0, nb: 0 },
       events: [], upcoming: [], news: [], offer: null, obligation: null,
       rooftop: 3200,
@@ -120,6 +120,7 @@ const Sim = (() => {
     if (opts.challenge) Object.assign(S.unlocked, { wind: true });
     planEvents(S);
     makeContractOffers(S);
+    seedCpt(S);
     return S;
   }
   function freshDay() {
@@ -131,6 +132,9 @@ const Sim = (() => {
     S.contracts ||= []; S.difficulty ||= 'standard';
     if (!S.contractOffers) makeContractOffers(S);
     for (const k of ['contracts', 'repairs', 'interest', 'capPay']) S.today[k] ??= 0;
+    for (const p of S.plants) { p.life ||= freshLife(); p.capital ??= p.value || 0; }
+    S.retired ||= [];
+    if (!S.cptBuf) { seedCpt(S); delete S.cpt; if (S.apc && S.cptSum <= CPT) S.apc = false; }
     if ((S.v || 1) < 3) {
       // wind and solar used to bid −$1,000 by default, which now costs big fleets dearly at midday
       const vre = S.plants.filter(p => TECH[p.tech].kind === 'vre' && p.bid === 'always');
@@ -178,11 +182,11 @@ const Sim = (() => {
     const h = hourOf(S), doy = doyOf(S), wx = S.wx;
     const hw = activeEvent(S, 'heatwave'), cs = activeEvent(S, 'cold');
     let temp = seasonTemp(doy) + 5.5 * Math.cos(2 * Math.PI * (h - 15) / 24) + wx.temp * 4;
-    if (hw) temp += 9 * (0.55 + 0.45 * bump(h, 16, 3.5));
+    if (hw) temp += 8 * (0.55 + 0.45 * bump(h, 16, 3.5));
     if (cs) temp -= 8;
     const shape = 0.72 + 0.09 * bump(h, 8, 1.4) + 0.08 * bump(h, 12.5, 3.5) + 0.22 * bump(h, 18.6, 1.9) - 0.05 * bump(h, 3.5, 2);
     let underlying = 5500 * shape * (1 + wx.noise);
-    underlying += Math.max(0, temp - 24) * 140 * (0.4 + 0.6 * bump(h, 16.5, 4));
+    underlying += Math.max(0, temp - 24) * 125 * (0.4 + 0.6 * bump(h, 16.5, 4));
     underlying += Math.max(0, 14 - temp) * 105 * (0.5 + 0.5 * bump(h, 19, 3));
     const sun = solarShape(h, doy) * wx.cloud;
     const rooftop = S.rooftop * sun * 0.82;
@@ -335,9 +339,27 @@ const Sim = (() => {
     return { price, shortfall, traded: q };
   }
 
-  // Administered pricing: after a long run of very high prices the price is held at APC.
-  const APC = 600, CPT = 160000;
+  // Administered pricing: when the last 7 days of prices (2,016 intervals) add up past the cumulative
+  // price threshold, prices are held at APC. Checked again at each day's end. The real NEM threshold
+  // for 2026-27 is $2,225,900 (about 8 hours at the cap); the game's market is spikier, so it uses a
+  // shorter fuse of about 3 hours at the cap.
+  const APC = 600, CPT = 1050000, REAL_CPT = 2225900, CPT_N = 7 * IPD;
   function administer(S, res) { return S.apc && res.price > APC ? { ...res, price: APC, capped: true } : res; }
+  function seedCpt(S) {
+    // a new game starts with a quiet week behind it; an old save rebuilds the week from its records
+    const hist = [];
+    for (const d of S.days.slice(-7)) for (let i = 0; i < IPD; i++) hist.push(d.price ? d.price[i] ?? d.avg : d.avg);
+    for (const v of S.today.price) hist.push(v);
+    const buf = new Array(CPT_N).fill(100);
+    const tail = hist.slice(-CPT_N);
+    for (let i = 0; i < tail.length; i++) buf[CPT_N - tail.length + i] = Math.round(tail[i]);
+    S.cptBuf = buf; S.cptI = 0; S.cptSum = buf.reduce((a, b) => a + b, 0);
+  }
+  function trackCpt(S, price) {
+    if (!S.cptBuf || S.cptBuf.length !== CPT_N) seedCpt(S);
+    const v = Math.round(price);
+    S.cptSum += v - S.cptBuf[S.cptI]; S.cptBuf[S.cptI] = v; S.cptI = (S.cptI + 1) % CPT_N;
+  }
 
   // ---- frequency control (one simplified raise service) ----
   function clearFcas(S, energyBids) {
@@ -377,10 +399,9 @@ const Sim = (() => {
     const { supply, demandBids } = buildBids(S, c);
     const res = administer(S, clear(supply, demandBids, c.demand));
     const fc = clearFcas(S, [...supply, ...demandBids]);
-    // about the last day's prices added up: past the threshold, the operator caps prices at $600
-    S.cpt = (S.cpt || 0) * (1 - 1 / IPD) + res.price;
-    if (!S.apc && S.cpt > CPT) { S.apc = true; addNews(S, 'info', `Prices have been so high for so long that the market operator has capped them at ${fmtPrice(APC)}/MWh until things calm down.`); }
-    else if (S.apc && S.cpt < CPT * 0.35) { S.apc = false; addNews(S, 'info', 'The administered price cap has been lifted. Prices can rise to the full cap again.'); }
+    // the last 7 days of prices added up: past the threshold, the operator caps prices at $600
+    trackCpt(S, res.price);
+    if (!S.apc && S.cptSum > CPT) { S.apc = true; addNews(S, 'info', `Prices over the last week have added up past the market's limit, so the operator has capped them at ${fmtPrice(APC)}/MWh until the week's total falls back.`); }
 
     // settle the player's money and storage
     const T = TECH, d = S.today;
@@ -392,6 +413,7 @@ const Sim = (() => {
       out.set(p, (out.get(p) || 0) + b.out);
       rev += b.out * res.price * H;
       cost += b.out * vcOf(S, p) * H;
+      const L = p.life; L.sales += b.out * res.price * H; L.fuel += b.out * vcOf(S, p) * H; L.energy += b.out * H;
       emis += b.out * emisOf(p) * H;
       mine += b.out;
       if (b.storage) p.soc = Math.max(0, p.soc - b.out * H);
@@ -400,10 +422,11 @@ const Sim = (() => {
       if (db.owner !== 'player' || !db.take) continue;
       const p = db.ref, t = T[p.tech];
       rev -= db.take * res.price * H;
+      p.life.charging += db.take * res.price * H;
       p.soc = Math.min(p.mw * hoursOf(p), p.soc + db.take * H * t.eff);
       out.set(p, (out.get(p) || 0) - db.take);
     }
-    for (const o of fc.offers) if (o.owner === 'player' && o.take) fcasRev += o.take * fc.price * H;
+    for (const o of fc.offers) if (o.owner === 'player' && o.take) { fcasRev += o.take * fc.price * H; o.ref.life.fcas += o.take * fc.price * H; }
     for (const p of S.plants) {
       const o = out.get(p) || 0;
       p.last = Math.max(0, o);
@@ -501,8 +524,9 @@ const Sim = (() => {
   // ---- end of day: upkeep, records, outages, events, offers, goals ----
   function endOfDay(S) {
     const d = S.today, day = dayIndex(S) - 1;
+    if (S.apc && S.cptSum <= CPT) { S.apc = false; addNews(S, 'info', 'The administered price cap has been lifted. Prices can rise to the full cap again.'); }
     let upkeep = 0;
-    for (const p of S.plants) if (p.status !== 'building') upkeep += upkeepOf(S, p);
+    for (const p of S.plants) if (p.status !== 'building') { const u = upkeepOf(S, p); upkeep += u; p.life.upkeep += u; }
     S.cash -= upkeep; d.upkeep = upkeep;
     // an overdraft costs interest every day
     if (S.cash < 0) { const i = Math.round(-S.cash * OVERDRAFT_RATE * diff(S).penalty); S.cash -= i; d.interest += i; }
@@ -525,7 +549,7 @@ const Sim = (() => {
       if (r.out > 0) { r.out--; if (r.out === 0) addNews(S, 'info', `${r.name} is back online.`); }
       if (r.tech === 'coal' && !r.gone) {
         const roll = rnd(S, W), len = rnd(S, W);
-        if (r.out === 0 && roll < (activeEvent(S, 'heatwave') ? 0.05 : 0.015)) {
+        if (r.out === 0 && roll < (activeEvent(S, 'heatwave') ? 0.03 : 0.012)) {
           r.out = 1 + Math.floor(len * 3);
           addNews(S, 'info', `${r.name} has broken down and will be out for about ${r.out} day${r.out > 1 ? 's' : ''}. Prices may rise.`);
         }
@@ -541,11 +565,15 @@ const Sim = (() => {
         const odds = T.outage * diff(S).outage * (p.upg && p.tech === 'peaker' ? 0.5 : 1);
         if (roll < odds) {
           p.status = 'outage'; p.outLeft = 1 + Math.floor(len * 2);
-          const fix = Math.round(p.mw * 150 * diff(S).upkeep); S.cash -= fix; S.today.repairs += fix;
+          const fix = Math.round(p.mw * 150 * diff(S).upkeep); S.cash -= fix; S.today.repairs += fix; p.life.repairs += fix;
           addNews(S, 'bad', `${p.name} has broken down. Repairs cost ${fmtMoney(fix)} and take ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}.`);
         }
       }
       if (p.status === 'retiring') { p.retireLeft--; if (p.retireLeft <= 0) { p.status = 'closed'; addNews(S, 'info', `${p.name} has closed.`); } }
+    }
+    for (const p of S.plants) {
+      if (p.status === 'closed') retireRecord(S, p, 0);
+      else if (p.paidBack == null && p.capital > 0 && plantProfit(p) >= p.capital) { p.paidBack = dayIndex(S) - 1; addNews(S, 'good', `${p.name} has paid for itself.`); }
     }
     S.plants = S.plants.filter(p => p.status !== 'closed');
     // past the limit the bank gives you three days to get back under it, then sells plant
@@ -557,7 +585,7 @@ const Sim = (() => {
       for (const p of order) {
         if (S.cash >= -lim / 2) break;
         const got = Math.round(p.value * 0.35);
-        S.cash += got; p.status = 'closed'; S.totals.sold = (S.totals.sold || 0) + got;
+        S.cash += got; p.status = 'closed'; S.totals.sold = (S.totals.sold || 0) + got; retireRecord(S, p, got);
         addNews(S, 'bad', `You owed ${fmtMoney(got - S.cash)}, past your overdraft limit, so the bank sold ${p.name} for ${fmtMoney(got)}.`);
       }
       S.plants = S.plants.filter(p => p.status !== 'closed'); S.overLimit = 0;
@@ -594,6 +622,14 @@ const Sim = (() => {
   const OVERDRAFT_RATE = 0.003;
   function overdraftLimit(S) { return 150000 + 0.3 * S.plants.reduce((a, p) => a + (p.status === 'building' ? 0 : p.value || 0), 0); }
 
+  // ---- each plant's own accounts since it was built ----
+  const freshLife = () => ({ sales: 0, charging: 0, fuel: 0, fcas: 0, upkeep: 0, repairs: 0, energy: 0 });
+  function plantProfit(p) { const L = p.life; return L.sales - L.charging - L.fuel + L.fcas - L.upkeep - L.repairs; }
+  function retireRecord(S, p, salePrice) {
+    (S.retired ||= []).unshift({ name: p.name, tech: p.tech, mw: p.mw, capital: p.capital, life: { ...p.life }, sold: salePrice, built: p.built, closed: S.t, paidBack: p.paidBack });
+    if (S.retired.length > 20) S.retired.length = 20;
+  }
+
   function upkeepOf(S, p) {
     const T = TECH[p.tech];
     const extra = p.upg ? (UPGRADES[p.tech].upkeep || 1) : 1;
@@ -615,7 +651,7 @@ const Sim = (() => {
     if (p.upg || p.status !== 'online') return { ok: false, why: 'unavailable' };
     const cost = upgradeCost(S, p);
     if (S.cash < cost) return { ok: false, why: 'cash' };
-    S.cash -= cost; p.value += cost;
+    S.cash -= cost; p.value += cost; p.capital += cost;
     p.status = 'upgrading'; p.upgLeft = UPGRADES[p.tech].days; p.upg = true;
     addNews(S, 'info', `${p.name} is offline for ${UPGRADES[p.tech].days} day${UPGRADES[p.tech].days === 1 ? '' : 's'} for its upgrade: ${UPGRADES[p.tech].name.toLowerCase()}.`);
     return { ok: true, cost };
@@ -762,7 +798,7 @@ const Sim = (() => {
       if (S.cash < o.price) return false;
       const r = S.rivals.find(x => x.id === o.rival);
       S.cash -= o.price; r.gone = true; r.sold = true;
-      S.plants.push({ id: `p${S.t}`, tech: 'coal', mw: r.cap, name: r.name, status: 'online', bid: 'cost', soc: 0, last: r.cap * 0.45, today: { energy: 0, money: 0 }, built: S.t, value: o.price });
+      S.plants.push({ id: `p${S.t}`, tech: 'coal', mw: r.cap, name: r.name, status: 'online', bid: 'cost', soc: 0, last: r.cap * 0.45, today: { energy: 0, money: 0 }, built: S.t, value: o.price, capital: o.price, life: freshLife() });
       addNews(S, 'info', `You bought ${r.name}. It's yours to run, and to retire.`);
     }
     S.offer = null;
@@ -785,7 +821,8 @@ const Sim = (() => {
     S.cash -= cost;
     const p = { id: `p${S.t}_${S.plants.length}`, tech, mw, name: nameFor(S, tech), status: 'building', buildLeft: T.build, built: S.t, value: cost,
       bid: T.kind === 'vre' ? 'nonneg' : T.kind === 'thermal' ? (tech === 'peaker' ? 'peak' : 'cost') : undefined,
-      strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mw * T.hours * 0.5 : 0, last: 0, fcas: T.fcas ? true : undefined, today: { energy: 0, money: 0 } };
+      strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mw * T.hours * 0.5 : 0, last: 0, fcas: T.fcas ? true : undefined, today: { energy: 0, money: 0 },
+      capital: cost, life: freshLife() };
     S.plants.push(p);
     addNews(S, 'info', `Construction has started on ${p.name} (${fmtMW(mw)}). It connects in ${T.build} day${T.build === 1 ? '' : 's'}.`);
     return { ok: true, plant: p };
@@ -793,7 +830,7 @@ const Sim = (() => {
   function retire(S, p) {
     if (p.tech === 'coal') { p.status = 'retiring'; p.retireLeft = 5; addNews(S, 'info', `You've given notice to close ${p.name}. It runs for 5 more days, as the rules require.`); return; }
     const refund = Math.round(p.value * 0.4);
-    S.cash += refund; p.status = 'closed'; S.plants = S.plants.filter(x => x !== p);
+    S.cash += refund; p.status = 'closed'; S.plants = S.plants.filter(x => x !== p); retireRecord(S, p, refund);
     addNews(S, 'info', `You sold ${p.name} for ${fmtMoney(refund)}.`);
   }
 
@@ -857,7 +894,7 @@ const Sim = (() => {
     return `${s}$${Math.round(a)}`;
   }
   function fmtMW(v) { return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)} GW` : `${Math.round(v)} MW`; }
-  function fmtPrice(v) { const s = v < 0 ? '−' : ''; const a = Math.abs(v); return `${s}$${a >= 1000 ? `${(a / 1000).toFixed(a >= 10000 ? 0 : 1)}k` : Math.round(a)}`; }
+  function fmtPrice(v) { const s = v < 0 ? '−' : ''; const a = Math.abs(v); return `${s}$${a >= 1000 ? `${(a / 1000).toFixed(Math.round(a) % 1000 === 0 ? 0 : 1)}k` : Math.round(a)}`; }
   function clock(h) { const hh = Math.floor(h), mm = Math.round((h - hh) * 60); const ap = hh >= 12 ? 'pm' : 'am'; const h12 = ((hh + 11) % 12) + 1; return `${h12}:${String(mm).padStart(2, '0')} ${ap}`; }
   function dateLabel(S) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], len = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -866,9 +903,9 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, year, time: clock(hourOf(S)) };
   }
 
-  return { IPD, H, FLOOR, CAP, APC, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
-    upgrade, upgradeCost, upkeepOf, signContract, contractRoom, overdraftLimit, forecast, hoursOf, vcOf,
+    upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;
