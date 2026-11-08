@@ -194,6 +194,18 @@ const Sim = (() => {
       p.life ||= freshLife(); p.capital ??= p.value || 0;
       if (!p.site) { p.site = 'legacy'; p.mlf = 1; p.res = 1; }
       if (TECH[p.tech].kind === 'storage' && p.mwh == null) { p.mwh = p.mw * (p.hours ?? TECH[p.tech].hours); delete p.hours; }
+      if (!p.bands) {
+        freshBands(S, p);
+        if (p.bid === 'custom' && p.price != null) {   // keep the old custom price as one of the bands
+          const prices = p.bands.prices.slice(); let i = prices.findIndex(v => v >= p.price); if (i < 0) i = NB - 1;
+          prices[i] = p.price; p.bands.prices = ascend(prices); p.bands.mw[p.bands.prices.indexOf(Math.round(Math.min(CAP, Math.max(FLOOR, p.price))))] = p.mw;
+          if (!p.bands.mw.some(v => v > 0)) p.bands.mw[i] = p.mw;
+        }
+        if (p.sbands && p.strategy === 'custom') {
+          const put = (B, price) => { let i = B.prices.findIndex(v => v >= price); if (i < 0) i = NB - 1; B.prices[i] = price; B.prices = ascend(B.prices); B.mw = new Array(NB).fill(0); B.mw[i] = p.mw; };
+          put(p.sbands.d, p.dischargeAbove ?? 150); put(p.sbands.c, p.chargeBelow ?? 40);
+        }
+      }
     }
     S.retired ||= [];
     if (!S.cptBuf) { seedCpt(S); delete S.cpt; if (S.apc && S.cptSum <= CPT) S.apc = false; }
@@ -265,6 +277,11 @@ const Sim = (() => {
 
   // ---- bids ----
   // Supply bands: {mw, price, tech, owner, ref}. Elastic demand bands: {mw, price, ref}.
+  function offerBands(S, p, avail, supply) {
+    if (!p.bands) freshBands(S, p);
+    const mw = bandMW(S, p, avail);
+    for (let i = 0; i < NB; i++) if (mw[i] > 0.05) supply.push({ mw: mw[i], price: p.bands.prices[i], tech: p.tech, owner: 'player', ref: p, band: i });
+  }
   // q-th percentile of an array that is already sorted (yesterday's priceSorted), without re-sorting:
   // this runs for every battery every interval, so it has to be cheap.
   function percentile(sorted, q) {
@@ -287,6 +304,87 @@ const Sim = (() => {
     // arbitrage: buy in the cheapest quarter of yesterday's prices, sell in the dearest quarter
     const lo = ref ? percentile(ref, 0.25) : 40, hi = ref ? percentile(ref, 0.8) : 150;
     return { charge: Math.min(lo, 70), discharge: Math.max(hi, (lo ?? 40) + 60, 90) };
+  }
+
+  // ---- bid stacks: ten price bands per plant, as in the NEM ----
+  // Band prices are set for the trading day: a change is saved in `next` and takes effect when the next
+  // day starts. MW in each band can be moved at any time (a rebid). Presets keep the prices current
+  // each day and place the MW themselves; "custom" uses the MW you set, cheapest band first.
+  const NB = 10;
+  function ascend(prices) {   // band prices must rise from band 1 to band 10
+    const a = prices.map(v => Math.round(Math.min(CAP, Math.max(FLOOR, v))));
+    for (let i = 1; i < a.length; i++) if (a[i] <= a[i - 1]) a[i] = a[i - 1] + 1;
+    return a;
+  }
+  function presetPrices(S, p) {
+    const T = TECH[p.tech];
+    if (T.kind === 'vre') return ascend([FLOOR, -100, -30, 0, 30, 60, 100, 300, 1000, CAP]);
+    const v = Math.round(vcOf(S, p));
+    return ascend([FLOOR, 0, v, v * 1.3, 300, Math.max(300, v * 2.5), 600, 1000, 5000, CAP].sort((a, b) => a - b));   // the presets' prices are all here
+  }
+  const STORE_PRICES = { d: [60, 90, 120, 150, 200, 300, 500, 1000, 5000, CAP], c: [FLOOR, -100, -20, 0, 20, 40, 60, 80, 100, 150] };
+  function freshBands(S, p) {
+    p.bands = { prices: presetPrices(S, p), mw: new Array(NB).fill(0), next: null };
+    if (TECH[p.tech].kind === 'storage') {
+      const mk = (k, price) => { const prices = STORE_PRICES[k].slice(), mw = new Array(NB).fill(0); mw[prices.indexOf(price)] = p.mw; return { prices, mw, next: null }; };
+      p.sbands = { d: mk('d', 150), c: mk('c', 40) };
+    }
+  }
+  // How a preset spreads `avail` MW over today's bands.
+  function presetMW(S, p, avail) {
+    const B = p.bands, out = new Array(NB).fill(0), vc = vcOf(S, p);
+    const place = (target, share) => { let i = B.prices.findIndex(x => x >= target - 1e-9); if (i < 0) i = NB - 1; out[i] += avail * share; };
+    switch (p.bid) {
+      case 'always': out[0] = avail; break;
+      case 'nonneg': place(0, 1); break;
+      case 'peak': place(Math.max(300, vc * 2.5), 1); break;
+      case 'ladder': place(Math.max(0, vc), 0.4); place(300, 0.3); place(1000, 0.3); break;
+      default: place(vc, 1);   // cover running costs
+    }
+    return out;
+  }
+  // Fill bands with what's available: cheapest first for generation (highest first for charging).
+  function fillBands(mw, avail, highFirst) {
+    const out = new Array(NB).fill(0);
+    let left = avail;
+    for (let k = 0; k < NB && left > 1e-9; k++) { const i = highFirst ? NB - 1 - k : k; const m = Math.min(left, mw[i] || 0); out[i] = m; left -= m; }
+    return out;
+  }
+  function bandMW(S, p, avail) { return p.bid === 'custom' ? fillBands(p.bands.mw, avail) : presetMW(S, p, avail); }
+  // At the start of each day: pending prices take effect; presets refresh theirs.
+  function rollBands(S) {
+    for (const p of S.plants) {
+      if (!p.bands) continue;
+      if (p.bands.next) { p.bands.prices = ascend(p.bands.next); p.bands.next = null; }
+      else if (p.bid !== 'custom' && TECH[p.tech].kind !== 'storage') p.bands.prices = presetPrices(S, p);
+      if (p.sbands) for (const k of ['d', 'c']) { const B = p.sbands[k]; if (B.next) { B.prices = ascend(B.next); B.next = null; } }
+    }
+  }
+  // Set a band's price for tomorrow / its MW now. Returns the value used (clamped, kept in order).
+  function setBandPrice(S, p, stack, i, price) {
+    const B = stack === 'g' ? p.bands : p.sbands[stack];
+    if (stack === 'g' && p.bid !== 'custom') { p.bands.mw = presetMW(S, p, p.mw); p.bid = 'custom'; }
+    if (stack !== 'g') p.strategy = 'custom';
+    const next = (B.next || B.prices).slice();
+    const lo = i > 0 ? next[i - 1] + 1 : FLOOR, hi = i < NB - 1 ? next[i + 1] - 1 : CAP;
+    next[i] = Math.round(Math.min(hi, Math.max(lo, Math.min(CAP, Math.max(FLOOR, price)))));
+    B.next = next.every((v, k) => v === B.prices[k]) ? null : next;
+    return next[i];
+  }
+  function setBandMW(S, p, stack, i, mw) {
+    const B = stack === 'g' ? p.bands : p.sbands[stack];
+    if (stack === 'g' && p.bid !== 'custom') { p.bands.mw = presetMW(S, p, p.mw); p.bid = 'custom'; }
+    if (stack !== 'g') p.strategy = 'custom';
+    // raising a band moves MW out of the others, fullest band first, so the stack never exceeds the plant
+    B.mw[i] = Math.max(0, Math.min(mw, p.mw));
+    let over = B.mw.reduce((a, v) => a + v, 0) - p.mw;
+    while (over > 1e-9) {
+      let k = -1; for (let j = 0; j < NB; j++) if (j !== i && B.mw[j] > 0 && (k < 0 || B.mw[j] > B.mw[k])) k = j;
+      if (k < 0) break;
+      const take = Math.min(over, B.mw[k]); B.mw[k] -= take; over -= take;
+    }
+    B.mw = B.mw.map(v => Math.round(v * 10) / 10);
+    return B.mw[i];
   }
 
   // Running cost and emissions per MWh for a player's plant, after upgrades and fuel prices.
@@ -344,28 +442,32 @@ const Sim = (() => {
         // upgrades: trackers and repowering lift output about 20%, never above the plant's rating
         const cf = (p.tech === 'solar' ? c.sun : c.wind) * (p.res ?? 1);
         const mw = Math.min(p.mw, p.mw * cf * (p.upg ? 1.2 : 1));
-        const price = p.bid === 'nonneg' ? 0 : p.bid === 'custom' ? (p.price ?? 0) : FLOOR;
-        if (mw > 0.1) supply.push({ mw, price, tech: p.tech, owner: 'player', ref: p });
+        if (mw > 0.1) offerBands(S, p, mw, supply);
       } else if (T.kind === 'thermal') {
-        const vc = vcOf(S, p);
-        const price = p.bid === 'peak' ? Math.max(300, vc * 2.5) : p.bid === 'custom' ? (p.price ?? vc) : vc;
         if (p.tech === 'coal') {
           const minLoad = p.upg ? 0.3 : T.minLoad, ramp = p.upg ? T.ramp * 2 : T.ramp;
           const min = p.mw * minLoad;
           const up = forecast ? p.mw : Math.min(p.mw, (p.last ?? min) + p.mw * ramp), down = forecast ? min : Math.max(min, (p.last ?? min) - p.mw * ramp);
-          supply.push({ mw: down, price: FLOOR, tech: 'coal', owner: 'player', ref: p });
-          if (up > down) supply.push({ mw: up - down, price, tech: 'coal', owner: 'player', ref: p });
+          supply.push({ mw: down, price: FLOOR, tech: 'coal', owner: 'player', ref: p });   // must run: its minimum load
+          if (up > down) offerBands(S, p, up - down, supply);
         } else {
           const mw = T.ramp && !forecast ? Math.min(p.mw, (p.last ?? 0) + p.mw * T.ramp) : p.mw;
-          supply.push({ mw, price, tech: p.tech, owner: 'player', ref: p });
+          offerBands(S, p, mw, supply);
         }
       } else {   // storage
+        const e = p.mw * hoursOf(p);
+        const dis = Math.min(p.mw, p.soc / H), ch = Math.min(p.mw, (e - p.soc) / H / T.eff);
+        if (p.strategy === 'custom' && p.sbands) {
+          const d = fillBands(p.sbands.d.mw, dis), cb = fillBands(p.sbands.c.mw, ch, true);
+          for (let i = 0; i < NB; i++) {
+            if (d[i] > 0.05) supply.push({ mw: d[i], price: p.sbands.d.prices[i], tech: p.tech, owner: 'player', ref: p, storage: true, band: i });
+            if (cb[i] > 0.05) demandBids.push({ mw: cb[i], price: p.sbands.c.prices[i], ref: p, owner: 'player', band: i });
+          }
+          continue;
+        }
         const st = storageStrategy(S, p, c);
         if (!st) continue;
-        const e = p.mw * hoursOf(p);
-        const dis = Math.min(p.mw, p.soc / H);
         if (dis > 0.5 && st.discharge < Infinity) supply.push({ mw: dis, price: st.discharge, tech: p.tech, owner: 'player', ref: p, storage: true });
-        const ch = Math.min(p.mw, (e - p.soc) / H / T.eff);
         if (ch > 0.5 && st.charge > -Infinity) demandBids.push({ mw: ch, price: st.charge, ref: p, owner: 'player' });
       }
     }
@@ -593,6 +695,7 @@ const Sim = (() => {
   // ---- end of day: upkeep, records, outages, events, offers, goals ----
   function endOfDay(S) {
     const d = S.today, day = dayIndex(S) - 1;
+    rollBands(S);
     if (S.apc && S.cptSum <= CPT) { S.apc = false; addNews(S, 'info', 'The administered price cap has been lifted. Prices can rise to the full cap again.'); }
     let upkeep = 0;
     for (const p of S.plants) if (p.status !== 'building') { const u = upkeepOf(S, p); upkeep += u; p.life.upkeep += u; }
@@ -889,6 +992,7 @@ const Sim = (() => {
       const r = S.rivals.find(x => x.id === o.rival);
       S.cash -= o.price; r.gone = true; r.sold = true;
       S.plants.push({ id: `p${S.t}`, tech: 'coal', mw: r.cap, name: r.name, status: 'online', bid: 'cost', soc: 0, last: r.cap * 0.45, today: { energy: 0, money: 0 }, built: S.t, value: o.price, capital: o.price, life: freshLife() });
+      freshBands(S, S.plants[S.plants.length - 1]);
       addNews(S, 'info', `You bought ${r.name}. It's yours to run, and to retire.`);
     }
     S.offer = null;
@@ -940,6 +1044,7 @@ const Sim = (() => {
       bid: T.kind === 'vre' ? 'nonneg' : T.kind === 'thermal' ? (tech === 'peaker' ? 'peak' : 'cost') : undefined,
       strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mwh * 0.5 : 0, last: 0, fcas: T.fcas ? true : undefined, today: { energy: 0, money: 0 },
       capital: cost, life: freshLife() };
+    freshBands(S, p);
     S.plants.push(p);
     addNews(S, 'info', `Construction has started on ${p.name} (${fmtMW(mw)}${mwh ? `, ${Math.round(mwh).toLocaleString()} MWh` : ''}) at ${st.name}. It connects in ${days} day${days === 1 ? '' : 's'}.`);
     checkMissions(S);
@@ -1120,7 +1225,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, year, time: clock(hourOf(S)) };
   }
 
-  return { upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

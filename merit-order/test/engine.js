@@ -207,6 +207,27 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('old plants move to their original site unchanged', op.site === 'legacy' && op.mlf === 1 && op.mwh === 50);
 }
 
+// 14. Bid stacks: presets place MW; bands fill cheapest first; prices wait for the next day; rebids don't.
+{
+  const S = Sim.create(12, { cash: 1e8 });
+  const pk = Sim.build(S, 'peaker', 50).plant, so = Sim.build(S, 'solar', 50).plant;
+  for (const x of S.plants) { x.status = 'online'; x.buildLeft = 0; }
+  const pkBands = () => Sim.step(S).supply.filter(b => b.ref === pk);
+  const peak = Sim.presetMW(S, pk, 50);
+  check('presets place their MW in the right band', pk.bands.prices[peak.findIndex(v => v > 0)] === Math.max(300, Math.round(Sim.vcOf(S, pk)) * 2.5) && Sim.presetMW(S, so, 30)[3] === 30);
+  check('custom bands fill cheapest first up to what is available', Sim.fillBands([30, 0, 0, 0, 30, 0, 0, 0, 0, 0], 40).join() === '30,0,0,0,10,0,0,0,0,0' && Sim.fillBands([0, 20, 0, 0, 0, 0, 0, 0, 0, 30], 25, true).join() === '0,0,0,0,0,0,0,0,0,25');
+  const top = peak.findIndex(v => v > 0);
+  Sim.setBandMW(S, pk, 'g', 2, 20);
+  const nowBands = pkBands();
+  check('a rebid of MW applies straight away, moving MW from the fullest band', pk.bid === 'custom' && pk.bands.mw[2] === 20 && pk.bands.mw[top] === 30 && nowBands.some(b => (b.offer ?? b.price) === pk.bands.prices[2] && Math.abs(b.mw - 20) < 1e-9));
+  check('a band never holds more than the plant', Sim.setBandMW(S, pk, 'g', 5, 99) === 50 && pk.bands.mw.reduce((a, b) => a + b, 0) <= 50 + 1e-9);
+  const was = pk.bands.prices[2], used = Sim.setBandPrice(S, pk, 'g', 2, was + 7);
+  const sameDay = pkBands().every(b => (b.offer ?? b.price) !== was + 7);
+  while (S.t % Sim.IPD !== 0) Sim.step(S); Sim.step(S);
+  check('a new band price waits for the next day', used === was + 7 && sameDay && pk.bands.prices[2] === was + 7 && !pk.bands.next);
+  check('band prices must rise band by band', Sim.setBandPrice(S, pk, 'g', 4, -5000) === pk.bands.prices[3] + 1);
+}
+
 // 10. Speed: a big company's 7-day catch-up (what runs when the app opens after a week away).
 {
   const S = Sim.create(1, { cash: 1e9 });

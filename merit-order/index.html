@@ -236,6 +236,11 @@
   .bidbox input:focus { outline: none; }
   .pm { min-width: 40px; min-height: 40px; border-radius: 9px; background: var(--raise); color: var(--ink); font-weight: 750; font-size: 17px; }
   .bidnote { color: var(--bad); }
+  table.stack td { vertical-align: middle; padding: 5px 4px; } table.stack td:first-child { color: var(--ink-3); width: 2.5em; }
+  table.stack .bidbox { min-height: 44px; } table.stack .bidbox input { min-height: 42px; width: 7.5ch; }
+  table.stack td:last-child .bidbox input { width: 5.5ch; }
+  table.stack .pending { display: block; color: #ffd59b; font-size: 12px; margin-top: 2px; }
+  table.stack .pending:empty { display: none; }
   .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); margin-top: 12px; width: 100%; text-align: left; font-weight: 650; }
   .switch-row small { display: block; font-weight: 500; color: var(--ink-2); font-size: 12.5px; }
   .switch { width: 46px; height: 28px; border-radius: 99px; background: rgba(255, 255, 255, 0.18); position: relative; flex: none; transition: background-color 0.2s; }
@@ -1015,23 +1020,24 @@
       <div><span>${T.kind === 'storage' ? 'Net energy today' : 'Energy today'}</span><b>${Math.round(today.energy).toLocaleString()} MWh</b></div>
       <div><span>Upkeep</span><b>${fmtMoney(Sim.upkeepOf(S, p))}/day</b></div>`;
     let bid = '';
+    const stackNote = '<p class="note">Ten bands, cheapest first, as in the NEM. Moving MW between bands is a rebid and applies now (raising one band takes MW from the fullest other band); new band prices apply from tomorrow. Changing anything here switches to Custom.</p>';
     if (T.kind === 'vre') {
-      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['always', 'Always run', 'bid −$1,000'], ['nonneg', 'Avoid negative prices', 'bid $0'], ['custom', 'Custom', fmtDollars(p.price ?? 0)]])}
-        ${p.bid === 'custom' ? slider('price', 'Bid price', p.price ?? 0, -1000, 300, 5) : ''}
-        <p class="note">Bidding −$1,000 means you always run, even when the price goes negative and you pay to generate.</p>`;
+      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['always', 'Always run', 'bid −$1,000'], ['nonneg', 'Avoid negative prices', 'bid $0'], ['custom', 'Custom', 'your bands']])}
+        <p class="note">Bidding −$1,000 means you always run, even when the price goes negative and you pay to generate.</p>
+        <h3>Bid stack</h3>${stackBlock(p, 'g')}${stackNote}`;
     } else if (T.kind === 'thermal') {
       const vc = Sim.vcOf(S, p);
-      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['cost', 'Cover running costs', fmtPrice(vc)], ['peak', 'Peaks only', fmtPrice(Math.max(300, vc * 2.5))], ['custom', 'Custom', fmtDollars(p.price ?? vc)]])}
-        ${p.bid === 'custom' ? slider('price', 'Bid price', p.price ?? vc, 0, CAP, 10, true) : ''}
-        ${p.tech === 'coal' ? `<p class="note">Coal must keep ${p.upg ? 30 : 45}% running at all times and changes output slowly.</p>` : ''}`;
+      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['cost', 'Cover running costs', fmtPrice(vc)], ['peak', 'Peaks only', fmtPrice(Math.max(300, vc * 2.5))], ['ladder', 'Ladder', 'cost, $300, $1k'], ['custom', 'Custom', 'your bands']])}
+        ${p.tech === 'coal' ? `<p class="note">Coal must keep ${p.upg ? 30 : 45}% running at all times (offered at −$1,000) and changes output slowly. The bands below are for the rest.</p>` : ''}
+        <h3>Bid stack</h3>${stackBlock(p, 'g')}${stackNote}`;
     } else {
       bid = `<h3>Charge level</h3><div class="soc"><i style="width:${Math.round(p.soc / (p.mw * hoursOf(p)) * 100)}%"></i></div>
-        <p class="note num">${Math.round(p.soc)} of ${p.mw * hoursOf(p)} MWh</p>
-        <h3>Strategy</h3>${seg('strategy', p.strategy, [['arb', 'Trade the spread', 'cheap in, dear out'], ['evening', 'Evening peak', 'fill by day'], ['fcas', 'Frequency only', 'stay ready'], ['custom', 'Custom', 'set prices']])}
-        ${p.strategy === 'custom' ? slider('chargeBelow', 'Charge when below', p.chargeBelow ?? 40, -1000, 300, 5) + slider('dischargeAbove', 'Sell when above', p.dischargeAbove ?? 150, 0, CAP, 10, true) : ''}`;
+        <p class="note num">${Math.round(p.soc)} of ${Math.round(p.mw * hoursOf(p)).toLocaleString()} MWh</p>
+        <h3>Strategy</h3>${seg('strategy', p.strategy, [['arb', 'Trade the spread', 'cheap in, dear out'], ['evening', 'Evening peak', 'fill by day'], ['fcas', 'Frequency only', 'stay ready'], ['custom', 'Custom', 'your bands']])}
+        ${p.strategy === 'custom' && p.sbands ? `<h3>Sell stack</h3>${stackBlock(p, 'd')}<h3>Charge stack</h3><p class="note">Charges in a band while the price is at or below it, highest band first.</p>${stackBlock(p, 'c')}${stackNote}` : '<p class="note">The strategies are auto-bidders: they set the day\'s prices and move MW between them as the battery fills and empties. Choose Custom to set your own bands.</p>'}`;
     }
     if (T.fcas) bid += `<button type="button" class="switch-row" role="switch" aria-checked="${p.fcas !== false}" data-fcas><span>Offer frequency control<small>Get paid to keep spare capacity ready to steady the grid</small></span><span class="switch"></span></button>`;
-    $('p-bid').innerHTML = bid; bidWarning(p);
+    $('p-bid').innerHTML = bid; drawStacks(p); stackWarning(p);
     const sell = p.tech === 'coal' ? (p.status === 'retiring' ? '' : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Give notice to close (5 days)</button>`)
       : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Sell for ${fmtMoney(Math.round(p.value * 0.4))}</button>`;
     $('p-life').innerHTML = lifeBlock(p);
@@ -1075,37 +1081,61 @@
     return `<div class="seg" role="group">${opts.map(([v, l, s]) => `<button type="button" data-set="${field}:${v}" aria-pressed="${value === v}">${l}<small>${s}</small></button>`).join('')}</div>`;
   }
   // Price sliders: linear below $300, logarithmic above, so the whole range fits under a thumb.
-  // Next to each slider a box takes an exact bid in whole dollars (with a ± key, as Android number pads
-  // often have no minus sign).
-  const toSlider = v => v <= 300 ? v : 300 + Math.log(v / 300) / Math.log(CAP / 300) * 700;
-  const fromSlider = s => s <= 300 ? s : 300 * Math.pow(CAP / 300, (s - 300) / 700);
-  function slider(field, label, value, min, max, step, logTop) {
-    const v = Math.round(value), sv = logTop ? toSlider(Math.max(min, v)) : v, smax = logTop ? 1000 : max;
-    return `<div class="slider"><label for="nb-${field}">${label} <span>$/MWh</span></label>
-      <div class="bidrow"><input type="range" min="${min}" max="${smax}" step="${step}" value="${sv}" data-slide="${field}" data-log="${logTop ? 1 : 0}" aria-label="${label}">
-        <span class="bidbox"><button type="button" class="pm" data-flip="${field}" aria-label="Switch between a positive and a negative price">±</button><span>$</span><input type="number" id="nb-${field}" data-num="${field}" step="1" min="${FLOOR}" max="${CAP}" value="${v}" enterkeyhint="done"></span></div>
-      <p class="note bidnote" id="nn-${field}" hidden></p></div>`;
+  // --- bid stacks: ten bands of price and MW (g = a generator's offer, d/c = storage sell/charge) ---
+  const stackOf = (p, key) => key === 'g' ? p.bands : p.sbands[key];
+  // MW shown per band: a preset's placement at full output, or your own bands.
+  const stackMW = (p, key) => key === 'g' && p.bid !== 'custom' ? Sim.presetMW(S, p, p.mw) : stackOf(p, key).mw;
+  function stackBlock(p, key) {
+    const B = stackOf(p, key), mw = stackMW(p, key), pend = B.next;
+    const rows = B.prices.map((price, i) => `<tr><td class="num">${i + 1}</td>
+      <td><span class="bidbox"><button type="button" class="pm" data-sflip="${key}:${i}" aria-label="Band ${i + 1}: switch between a positive and a negative price">±</button><span>$</span><input type="number" step="1" min="${FLOOR}" max="${CAP}" data-sprice="${key}:${i}" value="${pend ? pend[i] : price}" enterkeyhint="done" aria-label="Band ${i + 1} price"></span>
+        <small class="pending" id="sp-${key}-${i}">${pend && pend[i] !== price ? `now ${fmtDollars(price)}, new price from tomorrow` : ''}</small></td>
+      <td><span class="bidbox"><input type="number" step="1" min="0" max="${p.mw}" data-smw="${key}:${i}" value="${Math.round(mw[i] * 10) / 10}" enterkeyhint="done" aria-label="Band ${i + 1} MW"><span>MW</span></span></td></tr>`).join('');
+    return `<canvas class="chart" id="stk-${key}" data-h="110" aria-label="This plant's bid stack: MW offered at each price"></canvas>
+      <table class="res stack"><thead><tr><th>Band</th><th>Price $/MWh</th><th>MW</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="note num" id="st-${key}"></p>`;
   }
-  // Apply an exact bid: whole dollars between the floor and the cap.
-  function setBid(p, field, raw) {
-    let v = Math.round(Number(raw));
-    const note = $(`nn-${field}`);
-    if (!Number.isFinite(v)) { v = Math.round(p[field] ?? 0); }
-    const clamped = Math.min(CAP, Math.max(FLOOR, v));
-    p[field] = clamped;
-    const box = $(`nb-${field}`); if (box && document.activeElement !== box) box.value = clamped; else if (box && clamped !== v) box.value = clamped;
-    const sl = $('p-bid').querySelector(`[data-slide="${field}"]`);
-    if (sl) sl.value = sl.dataset.log === '1' ? toSlider(Math.max(Number(sl.min), clamped)) : clamped;
-    if (note) { note.hidden = clamped === v; note.textContent = `Bids run from ${fmtDollars(FLOOR)} to ${fmtDollars(CAP)}/MWh, so it's set to ${fmtDollars(clamped)}.`; }
-    if (field === 'price') { const b = $('p-bid').querySelector('[aria-pressed="true"] small'); if (b) b.textContent = fmtDollars(clamped); }
-    bidWarning(p);
+  function stackTotals(p, key) {
+    const total = stackMW(p, key).reduce((a, b) => a + b, 0), el = $(`st-${key}`);
+    if (el) el.textContent = `${key === 'c' ? 'Will charge up to' : 'Offered'} ${fmtMW(total)} of ${fmtMW(p.mw)}${key === 'g' && TECH[p.tech].kind === 'vre' ? ', capped by the sun or wind on the day, cheapest bands first' : ''}.`;
   }
-  function bidWarning(p) {
-    const n = $('nn-dischargeAbove'); if (!n || p.strategy !== 'custom') return;
-    const bad = (p.dischargeAbove ?? 150) <= (p.chargeBelow ?? 40);
-    if (bad) { n.hidden = false; n.textContent = 'Set the sell price above the charge price, or the battery will buy and sell at the same prices and lose on every round trip.'; }
-    else if (n.textContent.startsWith('Set the sell')) n.hidden = true;
+  // A small staircase of the plant's offer, on the same price scale as the other charts.
+  const stackGeom = {};
+  function drawStacks(p) {
+    for (const key of ['g', 'd', 'c']) {
+      const c = $(`stk-${key}`); if (!c) continue;
+      const B = stackOf(p, key), mw = stackMW(p, key);
+      const { ctx, w, h } = setup(c), left = 52, right = w - 8, top = 8, bottom = h - 8;
+      const Y = v => bottom - priceF(v) * (bottom - top), X = m => left + m / Math.max(1, p.mw) * (right - left);
+      priceAxis(ctx, left, right, top, bottom, [-1000, 0, 300, 1000, CAP]);
+      const color = key === 'c' ? '#8fb8c7' : techColor(p.tech), geo = [];
+      let cum = 0;
+      B.prices.forEach((price, i) => {
+        if (mw[i] < 0.05) return;
+        const x0 = X(cum), x1 = X(cum + mw[i]), y = Y(price), y0 = Y(0);
+        ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x0 + 1, Math.min(y, y0), Math.max(2, x1 - x0 - 2), Math.max(2, Math.abs(y0 - y)), 3); ctx.fill();
+        if (B.next && B.next[i] !== price) { ctx.setLineDash([3, 3]); ctx.strokeStyle = '#ffd59b'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x0 + 1, Y(B.next[i])); ctx.lineTo(x1 - 1, Y(B.next[i])); ctx.stroke(); ctx.setLineDash([]); }
+        geo.push({ x0, x1, i, price, mw: mw[i] });
+        cum += mw[i];
+      });
+      stackGeom[key] = geo;
+      stackTotals(p, key);
+    }
   }
+  $('p-bid').addEventListener('pointermove', e => {
+    const key = (e.target.id || '').startsWith('stk-') ? e.target.id.slice(4) : null; if (!key || !stackGeom[key]) return;
+    const r = e.target.getBoundingClientRect(), x = e.clientX - r.left, g = stackGeom[key].find(g => x >= g.x0 && x <= g.x1);
+    if (g) showTip(e.clientX, e.clientY, `<b>Band ${g.i + 1}</b>${fmtMW(g.mw)} at ${fmtDollars(g.price)}/MWh`); else hideTip();
+  });
+  $('p-bid').addEventListener('pointerleave', hideTip, true);
+  function stackWarning(p) {
+    if (!p.sbands || p.strategy !== 'custom') return;
+    const el = $('st-d'); if (!el) return;
+    const sell = p.sbands.d, charge = p.sbands.c;
+    const lowSell = sell.prices.find((v, i) => sell.mw[i] > 0), highBuy = [...charge.prices].reverse().find((v, k) => charge.mw[NBANDS - 1 - k] > 0);
+    if (lowSell != null && highBuy != null && lowSell <= highBuy) el.textContent += ' Careful: your cheapest sell band is at or below your dearest charge band, so the battery may buy and sell at the same price and lose on the round trip.';
+  }
+  const NBANDS = Sim.NB;
   $('sh-plant').addEventListener('click', e => {
     const p = S.plants.find(x => x.id === plantOpen); if (!p) return;
     const s = e.target.closest('[data-set]');
@@ -1115,8 +1145,8 @@
       renderPlantSheet(); applyHints(); save(); return;
     }
     if (e.target.closest('[data-fcas]')) { p.fcas = p.fcas === false; renderPlantSheet(); save(); return; }
-    const flip = e.target.closest('[data-flip]');
-    if (flip) { const f = flip.dataset.flip, box = $(`nb-${f}`); setBid(p, f, -Number(box.value || 0)); box.value = p[f]; save(); return; }
+    const flip = e.target.closest('[data-sflip]');
+    if (flip) { const [key, i] = flip.dataset.sflip.split(':'), box = $('p-bid').querySelector(`[data-sprice="${key}:${i}"]`); applyBand(p, key, +i, 'price', -Number(box.value || 0)); return; }
     if (e.target.closest('[data-upgrade]')) {
       const r = Sim.upgrade(S, p);
       if (r.ok) { toast(`${p.name} is being upgraded.`); renderPlantSheet(); renderAll(); save(); }
@@ -1128,22 +1158,27 @@
       Sim.retire(S, p); closeSheets(); renderAll(); save();
     }
   });
-  $('sh-plant').addEventListener('input', e => {
-    const el = e.target.closest('[data-slide]'); if (!el) return;
-    const p = S.plants.find(x => x.id === plantOpen); if (!p) return;
-    let v = +el.value; if (el.dataset.log === '1') v = Math.round(fromSlider(v) / 10) * 10;
-    const f = el.dataset.slide; p[f] = v;
-    const box = $(`nb-${f}`); if (box) box.value = v;
-    const n = $(`nn-${f}`); if (n && !n.textContent.startsWith('Set the sell')) n.hidden = true;
-    const b = $('p-bid').querySelector('[aria-pressed="true"] small'); if (b && f === 'price') b.textContent = fmtDollars(v);
-    bidWarning(p);
-  });
+  // Apply a typed band price (for tomorrow) or MW (now), then refresh just what changed so the next
+  // box you tap keeps its focus.
+  function applyBand(p, key, i, what, raw) {
+    const typed = Math.round(Number(raw));
+    const wasCustom = key === 'g' ? p.bid === 'custom' : true;
+    const used = what === 'price' ? Sim.setBandPrice(S, p, key, i, Number.isFinite(typed) ? typed : 0) : Sim.setBandMW(S, p, key, i, Number.isFinite(typed) ? typed : 0);
+    if (!wasCustom) { renderPlantSheet(); save(); return; }   // switched to Custom: show the whole sheet afresh
+    const box = $('p-bid').querySelector(`[data-s${what === 'price' ? 'price' : 'mw'}="${key}:${i}"]`); if (box) box.value = used;
+    if (used !== typed) toast(what === 'price' ? `Band prices go up from band 1 to band 10, between ${fmtDollars(FLOOR)} and ${fmtDollars(CAP)}. Set to ${fmtDollars(used)}.` : `A band can't hold more than the plant's ${fmtMW(p.mw)}.`);
+    const B = stackOf(p, key);
+    if (what === 'mw') B.mw.forEach((v, k) => { const el = $('p-bid').querySelector(`[data-smw="${key}:${k}"]`); if (el) el.value = v; });   // MW moved out of other bands
+    B.prices.forEach((price, k) => { const el = $(`sp-${key}-${k}`); if (el) el.textContent = B.next && B.next[k] !== price ? `now ${fmtDollars(price)}, new price from tomorrow` : ''; });
+    drawStacks(p); stackWarning(p); save();
+  }
   $('sh-plant').addEventListener('change', e => {
-    const el = e.target.closest('[data-num]'), p = S.plants.find(x => x.id === plantOpen);
-    if (el && p) setBid(p, el.dataset.num, el.value);
-    save();
+    const el = e.target.closest('[data-sprice], [data-smw]'), p = S.plants.find(x => x.id === plantOpen);
+    if (!el || !p) return;
+    const [key, i] = (el.dataset.sprice || el.dataset.smw).split(':');
+    applyBand(p, key, +i, el.dataset.sprice ? 'price' : 'mw', el.value);
   });
-  $('sh-plant').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.closest('[data-num]')) e.target.blur(); });
+  $('sh-plant').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.closest('[data-sprice], [data-smw]')) e.target.blur(); });
 
   // --- menu, goals, reports ---
   $('open-menu').onclick = () => {
@@ -1285,6 +1320,7 @@
   function showHelp() {
     info('How it works', `
       <p><b style="color:var(--ink)">Every five minutes the market runs a dispatch.</b> Each generator offers its megawatts at a price. The offers are stacked cheapest first (the merit order) until demand is met, and the last offer needed sets the price that everyone running is paid.</p>
+      <p><b style="color:var(--ink)">Bid stacks:</b> like real NEM offers, each plant bids in ten price bands. The presets fill them for you; Custom lets you set each band. Band prices are fixed for the day, so new prices start tomorrow, but you can move MW between bands at any time (a rebid).</p>
       <p><b style="color:var(--ink)">So your bid decides when you run, not what you're paid.</b> Bid low and you run more often at whatever price the market sets. Bid high and you only run when prices are high.</p>
       <p><b style="color:var(--ink)">Demand has a rhythm.</b> Rooftop solar makes middays cheap, sometimes negative. Evenings are the peak. Heatwaves, cold snaps, still weeks and breakdowns create spikes up to the price cap.</p>
       <p><b style="color:var(--ink)">Batteries and hydro</b> charge when power is cheap and sell into the peak. They, and gas peakers, can also earn by staying ready for frequency control.</p>
