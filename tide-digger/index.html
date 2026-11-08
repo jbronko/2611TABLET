@@ -82,18 +82,24 @@
     padding-left: max(12px, env(safe-area-inset-left, 0px));
     padding-right: max(12px, env(safe-area-inset-right, 0px));
   }
-  .title { display: grid; min-width: 0; flex: 1 1 100px; }
+  .title { display: grid; min-width: 0; flex: 1 1 90px; }
   .title strong { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tide { display: grid; gap: 4px; min-width: 120px; flex: 0 1 220px; }
+  .tide { display: grid; gap: 4px; min-width: 100px; flex: 0 1 220px; }
   .tide-track { position: relative; height: 22px; }
+  @media (max-width: 900px) {
+    /* narrow screens: the tide meter gets its own row under the buttons */
+    .tide { order: 10; flex: 1 1 240px; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
+    .sandbox-tools { order: 9; }
+  }
   .tide-track svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .tide-track path { fill: none; stroke: var(--line); stroke-width: 2; }
   .tide-track .done { stroke: var(--accent); }
-  .tide-track circle { fill: var(--accent); }
+  .tide-dot { position: absolute; left: 0; top: 91%; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); transform: translate(-50%, -50%); }
   .tools { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .tools button { border: 0; border-radius: 0; background: var(--panel); padding: 0 12px; }
   .tools button + button { border-left: 1px solid var(--line); }
   .tools button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+  #depth[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 700; }
   .icon-btn { padding: 0; width: 48px; display: inline-grid; place-items: center; }
   .icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
   .stage {
@@ -161,8 +167,8 @@
         <svg viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true">
           <path id="tide-curve" d=""/>
           <path id="tide-done" class="done" d=""/>
-          <circle id="tide-dot" r="4" cx="0" cy="20"/>
         </svg>
+        <span class="tide-dot" id="tide-dot"></span>
       </div>
     </div>
     <div class="tools" role="group" aria-label="Tool">
@@ -174,6 +180,7 @@
       <button type="button" id="wave">Send a wave</button>
       <button type="button" id="tide-speed">Tide: normal</button>
     </div>
+    <button type="button" id="depth" aria-pressed="false">Depth</button>
     <button type="button" class="icon-btn" id="pause" aria-label="Pause">
       <svg viewBox="0 0 24 24" id="pause-icon"><path d="M9 6v12M15 6v12"/></svg>
     </button>
@@ -231,6 +238,7 @@
   let foam = new Float32Array(N), foam2 = new Float32Array(N);
   const wOld = new Float32Array(N), ground = new Float32Array(N), delta = new Float32Array(N), wet = new Float32Array(N);
   const kind = new Uint8Array(N);       // 0 sand, 1 rock, 2 pool floor
+  const startGround = new Float32Array(N); // ground height when the beach was made (shows how deep you've dug)
   const grain = new Float32Array(N);    // per-cell colour variation
   const poolOf = new Int16Array(N);     // pool index or -1
 
@@ -355,8 +363,12 @@
         }
       }
       const target = Math.min(rimTop, def.high);
-      return { x: cx, y: cy, cells, target, notch: { x: cx + Math.cos(dir) * (POOL_R + RIM_W / 2), y: cy + Math.sin(dir) * (POOL_R + RIM_W / 2) } };
+      // Room for water in the empty basin, fixed for the whole beach: sand that washes in takes up
+      // some of that room and lowers the score, instead of shrinking what "full" means.
+      let cap0 = 0; for (const i of cells) cap0 += Math.max(0, target - bed[i]);
+      return { x: cx, y: cy, cells, target, cap0, shown: 0, notch: { x: cx + Math.cos(dir) * (POOL_R + RIM_W / 2), y: cy + Math.sin(dir) * (POOL_R + RIM_W / 2) } };
     });
+    for (let i = 0; i < N; i++) startGround[i] = bed[i] + sand[i];
   }
 
   // =====================================================================================
@@ -417,7 +429,7 @@
     for (let y = 1; y < H - 1; y++) {
       for (let x = 1; x < W - 1; x++) {
         const i = y * W + x, w = water[i];
-        if (w < 0.004) { if (sed[i] > 0) { sand[i] += sed[i]; sed[i] = 0; } continue; }
+        if (w < 0.004) { if (sed[i] > 0 && kind[i] !== 2) { sand[i] += sed[i]; sed[i] = 0; } continue; }
         const sp = Math.hypot(vx[i], vy[i]);
         const gx = (bed[i + 1] + sand[i + 1] - bed[i - 1] - sand[i - 1]) * 0.5;
         const gy = (bed[i + W] + sand[i + W] - bed[i - W] - sand[i - W]) * 0.5;
@@ -425,7 +437,7 @@
         const cap = KC * sp * (0.12 + tilt) * Math.min(1, w * 2.5);
         const s = sed[i];
         if (s < cap) { const a = Math.min(KE * (cap - s), sand[i]); sand[i] -= a; sed[i] = s + a; }
-        else { const a = KD * (s - cap); sand[i] += a; sed[i] = s - a; }
+        else if (kind[i] !== 2) { const a = KD * (s - cap); sand[i] += a; sed[i] = s - a; }   // sand stays suspended in a rock pool's water
       }
     }
   }
@@ -445,8 +457,11 @@
         const talus = water[i] > 0.05 ? TALUS_SUB : (wet[i] > 0.45 ? TALUS_WET : TALUS_DRY);
         const gi = ground[i];
         let tot = 0, max = 0;
+        const fromPool = kind[i] === 2;
         for (let k = 0; k < 8; k++) {
-          const e = gi - ground[i + NBO[k]] - talus * NB[k][2];
+          const n = i + NBO[k];
+          // a rock pool's basin has a lip: sand outside it can't slide in (sand already inside can move)
+          const e = (kind[n] === 2 && !fromPool) ? 0 : gi - ground[n] - talus * NB[k][2];
           ex[k] = e > 0 ? e : 0; tot += ex[k]; if (e > max) max = e;
         }
         if (tot <= 0) continue;
@@ -512,12 +527,15 @@
   }
 
   function poolFill(p) {
-    let have = 0, cap = 0;
-    for (const i of p.cells) {
-      const g = bed[i] + sand[i], c = Math.max(0, p.target - g);
-      cap += c; have += Math.min(water[i], c);
-    }
-    return cap > 0 ? have / cap : 0;
+    let have = 0;
+    for (const i of p.cells) have += Math.min(water[i], Math.max(0, p.target - bed[i] - sand[i]));
+    return p.cap0 > 0 ? Math.min(1, have / p.cap0) : 0;
+  }
+  // share of a pool's room taken up by sand that washed or slumped into it
+  function poolSilt(p) {
+    let s = 0;
+    for (const i of p.cells) s += Math.min(sand[i], Math.max(0, p.target - bed[i]));
+    return p.cap0 > 0 ? s / p.cap0 : 0;
   }
   const fills = () => pools.map(poolFill);
   const starsFor = avg => avg >= 0.78 ? 3 : avg >= 0.48 ? 2 : avg >= 0.22 ? 1 : 0;
@@ -604,6 +622,31 @@
   // sand don't show the grid's stair steps when scaled up.
   const wetD = new Float32Array(N), rockD = new Float32Array(N), poolD = new Float32Array(N), blurTmp = new Float32Array(N);
   const waterD = new Float32Array(N), foamD = new Float32Array(N);
+  const shadow = new Float32Array(N), relief = new Float32Array(N), smoothG = new Float32Array(N);
+  let renderCount = 0;
+  let depthView = false;
+
+  // Shadows from a low sun: walk from each cell toward the light and see whether the terrain on
+  // the way rises above the sun's ray. Trench walls and dams throw clear shadows.
+  const SUN_RISE = 0.5;   // sun height gained per cell walked toward it (a low, late-afternoon sun)
+  function computeShadows() {
+    const len = Math.hypot(LX, LY), dx = LX / len, dy = LY / len;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x, h0 = ground[i] + 0.05;
+      let sh = 0;
+      for (let k = 1; k <= 9; k++) {
+        const sx = (x + dx * k + 0.5) | 0, sy = (y + dy * k + 0.5) | 0;
+        if (sx < 0 || sy < 0 || sx >= W || sy >= H) break;
+        const over = ground[sy * W + sx] - (h0 + k * SUN_RISE);
+        if (over > 0) { sh = Math.max(sh, Math.min(1, over * 2.5)); if (sh >= 1) break; }
+      }
+      shadow[i] = sh;
+    }
+    blur3(shadow);
+    // relief: how far each cell sits above or below its neighbourhood (hollows dark, crests light)
+    smoothG.set(ground); blur3(smoothG); blur3(smoothG);
+    for (let i = 0; i < N; i++) relief[i] = ground[i] - smoothG[i];
+  }
   function blur3(a) {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = y * W + x;
@@ -628,6 +671,8 @@
     }
     waterD.set(water); foamD.set(foam);
     blur3(wetD); blur3(rockD); blur3(poolD); blur3(waterD); blur3(foamD);
+    if ((renderCount++ & 1) === 0) computeShadows();   // terrain changes slowly: every other frame is plenty
+    const hiTide = level.high;
     for (let y = 0; y < H; y++) {
       const ym = y > 0 ? -W : 0, yp = y < H - 1 ? W : 0;
       for (let x = 0; x < W; x++) {
@@ -635,17 +680,31 @@
         const gx = (ground[i + xp] - ground[i + xm]) * 0.5, gy = (ground[i + yp] - ground[i + ym]) * 0.5;
         // ground normal and diffuse light
         const nl = 1 / Math.sqrt(gx * gx * 2.6 + gy * gy * 2.6 + 1);
-        const diff = Math.max(0, (-gx * 1.6 * LX - gy * 1.6 * LY + LZ) * nl);
+        const diff = Math.max(0, (-gx * 2.0 * LX - gy * 2.0 * LY + LZ) * nl);
         const s = sand[i], gn = grain[i], wt = wetD[i];
         // sand, darkening as it gets wet, and turning to packed hardpan where dug right down
         let r = 236 - wt * 62 + gn * 7, g = 216 - wt * 64 + gn * 6, b = 172 - wt * 62 + gn * 5;
         const hp = kind[i] === 0 && s < 0.3 ? 1 - s / 0.3 : 0;
         if (hp > 0) { r += (150 - r) * hp; g += (128 - g) * hp; b += (96 - b) * hp; }
+        // the deeper you dig, the darker and browner the damp sand gets
+        const dug = startGround[i] - ground[i];
+        if (dug > 0.05 && kind[i] === 0) { const t = Math.min(0.6, dug / 3.5); r += (150 - r) * t; g += (118 - g) * t; b += (80 - b) * t; }
         const rk = rockD[i], pk = poolD[i];
         if (rk > 0) { r += (128 + gn * 10 - r) * rk; g += (121 + gn * 10 - g) * rk; b += (112 + gn * 9 - b) * rk; }
         if (pk > 0) { r += (100 + gn * 8 - r) * pk; g += (106 + gn * 8 - g) * pk; b += (104 + gn * 8 - b) * pk; }
-        const light = 0.42 + 0.78 * diff;
+        const rel = relief[i];
+        const light = (0.38 + 0.84 * diff) * (1 - 0.36 * shadow[i]) * (1 + Math.max(-0.24, Math.min(0.18, rel * 0.3)));
         r *= light; g *= light; b *= light;
+        if (depthView) {
+          // sand the high tide can reach turns blue-grey; contour lines every 1 unit of height
+          // (both drawn from smoothed heights so the edges are soft, not stair-stepped)
+          const hs = smoothG[i];
+          const below = kind[i] === 1 ? 0 : Math.max(0, Math.min(1, (hiTide - hs) / 0.35 + 0.5)) * (1 - Math.min(1, waterD[i] * 8));
+          if (below > 0) { r += (110 - r) * 0.5 * below; g += (146 - g) * 0.5 * below; b += (176 - b) * 0.5 * below; }
+          const sgx = (smoothG[i + xp] - smoothG[i + xm]) * 0.5, sgy = (smoothG[i + yp] - smoothG[i + ym]) * 0.5;
+          const fr = hs - Math.floor(hs), dist = Math.min(fr, 1 - fr) / Math.max(0.05, Math.hypot(sgx, sgy));
+          if (dist < 0.7) { const k2 = 1 - 0.3 * (1 - dist / 0.7); r *= k2; g *= k2; b *= k2; }
+        }
         const w = waterD[i];
         if (w > 0.006) {
           const a = 1 - Math.exp(-w * 2.4), deep = 1 - Math.exp(-w * 0.5);
@@ -693,7 +752,8 @@
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `700 ${Math.round(Math.max(13, s * 2.1))}px system-ui, sans-serif`;
       pools.forEach(p => {
-        const f = poolFill(p), [x, y] = toScreen(p.x, p.y, s);
+        p.shown += (poolFill(p) - p.shown) * 0.12;   // ease the number so sloshing doesn't make it jitter
+        const f = p.shown, [x, y] = toScreen(p.x, p.y, s);
         ctx.lineWidth = Math.max(2, s * 0.35);
         ctx.strokeStyle = 'rgba(255,255,255,0.35)';
         ctx.beginPath(); ctx.arc(x, y, (POOL_R + RIM_W + 1) * s, 0, Math.PI * 2); ctx.stroke();
@@ -857,7 +917,9 @@
     $('res-stars').setAttribute('aria-label', `${st} of 3 stars`);
     $('res-title').textContent = st ? 'The tide has gone out' : 'The pools ran dry';
     $('res-pools').innerHTML = f.map((v, k) => `<span>Pool ${k + 1}: ${Math.round(v * 100)}% full</span>`).join('');
+    const silted = pools.map(poolSilt).findIndex(v => v > 0.15);
     $('res-text').textContent = st === 3 ? 'Brimming. Beautifully done.'
+      : silted >= 0 ? `Sand washed into pool ${silted + 1} and took up room the water needed. Keep the gap clear and let the water arrive gently.`
       : st ? 'Pile sand into the gap once a pool is full, so the water can’t drain back out.'
       : 'Dig deeper, below where the high tide reaches, so the water can flow all the way in.';
     const last = levelIndex >= LEVELS.length - 1;
@@ -881,7 +943,7 @@
     const steps = Math.max(1, Math.round(ph * 50));
     for (let k = 0; k <= steps; k++) { const t = ph * k / steps; d += `${k ? 'L' : 'M'}${t * 100},${20 - 18 * (0.5 - 0.5 * Math.cos(2 * Math.PI * t))}`; }
     $('tide-done').setAttribute('d', d);
-    $('tide-dot').setAttribute('cx', ph * 100); $('tide-dot').setAttribute('cy', 20 - 18 * (0.5 - 0.5 * Math.cos(2 * Math.PI * ph)));
+    $('tide-dot').style.left = `${ph * 100}%`; $('tide-dot').style.top = `${(20 - 18 * (0.5 - 0.5 * Math.cos(2 * Math.PI * ph))) / 22 * 100}%`;
     const left = Math.max(0, Math.ceil(T - tideT));
     $('tide-label').textContent = !tideOn ? 'Low tide · waiting'
       : level.sandbox ? (ph < 0.45 ? 'Tide rising' : ph < 0.55 ? 'High tide' : 'Tide falling')
@@ -923,6 +985,12 @@
   }
   $('mute').onclick = () => { store.muted = !store.muted; saveStore(); syncMute(); audio.start(); audio.setMuted(store.muted); };
   syncMute();
+  function syncDepth() { depthView = !!store.depthView; $('depth').setAttribute('aria-pressed', String(depthView)); }
+  $('depth').onclick = () => {
+    store.depthView = !store.depthView; saveStore(); syncDepth();
+    if (depthView) showToast('Blue-grey sand is below the high-tide line, so the tide can reach it. Lines mark each step of height.');
+  };
+  syncDepth();
   document.addEventListener('visibilitychange', () => { if (document.hidden && !$('play').hidden) setPaused(true); });
 
   // ---- main loop ----
@@ -972,7 +1040,7 @@
     },
     run(seconds) { const n = Math.round(seconds * 60); for (let k = 0; k < n && !finished; k++) simFrame(); },
     get tideT() { return tideT; },
-    fills, stars: () => starsFor(fills().reduce((a, b) => a + b, 0) / Math.max(1, pools.length)),
+    fills, silts: () => pools.map(poolSilt), stars: () => starsFor(fills().reduce((a, b) => a + b, 0) / Math.max(1, pools.length)),
     finished: () => finished,
     sandMass() { let m = 0; for (let i = 0; i < N; i++) m += sand[i] + sed[i]; return m; },
     healthy() { for (let i = 0; i < N; i++) if (!(water[i] >= 0) || !(sand[i] >= 0) || !Number.isFinite(sed[i])) return false; return true; },
