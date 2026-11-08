@@ -73,6 +73,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click(`[data-plant="${bat}"]`); await p.waitForTimeout(200);
     await p.click('[data-set="strategy:evening"]');
     check('battery strategy can be changed', (await state(p, id => MeritOrder.state.plants.find(x => x.id === id).strategy, bat)) === 'evening');
+    await p.click('[data-fcas="fcasLower"]'); await p.waitForTimeout(100);
+    check('frequency control: separate Raise and Lower switches', (await p.$$('[data-fcas]')).length === 2 && (await state(p, id => { const x = MeritOrder.state.plants.find(y => y.id === id); return [x.fcasRaise, x.fcasLower].join(); }, bat)) === 'true,false');
     check('plant sheet shows its accounts since it was built', /Since it was built[\s\S]*Operating profit/.test(await p.textContent('#p-life')));
     await shot(p, 'plant');
     await p.click('#sh-plant [data-close]');

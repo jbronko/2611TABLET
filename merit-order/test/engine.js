@@ -228,6 +228,23 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('band prices must rise band by band', Sim.setBandPrice(S, pk, 'g', 4, -5000) === pk.bands.prices[3] + 1);
 }
 
+// 15. Frequency control: Raise and Lower each meet their requirement; switches are respected.
+{
+  const S = Sim.create(14, { cash: 1e7 }); Sim.build(S, 'solar', 50); const bat = Sim.build(S, 'battery', 50).plant;
+  let met = true, both = 0, offLower = true;
+  for (let k = 0; k < 4 * Sim.IPD; k++) {
+    if (k === 3 * Sim.IPD) bat.fcasLower = false;
+    const r = Sim.step(S), R = r.fc.raise, L = r.fc.lower;
+    const got = M => M.offers.reduce((a, o) => a + (o.take || 0), 0);
+    if (Math.abs(got(R) - R.need) > 1e-6 || Math.abs(got(L) - L.need) > 1e-6) met = false;
+    if (R.offers.some(o => o.ref === bat && o.take) && L.offers.some(o => o.ref === bat && o.take)) both++;
+    if (k >= 3 * Sim.IPD && L.offers.some(o => o.ref === bat)) offLower = false;
+  }
+  const d = S.days[S.days.length - 1];
+  check('Raise and Lower each meet their requirement', met);
+  check('a battery can earn in both, and its switches are respected', both > 0 && offLower && Math.abs(d.fcas - d.fcasRaise - d.fcasLower) < 1e-6, `raise ${Sim.fmtMoney(d.fcasRaise)}, lower ${Sim.fmtMoney(d.fcasLower)} on day ${d.day + 1}`);
+}
+
 // 10. Speed: a big company's 7-day catch-up (what runs when the app opens after a week away).
 {
   const S = Sim.create(1, { cash: 1e9 });

@@ -1036,7 +1036,10 @@
         <h3>Strategy</h3>${seg('strategy', p.strategy, [['arb', 'Trade the spread', 'cheap in, dear out'], ['evening', 'Evening peak', 'fill by day'], ['fcas', 'Frequency only', 'stay ready'], ['custom', 'Custom', 'your bands']])}
         ${p.strategy === 'custom' && p.sbands ? `<h3>Sell stack</h3>${stackBlock(p, 'd')}<h3>Charge stack</h3><p class="note">Charges in a band while the price is at or below it, highest band first.</p>${stackBlock(p, 'c')}${stackNote}` : '<p class="note">The strategies are auto-bidders: they set the day\'s prices and move MW between them as the battery fills and empties. Choose Custom to set your own bands.</p>'}`;
     }
-    if (T.fcas) bid += `<button type="button" class="switch-row" role="switch" aria-checked="${p.fcas !== false}" data-fcas><span>Offer frequency control<small>Get paid to keep spare capacity ready to steady the grid</small></span><span class="switch"></span></button>`;
+    const fc = S.last && S.last.fc;
+    if (T.fcas || T.fcasLower) bid += `<h3>Frequency control</h3>`;
+    if (T.fcas) bid += `<button type="button" class="switch-row" role="switch" aria-checked="${p.fcasRaise !== false}" data-fcas="fcasRaise"><span>Offer Raise<small>Paid to keep spare capacity ready to add output fast${fc ? ` · now ${fmtPrice(fc.raise.price)}/MW/h` : ''}</small></span><span class="switch"></span></button>`;
+    if (T.fcasLower) bid += `<button type="button" class="switch-row" role="switch" aria-checked="${p.fcasLower !== false}" data-fcas="fcasLower"><span>Offer Lower<small>Paid to be ready to cut output${T.kind === 'storage' ? ' or charge harder' : ''} fast${fc ? ` · now ${fmtPrice(fc.lower.price)}/MW/h` : ''}</small></span><span class="switch"></span></button>`;
     $('p-bid').innerHTML = bid; drawStacks(p); stackWarning(p);
     const sell = p.tech === 'coal' ? (p.status === 'retiring' ? '' : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Give notice to close (5 days)</button>`)
       : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Sell for ${fmtMoney(Math.round(p.value * 0.4))}</button>`;
@@ -1144,7 +1147,8 @@
       if (f === 'strategy') { p.stratSet = true; Sim.checkMissions(S); renderAll(); }
       renderPlantSheet(); applyHints(); save(); return;
     }
-    if (e.target.closest('[data-fcas]')) { p.fcas = p.fcas === false; renderPlantSheet(); save(); return; }
+    const fsw = e.target.closest('[data-fcas]');
+    if (fsw) { const k = fsw.dataset.fcas; p[k] = p[k] === false; renderPlantSheet(); save(); return; }
     const flip = e.target.closest('[data-sflip]');
     if (flip) { const [key, i] = flip.dataset.sflip.split(':'), box = $('p-bid').querySelector(`[data-sprice="${key}:${i}"]`); applyBand(p, key, +i, 'price', -Number(box.value || 0)); return; }
     if (e.target.closest('[data-upgrade]')) {
@@ -1233,7 +1237,7 @@
       ${days.length >= 2 ? `<h3>Company value by day</h3><canvas class="chart" id="c-value" data-h="150" aria-label="Company value at the end of each day"></canvas>
       <h3>Profit by day</h3><canvas class="chart" id="c-profit" data-h="130" aria-label="Profit or loss each day"></canvas>` : '<p class="note">Charts appear after two full days.</p>'}
       ${days.length ? `<h3>Accounts, last ${days.length} day${days.length > 1 ? 's' : ''}</h3><table class="res"><tbody>
-        ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control', sum('fcas'))}${line('Contracts', sum('contracts'))}
+        ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control: raise', days.reduce((a, d) => a + (d.fcasRaise ?? d.fcas ?? 0), 0))}${line('Frequency control: lower', sum('fcasLower'))}${line('Contracts', sum('contracts'))}
         ${line('Upkeep', -sum('upkeep'))}${line('Repairs', -sum('repairs'))}${line('Interest', -sum('interest'))}${line('Fines', -sum('penalties'))}${line('Bonuses', sum('bonus'))}${line('Profit', sum('profit'), true)}
       </tbody></table><p class="note">Building costs, sales of plant and goal rewards aren't counted in profit.</p>` : ''}
       ${stationTable()}`);
@@ -1323,7 +1327,8 @@
       <p><b style="color:var(--ink)">Bid stacks:</b> like real NEM offers, each plant bids in ten price bands. The presets fill them for you; Custom lets you set each band. Band prices are fixed for the day, so new prices start tomorrow, but you can move MW between bands at any time (a rebid).</p>
       <p><b style="color:var(--ink)">So your bid decides when you run, not what you're paid.</b> Bid low and you run more often at whatever price the market sets. Bid high and you only run when prices are high.</p>
       <p><b style="color:var(--ink)">Demand has a rhythm.</b> Rooftop solar makes middays cheap, sometimes negative. Evenings are the peak. Heatwaves, cold snaps, still weeks and breakdowns create spikes up to the price cap.</p>
-      <p><b style="color:var(--ink)">Batteries and hydro</b> charge when power is cheap and sell into the peak. They, and gas peakers, can also earn by staying ready for frequency control.</p>
+      <p><b style="color:var(--ink)">Batteries and hydro</b> charge when power is cheap and sell into the peak.</p>
+      <p><b style="color:var(--ink)">Frequency control</b> has two markets. <b style="color:var(--ink)">Raise</b> pays batteries, hydro and gas peakers to keep spare capacity ready to add output in seconds; more is needed when the interconnector is out. <b style="color:var(--ink)">Lower</b> pays plants that are running to be ready to cut output (and batteries to charge harder); more is needed when the sun is high. Each plant has a switch for each.</p>
       <p><b style="color:var(--ink)">The dashed line on the price chart is the forecast</b> for the next six hours, worked out from today's weather and offers. Surprises like breakdowns aren't in it.</p>
       <p><b style="color:var(--ink)">Contracts</b> trade some upside for certainty. A swap fixes the price you get on part of your output; a cap pays you a premium every day but you pay out when prices spike above $300, so only sell caps you can cover with plant that will be running.</p>
       <p><b style="color:var(--ink)">Sites and loss factors:</b> choose where to build. Far-off sites often have better sun or wind, but a lower loss factor: at ×0.90 each MWh is paid 90% of the price. Each site's network can take only so many MW, and each pumped hydro valley holds one scheme with a fixed reservoir. Tap <b style="color:var(--ink)">Custom size and site</b> to set the exact MW, and MWh for batteries.</p>
