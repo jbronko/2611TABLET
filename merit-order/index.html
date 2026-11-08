@@ -71,6 +71,17 @@
   .hint { outline: 2px solid var(--amber); outline-offset: 3px; animation: hint 1.6s ease-in-out infinite; }
   @keyframes hint { 0% { box-shadow: 0 0 0 0 rgba(242, 163, 58, 0.55); } 70% { box-shadow: 0 0 0 12px rgba(242, 163, 58, 0); } 100% { box-shadow: 0 0 0 0 rgba(242, 163, 58, 0); } }
   @media (prefers-reduced-motion: reduce) { .hint { animation: none; } }
+  .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 12px; }
+  .sc { text-align: left; display: grid; gap: 4px; align-content: start; padding: 14px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); min-height: 48px; }
+  .sc:hover { border-color: var(--line-2); }
+  .sc b { font-size: 16.5px; } .sc span { font-size: 13.5px; color: var(--ink-2); } .sc small { color: var(--ink-3); font-size: 12.5px; }
+  .stars { color: var(--amber); letter-spacing: 0.08em; font-size: 18px; font-family: system-ui, sans-serif; }
+  .stars i { color: var(--ink-3); font-style: normal; }
+  .stars.big { font-size: 44px; text-align: center; margin: 4px 0 8px; }
+  .starlist { list-style: none; padding: 0; margin: 8px 0 12px; display: grid; gap: 8px; }
+  .starlist li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
+  .starlist li::before { content: '☆'; color: var(--ink-3); font-family: system-ui, sans-serif; }
+  .starlist li.ok::before { content: '★'; color: var(--amber); }
   .upgrade b { font-size: 15.5px; } .upgrade p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
   .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
 
@@ -87,7 +98,7 @@
   .continue { justify-content: space-between; padding: 0 20px; min-height: 68px !important; text-align: left; }
   .continue span:first-child { display: grid; }
   .continue small { font-weight: 600; font-size: 13.5px; opacity: 0.75; }
-  .title-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .title-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   @media (orientation: portrait) {
     .title-screen { align-items: end; }
     .title-screen::after { background: linear-gradient(0deg, rgba(11, 26, 33, 0.97) 0%, rgba(11, 26, 33, 0.8) 45%, rgba(11, 26, 33, 0.1) 80%); }
@@ -276,6 +287,7 @@
   <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5A3.5 3.5 0 0 1 16.5 11M12 14v4M8.5 21h7"/></symbol>
   <symbol id="i-share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8 15.8 7.2M8.2 13.2l7.6 3.6"/></symbol>
   <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.8M12 17v.3"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/></symbol>
   <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
 </svg>
 
@@ -291,6 +303,7 @@
     <div class="title-actions">
       <button type="button" class="btn btn-primary continue" id="t-continue"><span><b id="t-cont-k">Start your company</b><small id="t-cont-sub">An empty site and some cash</small></span><svg class="i"><use href="#i-play"/></svg></button>
       <div class="title-row">
+        <button type="button" class="btn btn-quiet" id="t-scenarios"><svg class="i"><use href="#i-star"/></svg>Scenarios</button>
         <button type="button" class="btn btn-quiet" id="t-challenge"><svg class="i"><use href="#i-flag"/></svg>Challenges</button>
         <button type="button" class="btn btn-quiet" id="t-help"><svg class="i"><use href="#i-help"/></svg>How it works</button>
       </div>
@@ -391,6 +404,7 @@
     <button type="button" class="switch-row" id="m-goals"><span><svg class="i"><use href="#i-trophy"/></svg> Goals</span><span class="num" id="m-goals-n"></span></button>
     <button type="button" class="switch-row" id="m-report"><span>Recent days</span></button>
     <button type="button" class="switch-row" id="m-share"><span><svg class="i"><use href="#i-share"/></svg> Share your company</span></button>
+    <button type="button" class="switch-row" id="m-scenarios"><span><svg class="i"><use href="#i-star"/></svg> Scenarios</span><span class="num" id="m-scenarios-n"></span></button>
     <button type="button" class="switch-row" id="m-challenge"><span><svg class="i"><use href="#i-flag"/></svg> Challenges</span></button>
     <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
     <button type="button" class="switch-row" id="m-tour"><span>Show me around<small>Restart the getting-started missions</small></span></button>
@@ -645,7 +659,8 @@
   let shownCash = null;
   function renderTop() {
     const dl = Sim.dateLabel(S);
-    $('clock').textContent = `${S.challenge ? `Challenge day ${dl.day} of 30` : `Day ${dl.day}`} · ${dl.date} · ${dl.time}`;
+    const sc = S.scenario && Sim.SCENARIOS.find(x => x.id === S.scenario.id);
+    $('clock').textContent = `${S.challenge ? `Challenge day ${dl.day} of 30` : sc ? `${sc.name} · day ${Math.min(dl.day, sc.days)} of ${sc.days}` : `Day ${dl.day}`} · ${dl.date} · ${dl.time}`;
     $('co-name').textContent = S.company || 'Your company';
     const t = S.today;
     const pl = t.revenue - t.costs + t.fcas + (t.contracts || 0) - t.penalties - (t.repairs || 0) - (t.interest || 0) + t.bonus;
@@ -1037,7 +1052,9 @@
     $('m-goals-n').textContent = `${goalCount()} of ${Sim.GOALS.length}`;
     $('m-contracts-n').textContent = S.contracts.length ? `${S.contracts.length} active` : S.contractOffers.length ? `${S.contractOffers.length} on offer` : '';
     $('m-autopause').setAttribute('aria-checked', String(autoPause));
-    $('m-challenge').hidden = false; openSheet('menu');
+    $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario;
+    $('m-scenarios-n').textContent = `${starTotal()} of ${Sim.SCENARIOS.length * 3} ★`;
+    openSheet('menu');
   };
   let autoPause = store.autoPause !== false;
   $('m-autopause').onclick = () => { autoPause = !autoPause; store.autoPause = autoPause; persist(); $('m-autopause').setAttribute('aria-checked', String(autoPause)); };
@@ -1165,7 +1182,7 @@
       <p class="note">Totals so far: profit ${fmtMoney(S.totals.profit)} · energy ${Math.round(S.totals.energy).toLocaleString()} MWh · frequency control ${fmtMoney(S.totals.fcas)} · emissions ${Math.round(S.totals.emis).toLocaleString()} t</p>` : '<p>No full days yet. Check back tomorrow.</p>');
   };
   $('m-help').onclick = () => showHelp();
-  $('m-tour').onclick = () => { if (S.challenge) { toast('Missions are for your own company, not challenges.'); return; } Sim.startTour(S); missionKey = ''; closeSheets(); renderAll(); save(); };
+  $('m-tour').onclick = () => { if (S.challenge || S.scenario) { toast('Missions are for your own company.'); return; } Sim.startTour(S); missionKey = ''; closeSheets(); renderAll(); save(); };
   $('t-help').onclick = () => showHelp();
   function showHelp() {
     info('How it works', `
@@ -1179,6 +1196,7 @@
       <p><b style="color:var(--ink)">The rules:</b> plants take days to build and connect; coal must give 5 days' notice to close; the market operator may ask you to promise reserve before a heatwave and fines you if you can't deliver; and every 30 days your emissions are checked against a target that tightens each year.</p>
       <p><b style="color:var(--ink)">Price limits:</b> as in the real NEM for 2026-27, prices run from ${fmtPrice(FLOOR)} (the floor) to ${fmtPrice(CAP)}/MWh (the cap). If the last 7 days of prices add up past a threshold, the market operator holds prices at ${fmtPrice(Sim.APC)} until the week's total falls back. The real threshold is ${fmtMoney(Sim.REAL_CPT)}, about 8 hours at the cap; the game uses ${fmtMoney(Sim.CPT)}, about 3 hours, because its market is spikier.</p>
       <p><b style="color:var(--ink)">Money:</b> you can go overdrawn, but the bank charges interest every day, and if you owe more than your limit it sells your plant, most valuable first. Lose everything and the company is wound up.</p>
+      <p><b style="color:var(--ink)">Scenarios</b> are short, hand-made situations (a heatwave week, a coal closure, a gas squeeze) with three stars to win. Challenges are 30-day races against friends with share codes.</p>
       <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes.</p>`);
   }
   $('m-rename').onclick = () => {
@@ -1263,6 +1281,57 @@
       (store.results[r.seed] ||= []).push({ name: $('res-name').value.trim() || 'Friend', value: r.value, emis: r.emis }); persist(); openChallenges();
     };
   }
+  // --- scenarios: hand-made situations, the same weather for everyone, scored with stars ---
+  const starStr = n => `${'★'.repeat(n)}<i>${'☆'.repeat(3 - n)}</i>`;
+  const starTotal = () => Sim.SCENARIOS.reduce((a, sc) => a + ((store.scenarios || {})[sc.id]?.stars || 0), 0);
+  function openScenarios() {
+    store.scenarios ||= {};
+    const act = store.scenario, actSc = act && Sim.SCENARIOS.find(x => x.id === act.scenario.id);
+    info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Scenarios only run while the app is open.</p>
+      ${actSc ? `<h3>Your current scenario</h3><p>${actSc.name} · day ${Math.min(actSc.days, Sim.dayIndex(act) + 1)} of ${actSc.days}</p><button type="button" class="btn btn-primary" id="sc-resume" style="width:100%">Carry on</button>` : ''}
+      <div class="sc-grid">${Sim.SCENARIOS.map(sc => { const b = store.scenarios[sc.id];
+        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.days} days${b ? ` · best ${fmtMoney(b.value)}` : ''}</small></button>`; }).join('')}</div>`);
+    if (actSc) $('sc-resume').onclick = () => startScenario(null);
+    $('i-body').querySelectorAll('[data-scenario]').forEach(b => b.onclick = () => scenarioIntro(b.dataset.scenario));
+  }
+  function scenarioIntro(id) {
+    const sc = Sim.SCENARIOS.find(x => x.id === id), b = (store.scenarios || {})[id];
+    info(sc.name, `<p>${sc.blurb}</p><h3>Stars</h3><ul class="starlist">${sc.stars.map(([t]) => `<li>${t}</li>`).join('')}</ul>
+      <p class="note">${sc.days} game days${b ? ` · your best: ${b.stars} star${b.stars === 1 ? '' : 's'}, ${fmtMoney(b.value)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
+      <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-back" style="flex:1">All scenarios</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Start</button></div>`);
+    $('sc-back').onclick = openScenarios;
+    $('sc-go').onclick = () => startScenario(id);
+  }
+  function startScenario(id) {
+    if (id == null && !store.scenario) { toast('That scenario has finished.'); return; }
+    save();
+    slot = 'scenario';
+    if (id == null) S = Sim.migrate(store.scenario);
+    else { S = Sim.createScenario(id); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); }
+    store.scenario = S;
+    closeSheets(); enterApp(); save();
+    if (Sim.scenarioOver(S)) scenarioEnd();
+  }
+  function scenarioEnd() {
+    const sc = Sim.SCENARIOS.find(x => x.id === S.scenario.id), r = Sim.scenarioResult(S);
+    store.scenarios ||= {};
+    const best = store.scenarios[sc.id];
+    const better = !best || r.stars > best.stars || (r.stars === best.stars && r.value > best.value);
+    if (better) store.scenarios[sc.id] = { stars: r.stars, value: Math.round(r.value) };
+    delete store.scenario; S.ended = true; persist();
+    speed = 0; syncSpeed(); acc = 0;
+    info(sc.name, `<div class="stars big" aria-label="${r.stars} of 3 stars">${starStr(r.stars)}</div>
+      <ul class="starlist">${r.lines.map(l => `<li class="${l.ok ? 'ok' : ''}">${l.text}</li>`).join('')}</ul>
+      ${r.bust ? '<p>The company collapsed before the end, so no stars this time.</p>' : ''}
+      <div class="kv"><div><span>Company value</span><b>${fmtMoney(r.value)}</b></div><div><span>Profit</span><b class="${r.profit >= 0 ? 'up' : 'down'}">${fmtMoney(r.profit)}</b></div><div><span>Growth</span><b class="${r.gain >= 0 ? 'up' : 'down'}">${fmtMoney(r.gain)}</b></div></div>
+      ${better && best ? '<p class="note">A new best for this scenario.</p>' : ''}
+      <div class="field-row" style="margin-top:14px"><button type="button" class="btn btn-quiet" id="se-share" style="flex:1"><svg class="i"><use href="#i-share"/></svg>Share</button><button type="button" class="btn btn-quiet" id="se-again" style="flex:1">Try again</button><button type="button" class="btn btn-primary" id="se-back" style="flex:1">Done</button></div>`);
+    $('se-share').onclick = () => shareText(`Merit Order · ${sc.name} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} · company worth ${fmtMoney(r.value)}. Try to beat it: same weather for everyone.`);
+    $('se-again').onclick = () => startScenario(sc.id);
+    $('se-back').onclick = closeSheets;
+  }
+  $('m-scenarios').onclick = openScenarios;
+  $('t-scenarios').onclick = openScenarios;
   $('m-challenge').onclick = openChallenges;
   $('t-challenge').onclick = openChallenges;
   function challengeEnd() {
@@ -1300,6 +1369,7 @@
           const day = Sim.dayIndex(S);
           Sim.step(S); acc -= MS_PER_INTERVAL; n++;
           if (S.challenge && Sim.dayIndex(S) >= CH_DAYS && day < CH_DAYS) { acc = 0; challengeEnd(); break; }
+          if (S.scenario && Sim.scenarioOver(S)) { scenarioEnd(); break; }
           const rec = S.days[S.days.length - 1];
           if (rec && rec.day !== lastRec) { lastRec = rec.day; toast(`Day ${rec.day + 1} closed: ${rec.profit >= 0 ? 'profit' : 'loss'} ${fmtMoney(Math.abs(rec.profit))} · average price ${fmtPrice(rec.avg)}`); }
           if (S.offer && S.offer !== pausedFor) {
@@ -1385,6 +1455,7 @@
   function companyBust() {
     speed = 0; syncSpeed(); acc = 0;
     if (S.challenge) { challengeEnd(); return; }
+    if (S.scenario) { scenarioEnd(); return; }
     S.ended = true; delete store.career; delete store.careerSeen; persist();
     const best = S.days.reduce((m, d) => Math.max(m, d.value || 0), 0);
     info('Your company has collapsed', `<p>${esc(S.company || 'Your company')} ran out of money and plant to sell, and the bank has wound it up after ${Sim.dayIndex(S) + 1} days.</p>

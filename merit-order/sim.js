@@ -114,6 +114,7 @@ const Sim = (() => {
       goalsDone: {}, costMult: {}, fuelMult: 1,
       today: freshDay(), days: [], last: null, totals: { profit: 0, energy: 0, fcas: 0, emis: 0 },
       challenge: opts.challenge || null,
+      startDoy: opts.startDoy,
       mode: opts.mode || 'career',
       missions: opts.tour ? { on: true, done: {}, paid: {} } : null,
     };
@@ -149,7 +150,8 @@ const Sim = (() => {
   // ---- calendar and weather ----
   const dayIndex = S => Math.floor(S.t / IPD);
   const hourOf = S => (S.t % IPD) * H;
-  const doyOf = S => (START_DOY + dayIndex(S)) % 365;
+  const startDoy = S => S.startDoy ?? START_DOY;
+  const doyOf = S => (startDoy(S) + dayIndex(S)) % 365;
   function seasonTemp(doy) { return 18.5 + 7.5 * Math.cos(2 * Math.PI * (doy - 15) / 365); }   // warm in January
   function activeEvent(S, key) { return S.events.find(e => e.key === key); }
 
@@ -615,7 +617,7 @@ const Sim = (() => {
     // rivals invest too: a month of high prices brings new peaking plant or batteries
     if (dayIndex(S) % 15 === 0 && S.days.length >= 15) rivalInvestment(S);
     // a rival coal unit announces its closure on day 40 and closes on day 70
-    if (dayIndex(S) === 40 && !S.challenge) { const r = S.rivals.find(x => x.id === 'bh1'); r.closing = 70; addNews(S, 'info', 'Black Hill 1 will close for good in 30 days. That leaves a gap in the evening peak.'); }
+    if (dayIndex(S) === 40 && !S.challenge && !S.scenario) { const r = S.rivals.find(x => x.id === 'bh1'); r.closing = 70; addNews(S, 'info', 'Black Hill 1 will close for good in 30 days. That leaves a gap in the evening peak.'); }
     makeOffers(S);
     if (dayIndex(S) % 3 === 0) makeContractOffers(S);
     rec.value = companyValue(S);
@@ -751,9 +753,19 @@ const Sim = (() => {
 
   function planEvents(S) {
     // Forecast tomorrow's weather events one day ahead. Fixed number of draws per day.
-    const tomorrow = dayIndex(S) + 1, doy = (START_DOY + tomorrow) % 365;
+    const tomorrow = dayIndex(S) + 1, doy = (startDoy(S) + tomorrow) % 365;
     const summer = 0.5 + 0.5 * Math.cos(2 * Math.PI * (doy - 15) / 365);
     const r = [rnd(S, W), rnd(S, W), rnd(S, W)];
+    const scripted = (S.script || []).filter(e => e.day === tomorrow);
+    if (scripted.length) {
+      for (const e of scripted) {
+        S.upcoming.push({ key: e.key, start: tomorrow, len: e.len });
+        addNews(S, EVENTS[e.key].tone, `Forecast: ${EVENTS[e.key].news}`);
+        if (e.key === 'heatwave') offerReserve(S, tomorrow, e.len, r[2]);
+      }
+      return;
+    }
+    if (S.script && S.calm) return;
     if (S.upcoming.some(u => u.start >= tomorrow) || S.events.length >= 2) return;
     const odds = [['heatwave', 0.02 + 0.07 * summer], ['cold', 0.05 * (1 - summer)], ['still', 0.05], ['windy', 0.05], ['cloudy', 0.05], ['linktrip', 0.015], ['gascrunch', 0.012]];
     const em = diff(S).events;
@@ -781,7 +793,7 @@ const Sim = (() => {
 
   function makeOffers(S) {
     if (S.offer && S.t >= S.offer.expires) S.offer = null;
-    if (S.offer || S.challenge) return;
+    if (S.offer || S.challenge || S.scenario) return;
     const day = dayIndex(S);
     if (day >= 12 && day % 17 === 5) {
       const r = S.rivals.find(x => x.tech === 'coal' && !x.gone && !x.closing && !x.sold && x.id !== 'bh1');
@@ -885,6 +897,72 @@ const Sim = (() => {
   function startTour(S) { S.missions = { on: true, done: {}, paid: (S.missions && S.missions.paid) || {} }; checkMissions(S); }
   function skipTour(S) { if (S.missions) S.missions.on = false; }
 
+  // ---- scenarios: hand-made situations with a fixed seed, so everyone gets the same weather ----
+  // Stars are cumulative: the second needs the first, the third needs both. `r` is scenarioResult().
+  const SCENARIOS = [
+    { id: 'first-light', name: 'First Light', days: 14, startDoy: 273, seed: 1101, cash: 600000, calm: true,
+      blurb: 'Spring, a quiet market and $600k. Build your first plants and grow the company in two weeks.',
+      stars: [['Grow the company to $650k', r => r.value >= 650000], ['Grow it to $690k', r => r.value >= 690000], ['Grow it to $712k', r => r.value >= 712000]] },
+    { id: 'heatwave-week', name: 'Heatwave Week', days: 10, startDoy: 14, seed: 2202, cash: 300000,
+      blurb: 'Two heatwaves are on the way. You own a 150 MW gas peaker and a 50 MW battery. Ride the spikes, and keep any reserve you promise.',
+      plants: [['peaker', 150], ['battery', 50]], script: [{ day: 2, key: 'heatwave', len: 3 }, { day: 7, key: 'heatwave', len: 2 }],
+      stars: [['Make $450k profit', r => r.profit >= 450000], ['Make $750k profit', r => r.profit >= 750000], ['…and keep a reserve promise', r => r.reserveKept]] },
+    { id: 'black-hill', name: 'Black Hill Closes', days: 21, startDoy: 31, seed: 3303, cash: 2000000,
+      blurb: 'Two units of the Black Hill coal plant close this month, taking 1.3 GW out of the evening peak. You have $2M to fill the gap.',
+      unlock: ['wind', 'ccgt'], closures: { bh1: 4, bh2: 12 },
+      stars: [['Grow the company by $500k', r => r.gain >= 500000], ['Grow it by $1.5M', r => r.gain >= 1500000], ['Grow it by $5M', r => r.gain >= 5000000]] },
+    { id: 'gas-squeeze', name: 'Gas Squeeze Winter', days: 16, startDoy: 171, seed: 4404, cash: 1500000,
+      blurb: 'Midwinter. You own a 120 MW wind farm and have $1.5M. Gas is about to get very expensive, twice, and then the wind drops. Get ready.',
+      plants: [['wind', 120]], unlock: ['wind', 'ccgt'],
+      script: [{ day: 3, key: 'gascrunch', len: 5 }, { day: 5, key: 'cold', len: 3 }, { day: 10, key: 'gascrunch', len: 5 }, { day: 11, key: 'still', len: 4 }],
+      stars: [['Grow the company by $1.5M', r => r.gain >= 1500000], ['Grow it by $1.85M', r => r.gain >= 1850000], ['Grow it by $2.1M', r => r.gain >= 2100000]] },
+    { id: 'too-much-sun', name: 'Too Much Sun', days: 14, startDoy: 282, seed: 5505, cash: 300000, rooftop: 5200,
+      blurb: 'Rooftop solar is everywhere and middays go deeply negative. You own 200 MW of solar, set to run whatever the price. Turn it into a business.',
+      plants: [['solar', 200, { bid: 'always' }]],
+      stars: [['Make a profit', r => r.profit > 0], ['Grow the company by $300k', r => r.gain >= 300000], ['Grow it by $650k', r => r.gain >= 650000]] },
+    { id: 'big-build', name: 'The Big Build', days: 45, startDoy: 304, seed: 6606, cash: 3000000,
+      blurb: '$3M, every technology but coal, and six weeks over summer. Build an empire.',
+      unlock: ['wind', 'ccgt', 'hydro'],
+      stars: [['Grow the company to $5.5M', r => r.value >= 5500000], ['Grow it to $6.8M', r => r.value >= 6800000], ['Grow it to $8M', r => r.value >= 8000000]] },
+  ];
+  function givePlant(S, tech, mw, extra) {
+    S.cash += priceOf(S, tech, mw);
+    const p = build(S, tech, mw).plant;
+    S.news.shift();   // not "construction has started"
+    p.status = 'online'; p.buildLeft = 0; p.last = TECH[tech].kind === 'thermal' ? 0 : p.last;
+    Object.assign(p, extra || {});
+    return p;
+  }
+  function createScenario(id) {
+    const sc = SCENARIOS.find(x => x.id === id);
+    const S = create(sc.seed, { cash: sc.cash, startDoy: sc.startDoy });
+    S.scenario = { id, days: sc.days };
+    S.script = sc.script || []; S.calm = !!sc.calm;
+    if (sc.rooftop) S.rooftop = sc.rooftop;
+    for (const t of sc.unlock || []) S.unlocked[t] = true;
+    for (const [t, mw, extra] of sc.plants || []) { const was = S.unlocked[t]; S.unlocked[t] = true; givePlant(S, t, mw, extra); S.unlocked[t] = was || (sc.unlock || []).includes(t); }
+    for (const [rid, day] of Object.entries(sc.closures || {})) S.rivals.find(r => r.id === rid).closing = day;
+    // no early goal bonuses in a scenario: it's scored on what you make of it
+    for (const g of GOALS) S.goalsDone[g.id] = S.goalsDone[g.id] ?? -1;
+    S.news = [];
+    addNews(S, 'info', `${sc.name}: ${sc.blurb}`);
+    if (sc.closures) for (const [rid, day] of Object.entries(sc.closures)) addNews(S, 'info', `${S.rivals.find(r => r.id === rid).name} closes for good on day ${day + 1}.`);
+    S.upcoming = []; planEvents(S);   // plan tomorrow again, now the script is known
+    S.scenario.v0 = companyValue(S);
+    makeContractOffers(S);
+    return S;
+  }
+  function scenarioResult(S) {
+    const sc = SCENARIOS.find(x => x.id === S.scenario.id);
+    const days = S.days.filter(d => d.day < sc.days);
+    const r = { value: companyValue(S), gain: companyValue(S) - S.scenario.v0, profit: days.reduce((a, d) => a + d.profit, 0),
+      maxShare: days.reduce((m, d) => Math.max(m, d.share), 0), reserveKept: !!(S.goalFlags && S.goalFlags.reserveKept), bust: !!S.bust };
+    let stars = 0;
+    const lines = sc.stars.map(([text, test], i) => { const ok = !r.bust && test(r); if (ok && stars === i) stars++; return { text, ok }; });
+    return { ...r, stars, lines };
+  }
+  const scenarioOver = S => !!S.scenario && (S.bust || S.days.some(d => d.day >= S.scenario.days - 1));
+
   function checkGoals(S, d) {
     for (const g of GOALS) {
       if (S.goalsDone[g.id] || !g.test(S, d)) continue;
@@ -938,13 +1016,13 @@ const Sim = (() => {
   function dateLabel(S) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], len = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let d = doyOf(S), m = 0; while (d >= len[m]) { d -= len[m]; m++; }
-    const year = Math.floor((START_DOY + dayIndex(S)) / 365) + 1;
+    const year = Math.floor((startDoy(S) + dayIndex(S)) / 365) + 1;
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, year, time: clock(hourOf(S)) };
   }
 
   return { IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
-    upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
+    upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;

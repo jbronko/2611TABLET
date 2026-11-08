@@ -243,6 +243,34 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8. Scenarios: pick one, play it to the end, stars are saved, carry on later, a collapse scores nothing.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    check('the scenarios list', (await p.$$('[data-scenario]')).length === 6);
+    await shot(p, 'scenarios');
+    await p.click('[data-scenario="heatwave-week"]'); await p.waitForTimeout(150);
+    check('a scenario shows its three stars before starting', (await p.$$('.starlist li')).length === 3);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    check('it starts with its own plants and date', /Heatwave Week · day 1 of 10 · 15 Jan/.test(await p.textContent('#clock')) && (await p.$$('[data-plant]')).length === 2 && await p.$eval('#mission', x => x.hidden));
+    await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 10 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.setSpeed(16); });
+    await p.waitForTimeout(1500);
+    if ((await p.textContent('#i-title')) === 'New contracts on offer') { await p.click('#nc-play'); await p.waitForTimeout(1500); }
+    check('it ends on its last day with stars', (await p.textContent('#i-title')) === 'Heatwave Week' && !!(await p.$('.stars.big')) && /day 10 of 10/.test(await p.textContent('#clock')));
+    await shot(p, 'scenario-end');
+    check('the best result is saved', await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); return !!s.scenarios['heatwave-week'] && !s.scenario; }));
+    await p.click('#se-again'); await p.waitForTimeout(300);
+    await p.click('#open-menu'); await p.click('#m-title'); await p.waitForTimeout(200);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('#sc-resume'); await p.waitForTimeout(300);
+    check('try again, leave, and carry on later', /Heatwave Week · day 1 of 10/.test(await p.textContent('#clock')));
+    await state(p, () => { const M = MeritOrder; M.state.cash = -5e7; let n = 0; while (!M.state.bust && n++ < 6 * 288) M.Sim.step(M.state); });
+    await p.waitForTimeout(500);
+    check('a collapse ends the scenario with no stars', (await p.textContent('#i-body')).includes('collapsed before the end'));
+    await p.context().close();
+  }
+
   check('no errors on any page', errs.length === 0, errs.slice(0, 3).join(' | '));
   await browser.close(); server.close();
   console.log(fails ? `\n${fails} check(s) failed` : '\nAll browser checks passed');

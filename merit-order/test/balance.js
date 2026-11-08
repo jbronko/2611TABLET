@@ -73,7 +73,23 @@ const STRATS = {
     },
     offer(S) { Sim.acceptOffer(S) || Sim.declineOffer(S); },
   },
+  savvy: {   // steady, plus the obvious good habits: no negative-price running, peakers on cost, keep reserve promises
+    day(S, d) {
+      for (const p of S.plants) { if (TECH[p.tech].kind === 'vre') p.bid = 'nonneg'; if (p.tech === 'peaker') p.bid = 'cost'; }
+      STRATS.steady.day(S, d);
+    },
+    offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
+  },
 };
+// Scenarios: play each one to its end with a strategy and report the stars.
+function runScenario(kind, id) {
+  const S = Sim.createScenario(id), st = STRATS[kind];
+  for (let d = 0; d < 400 && !Sim.scenarioOver(S); d++) {
+    st.day(S, d);
+    for (let k = 0; k < IPD && !Sim.scenarioOver(S); k++) { Sim.step(S); if (S.offer && S.offer !== S._seen) { S._seen = S.offer; st.offer(S); } }
+  }
+  return Sim.scenarioResult(S);
+}
 function run(kind, seed, difficulty, days) {
   const S = Sim.create(seed, { difficulty });
   const st = STRATS[kind], out = { minCash: S.cash, at: {} };
@@ -87,8 +103,19 @@ function run(kind, seed, difficulty, days) {
   out.cap = S.days.reduce((a, r) => a + (r.capPay > 0 ? 1 : 0), 0); out.bust = S.bust ? 1 : 0;
   return out;
 }
-module.exports = { run, STRATS };
-if (require.main === module) {
+module.exports = { run, runScenario, STRATS };
+if (require.main === module && process.argv[2] === '--scenarios') {
+  // node merit-order/test/balance.js --scenarios [strategies]
+  // Targets: idle at most 1 star, steady 1-2, savvy 2-3.
+  const kinds = (process.argv[3] || 'idle,steady,savvy').split(',');
+  for (const sc of Sim.SCENARIOS) {
+    console.log(`${sc.name} (${sc.days} days)`);
+    for (const kind of kinds) {
+      const r = runScenario(kind, sc.id);
+      console.log(`  ${kind.padEnd(7)} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}  value ${Sim.fmtMoney(r.value).padStart(7)}  gain ${Sim.fmtMoney(r.gain).padStart(7)}  profit ${Sim.fmtMoney(r.profit).padStart(7)}  best share ${(r.maxShare * 100).toFixed(1)}%${r.reserveKept ? '  reserve kept' : ''}${r.bust ? '  BUST' : ''}`);
+    }
+  }
+} else if (require.main === module) {
   const kinds = (process.argv[2] || 'idle,steady,peaker,capseller,reckless').split(',');
   const diffs = (process.argv[3] || 'relaxed,standard,tough').split(',');
   const days = +(process.argv[4] || 120), seeds = (process.argv[5] || '1,2,3,4').split(',').map(Number);

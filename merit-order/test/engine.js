@@ -173,6 +173,19 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('no missions for challenges or tests', Sim.missionNext(Sim.create(5, { challenge: { seed: 5 } })) === null && Sim.missionNext(Sim.create(5)) === null);
 }
 
+// 12. Scenarios: same weather for everyone whatever they build; each runs to its last day and is scored.
+{
+  const a = Sim.createScenario('heatwave-week'), b = Sim.createScenario('heatwave-week');
+  Sim.build(b, 'battery', 25);
+  let same = true;
+  while (!Sim.scenarioOver(a)) { const ra = Sim.step(a), rb = Sim.step(b); if (ra.c.demand !== rb.c.demand || ra.c.wind !== rb.c.wind) same = false; }
+  const ev = d => d.days.map(r => r.day).join();
+  check('scenario weather is the same for everyone', same && ev(a) === ev(b));
+  const scored = Sim.SCENARIOS.map(sc => { const S = Sim.createScenario(sc.id); let n = 0; while (!Sim.scenarioOver(S) && n++ < 400 * Sim.IPD) Sim.step(S); const r = Sim.scenarioResult(S); return { id: sc.id, ok: Sim.scenarioOver(S) && S.days.length === sc.days && r.lines.length === 3, stars: r.stars }; });
+  check('every scenario runs to its last day and is scored', scored.every(x => x.ok), scored.map(x => `${x.id} ${x.stars}★`).join(', '));
+  check('doing nothing never earns more than one star', scored.every(x => x.stars <= 1));
+}
+
 // 10. Speed: a big company's 7-day catch-up (what runs when the app opens after a week away).
 {
   const S = Sim.create(1, { cash: 1e9 });
