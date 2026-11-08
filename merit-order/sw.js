@@ -3,7 +3,7 @@
 // from the network in the background, so updates appear on the next launch.
 // Bump VERSION whenever you change the list of files below.
 const APP = 'merit-order';
-const VERSION = 1;
+const VERSION = 2;
 const CACHE = `${APP}-v${VERSION}`;
 const PRECACHE = [
   './',
@@ -19,7 +19,8 @@ const PRECACHE = [
 const RUNTIME_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache so a new version never mixes old and new files
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {

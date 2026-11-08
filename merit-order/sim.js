@@ -14,19 +14,19 @@ const Sim = (() => {
 
   // ---- technologies (costs are scaled down so a company grows in days, not decades) ----
   const TECH = {
-    solar:   { name: 'Solar farm', short: 'Solar', color: '#c98500', sizes: [50, 100, 200], capex: 2600, build: 2, upkeep: 10, vc: 0, emis: 0, kind: 'vre',
+    solar:   { name: 'Solar farm', short: 'Solar', color: '#c98500', sizes: [50, 100, 200], capex: 7500, build: 2, upkeep: 15, vc: 0, emis: 0, kind: 'vre',
                blurb: 'Free sunshine. Every panel in the region floods the market at midday, so prices sag when you need them.' },
-    wind:    { name: 'Wind farm', short: 'Wind', color: '#199e70', sizes: [60, 120, 240], capex: 7000, build: 4, upkeep: 32, vc: 0, emis: 0, kind: 'vre',
+    wind:    { name: 'Wind farm', short: 'Wind', color: '#199e70', sizes: [60, 120, 240], capex: 17000, build: 4, upkeep: 45, vc: 0, emis: 0, kind: 'vre',
                blurb: 'Runs day and night while it blows, including the evening peak. Still weeks hurt.' },
-    battery: { name: 'Battery', short: 'Battery', color: '#9085e9', sizes: [25, 50, 100], hours: 2, capex: 3400, build: 1.5, upkeep: 12, vc: 5, eff: 0.86, kind: 'storage', fcas: true,
+    battery: { name: 'Battery', short: 'Battery', color: '#9085e9', sizes: [25, 50, 100], hours: 2, capex: 9000, build: 1.5, upkeep: 18, vc: 5, eff: 0.86, kind: 'storage', fcas: true,
                blurb: 'Charges when power is cheap and sells into the peak. The best at frequency control.' },
-    peaker:  { name: 'Gas peaker', short: 'Peaker', color: '#d95926', sizes: [50, 150, 300], capex: 6000, build: 3, upkeep: 14, vc: 150, emis: 0.6, kind: 'thermal', fcas: true, outage: 0.006,
+    peaker:  { name: 'Gas peaker', short: 'Peaker', color: '#d95926', sizes: [50, 150, 300], capex: 11000, build: 3, upkeep: 22, vc: 150, emis: 0.6, kind: 'thermal', fcas: true, outage: 0.006,
                blurb: 'Dear to run, but on in minutes when prices spike. Insurance for heatwaves.' },
-    ccgt:    { name: 'Combined-cycle gas', short: 'CCGT', color: '#d95926', sizes: [200, 400], capex: 9000, build: 6, upkeep: 30, vc: 82, emis: 0.38, kind: 'thermal', ramp: 0.25, outage: 0.008,
+    ccgt:    { name: 'Combined-cycle gas', short: 'CCGT', color: '#d95926', sizes: [200, 400], capex: 21000, build: 6, upkeep: 45, vc: 82, emis: 0.38, kind: 'thermal', ramp: 0.25, outage: 0.008,
                blurb: 'Efficient gas for long evening and winter peaks. Pays when prices sit above $80.' },
-    hydro:   { name: 'Pumped hydro', short: 'Hydro', color: '#3987e5', sizes: [250, 500], hours: 8, capex: 10000, build: 10, upkeep: 22, vc: 3, eff: 0.78, kind: 'storage', fcas: true,
+    hydro:   { name: 'Pumped hydro', short: 'Hydro', color: '#3987e5', sizes: [250, 500], hours: 8, capex: 19000, build: 10, upkeep: 35, vc: 3, eff: 0.78, kind: 'storage', fcas: true,
                blurb: 'Pumps water uphill when power is cheap and runs it back down for hours of firm supply.' },
-    coal:    { name: 'Coal unit', short: 'Coal', color: '#a8692a', sizes: [660], capex: 0, build: 0, upkeep: 75, vc: 32, emis: 0.95, kind: 'thermal', minLoad: 0.45, ramp: 0.05, outage: 0.014, buyOnly: true,
+    coal:    { name: 'Coal unit', short: 'Coal', color: '#a8692a', sizes: [660], capex: 0, build: 0, upkeep: 90, vc: 32, emis: 0.95, kind: 'thermal', minLoad: 0.45, ramp: 0.05, outage: 0.014, buyOnly: true,
                blurb: 'Cheap power around the clock, but slow to change output, prone to breakdowns and heavy on emissions.' },
   };
   const OTHER = { name: 'Other', short: 'Other', color: '#6f828c' };
@@ -47,14 +47,15 @@ const Sim = (() => {
     const coal = (n, name) => ({ id: `bh${n}`, name, tech: 'coal', cap: 660, out: 0, last: 520, closing: 0 });
     return [
       coal(1, 'Black Hill 1'), coal(2, 'Black Hill 2'), coal(3, 'Black Hill 3'), coal(4, 'Black Hill 4'),
-      { id: 'tal', name: 'Tallawang CCGT', tech: 'ccgt', cap: 600, bands: [[0.5, 92], [0.5, 140]], out: 0 },
-      { id: 'wol', name: 'Wollemi CCGT', tech: 'ccgt', cap: 450, bands: [[0.6, 105], [0.4, 175]], out: 0 },
-      { id: 'ash', name: 'Ash Hill peaker', tech: 'peaker', cap: 300, bands: [[1, 380]], out: 0 },
-      { id: 'cst', name: 'Coastal peakers', tech: 'peaker', cap: 600, bands: [[0.5, 450], [0.5, 950]], out: 0 },
-      { id: 'mul', name: 'Mulga Creek peaker', tech: 'peaker', cap: 400, bands: [[1, 290]], out: 0 },
-      { id: 'red', name: 'Redbank peaker', tech: 'peaker', cap: 400, bands: [[0.5, 620], [0.5, 1800]], out: 0 },
+      { id: 'tal', name: 'Tallawang CCGT', tech: 'ccgt', cap: 600, bands: [[0.5, 84], [0.5, 120]], out: 0 },
+      { id: 'wol', name: 'Wollemi CCGT', tech: 'ccgt', cap: 450, bands: [[0.6, 98], [0.4, 150]], out: 0 },
+      { id: 'ash', name: 'Ash Hill peaker', tech: 'peaker', cap: 300, bands: [[1, 260]], out: 0 },
+      { id: 'cst', name: 'Coastal peakers', tech: 'peaker', cap: 600, bands: [[0.5, 330], [0.5, 640]], out: 0 },
+      { id: 'mul', name: 'Mulga Creek peaker', tech: 'peaker', cap: 400, bands: [[1, 215]], out: 0 },
+      { id: 'kur', name: 'Kurri gas turbines', tech: 'peaker', cap: 350, bands: [[0.5, 185], [0.5, 240]], out: 0 },
+      { id: 'red', name: 'Redbank peaker', tech: 'peaker', cap: 400, bands: [[0.5, 1100], [0.5, 3000]], out: 0 },
       { id: 'qry', name: 'Quarry Road peaker', tech: 'peaker', cap: 300, bands: [[1, 12500]], out: 0 },
-      { id: 'snw', name: 'Snowgum hydro', tech: 'hydro', cap: 450, bands: [[0.6, 175], [0.4, 330]], budget: 3200, used: 0 },
+      { id: 'snw', name: 'Snowgum hydro', tech: 'hydro', cap: 450, bands: [[0.6, 165], [0.4, 280]], budget: 3200, used: 0 },
       { id: 'rwind', name: 'Rival wind farms', tech: 'wind', cap: 2200, bid: -35 },
       { id: 'rsol', name: 'Rival solar farms', tech: 'solar', cap: 1700, bid: -25 },
       { id: 'rbat', name: 'Rival batteries', tech: 'battery', cap: 250, hours: 2, soc: 250 },
@@ -84,13 +85,27 @@ const Sim = (() => {
     gascrunch:{ name: 'Gas squeeze', days: [3, 5], tone: 'bad', news: 'Gas supply is tight. Fuel for gas plants costs much more this week.' },
   };
 
+  // ---- difficulty ----
+  const DIFFICULTY = {
+    relaxed:  { name: 'Relaxed',  cash: 900000, capex: 0.85, upkeep: 0.85, outage: 0.6, events: 0.75, penalty: 0.5, rivalAt: 170, rivalMax: 450,
+                blurb: 'More money, cheaper plants, fewer breakdowns and gentler rivals.' },
+    standard: { name: 'Standard', cash: 600000, capex: 1, upkeep: 1, outage: 1, events: 1, penalty: 1, rivalAt: 140, rivalMax: 600,
+                blurb: 'The market as designed.' },
+    tough:    { name: 'Tough',    cash: 450000, capex: 1.15, upkeep: 1.2, outage: 1.6, events: 1.35, penalty: 1.6, rivalAt: 120, rivalMax: 800,
+                blurb: 'Dearer plants, more breakdowns and wild weather, bigger fines, and rivals that pounce on high prices.' },
+  };
+  const diff = S => DIFFICULTY[S.difficulty] || DIFFICULTY.standard;
+
   // ---- a new company ----
   function create(seed, opts = {}) {
     seed = seed >>> 0;
+    const difficulty = DIFFICULTY[opts.difficulty] ? opts.difficulty : 'standard';
     const S = {
-      v: 1, seed, rng: [seed ^ 0x9E3779B9, (seed * 2654435761) >>> 0],
+      v: 3, seed, rng: [seed ^ 0x9E3779B9, (seed * 2654435761) >>> 0],
       t: 0,                          // intervals since the start
-      cash: opts.cash ?? 250000,
+      difficulty,
+      cash: opts.cash ?? DIFFICULTY[difficulty].cash,
+      contracts: [], contractOffers: [],
       plants: [], rivals: rivalFleet(), nameUse: {},
       wx: { wind: 0.33, cloud: 0.85, temp: 0, noise: 0, nb: 0 },
       events: [], upcoming: [], news: [], offer: null, obligation: null,
@@ -104,10 +119,26 @@ const Sim = (() => {
     for (const k of Object.keys(TECH)) S.costMult[k] = 1;
     if (opts.challenge) Object.assign(S.unlocked, { wind: true });
     planEvents(S);
+    makeContractOffers(S);
     return S;
   }
   function freshDay() {
-    return { price: [], demand: [], mine: [], revenue: 0, costs: 0, fcas: 0, energy: 0, regionEnergy: 0, emis: 0, maxP: null, minP: null, upkeep: 0, penalties: 0, bonus: 0 };
+    return { price: [], demand: [], mine: [], revenue: 0, costs: 0, fcas: 0, energy: 0, regionEnergy: 0, emis: 0, maxP: null, minP: null,
+      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0 };
+  }
+  // Older saves: fill in fields added since they were made.
+  function migrate(S) {
+    S.contracts ||= []; S.difficulty ||= 'standard';
+    if (!S.contractOffers) makeContractOffers(S);
+    for (const k of ['contracts', 'repairs', 'interest', 'capPay']) S.today[k] ??= 0;
+    if ((S.v || 1) < 3) {
+      // wind and solar used to bid −$1,000 by default, which now costs big fleets dearly at midday
+      const vre = S.plants.filter(p => TECH[p.tech].kind === 'vre' && p.bid === 'always');
+      for (const p of vre) p.bid = 'nonneg';
+      if (vre.length) addNews(S, 'info', 'Market update: your wind and solar farms now stop when prices go negative. You can change this for each plant.');
+    }
+    S.v = 3;
+    return S;
   }
 
   // ---- calendar and weather ----
@@ -149,17 +180,21 @@ const Sim = (() => {
     let temp = seasonTemp(doy) + 5.5 * Math.cos(2 * Math.PI * (h - 15) / 24) + wx.temp * 4;
     if (hw) temp += 9 * (0.55 + 0.45 * bump(h, 16, 3.5));
     if (cs) temp -= 8;
-    const shape = 0.72 + 0.09 * bump(h, 8, 1.4) + 0.08 * bump(h, 12.5, 3.5) + 0.26 * bump(h, 18.6, 1.9) - 0.05 * bump(h, 3.5, 2);
-    let underlying = 5900 * shape * (1 + wx.noise);
-    underlying += Math.max(0, temp - 24) * 170 * (0.4 + 0.6 * bump(h, 16.5, 4));
+    const shape = 0.72 + 0.09 * bump(h, 8, 1.4) + 0.08 * bump(h, 12.5, 3.5) + 0.22 * bump(h, 18.6, 1.9) - 0.05 * bump(h, 3.5, 2);
+    let underlying = 5500 * shape * (1 + wx.noise);
+    underlying += Math.max(0, temp - 24) * 140 * (0.4 + 0.6 * bump(h, 16.5, 4));
     underlying += Math.max(0, 14 - temp) * 105 * (0.5 + 0.5 * bump(h, 19, 3));
     const sun = solarShape(h, doy) * wx.cloud;
     const rooftop = S.rooftop * sun * 0.82;
     const demand = Math.max(2500, underlying - rooftop);
     const evening = bump(h, 18.5, 2.2), midday = bump(h, 12.5, 2.5);
-    let nbPrice = 78 + 90 * evening - 55 * midday + wx.nb + (hw ? 120 * bump(h, 17, 3) : 0);
+    let nbPrice = 78 + 90 * evening - 80 * midday + wx.nb + (hw ? 120 * bump(h, 17, 3) : 0);
     return { h, doy, temp, sun, wind: wx.wind, demand, nbPrice, linkOut: !!activeEvent(S, 'linktrip') };
   }
+
+  // A plant that has been given notice keeps running until it closes.
+  const running = p => p.status === 'online' || p.status === 'retiring';
+  const hoursOf = p => p.hours ?? TECH[p.tech].hours;
 
   // ---- bids ----
   // Supply bands: {mw, price, tech, owner, ref}. Elastic demand bands: {mw, price, ref}.
@@ -172,7 +207,11 @@ const Sim = (() => {
     const strat = p.strategy || 'arb';
     const ref = S.days.length ? S.days[S.days.length - 1].priceSorted : null;
     if (strat === 'custom') return { charge: p.chargeBelow ?? 40, discharge: p.dischargeAbove ?? 150 };
-    if (strat === 'fcas') return null;
+    if (strat === 'fcas') {
+      // stay ready: never sell energy, but top up to 60% when power is cheap so the reserve is real
+      const full = p.soc / (p.mw * hoursOf(p));
+      return { charge: full < 0.6 ? 30 : -Infinity, discharge: Infinity };
+    }
     if (strat === 'evening') {
       const inCharge = c.h >= 9.5 && c.h < 15.5, inSell = c.h >= 16.5 && c.h < 21.5;
       return { charge: inCharge ? 90 : -Infinity, discharge: inSell ? 40 : Infinity };
@@ -182,7 +221,16 @@ const Sim = (() => {
     return { charge: Math.min(lo, 70), discharge: Math.max(hi, (lo ?? 40) + 60, 90) };
   }
 
-  function buildBids(S, c) {
+  // Running cost and emissions per MWh for a player's plant, after upgrades and fuel prices.
+  function vcOf(S, p) {
+    const T = TECH[p.tech];
+    if (T.kind !== 'thermal') return T.vc;
+    return T.vc * (p.tech === 'coal' ? 1 : S.fuelMult) * (p.upg && p.tech === 'ccgt' ? 0.88 : 1);
+  }
+  const emisOf = p => TECH[p.tech].emis * (p.upg && p.tech === 'ccgt' ? 0.88 : 1);
+
+  // forecast: plan ahead ignoring ramp limits (pre-dispatch looks hours ahead, not 5 minutes)
+  function buildBids(S, c, forecast) {
     const supply = [], demandBids = [];
     const gm = S.fuelMult;
     // rivals
@@ -190,7 +238,8 @@ const Sim = (() => {
       if (r.gone) continue;
       if (r.tech === 'coal') {
         if (r.out > 0) continue;
-        const min = r.cap * 0.45, up = Math.min(r.cap, r.last + r.cap * 0.06), down = Math.max(min, r.last - r.cap * 0.06);
+        const min = r.cap * 0.45;
+        const up = forecast ? r.cap : Math.min(r.cap, r.last + r.cap * 0.06), down = forecast ? min : Math.max(min, r.last - r.cap * 0.06);
         supply.push({ mw: down, price: FLOOR, tech: 'coal', owner: 'rival', ref: r });
         const flex = up - down;
         if (flex > 0) { supply.push({ mw: flex * 0.7, price: 36, tech: 'coal', owner: 'rival', ref: r }); supply.push({ mw: flex * 0.3, price: 72, tech: 'coal', owner: 'rival', ref: r }); }
@@ -221,27 +270,31 @@ const Sim = (() => {
     }
     // player
     for (const p of S.plants) {
-      if (p.status !== 'online') continue;
+      if (!running(p)) continue;
       const T = TECH[p.tech];
       if (T.kind === 'vre') {
-        const mw = p.mw * (p.tech === 'solar' ? c.sun : c.wind * (p.site || 1));
+        // upgrades: trackers and repowering lift output about 20%, never above the plant's rating
+        const cf = p.tech === 'solar' ? c.sun : c.wind * (p.site || 1);
+        const mw = Math.min(p.mw, p.mw * cf * (p.upg ? 1.2 : 1));
         const price = p.bid === 'nonneg' ? 0 : p.bid === 'custom' ? (p.price ?? 0) : FLOOR;
         if (mw > 0.1) supply.push({ mw, price, tech: p.tech, owner: 'player', ref: p });
       } else if (T.kind === 'thermal') {
-        const vc = T.vc * (p.tech === 'coal' ? 1 : gm);
+        const vc = vcOf(S, p);
         const price = p.bid === 'peak' ? Math.max(300, vc * 2.5) : p.bid === 'custom' ? (p.price ?? vc) : vc;
         if (p.tech === 'coal') {
-          const min = p.mw * T.minLoad, up = Math.min(p.mw, (p.last ?? min) + p.mw * T.ramp), down = Math.max(min, (p.last ?? min) - p.mw * T.ramp);
+          const minLoad = p.upg ? 0.3 : T.minLoad, ramp = p.upg ? T.ramp * 2 : T.ramp;
+          const min = p.mw * minLoad;
+          const up = forecast ? p.mw : Math.min(p.mw, (p.last ?? min) + p.mw * ramp), down = forecast ? min : Math.max(min, (p.last ?? min) - p.mw * ramp);
           supply.push({ mw: down, price: FLOOR, tech: 'coal', owner: 'player', ref: p });
           if (up > down) supply.push({ mw: up - down, price, tech: 'coal', owner: 'player', ref: p });
         } else {
-          const mw = T.ramp ? Math.min(p.mw, (p.last ?? 0) + p.mw * T.ramp) : p.mw;
+          const mw = T.ramp && !forecast ? Math.min(p.mw, (p.last ?? 0) + p.mw * T.ramp) : p.mw;
           supply.push({ mw, price, tech: p.tech, owner: 'player', ref: p });
         }
       } else {   // storage
         const st = storageStrategy(S, p, c);
         if (!st) continue;
-        const e = p.mw * T.hours;
+        const e = p.mw * hoursOf(p);
         const dis = Math.min(p.mw, p.soc / H);
         if (dis > 0.5 && st.discharge < Infinity) supply.push({ mw: dis, price: st.discharge, tech: p.tech, owner: 'player', ref: p, storage: true });
         const ch = Math.min(p.mw, (e - p.soc) / H / T.eff);
@@ -282,6 +335,10 @@ const Sim = (() => {
     return { price, shortfall, traded: q };
   }
 
+  // Administered pricing: after a long run of very high prices the price is held at APC.
+  const APC = 600, CPT = 160000;
+  function administer(S, res) { return S.apc && res.price > APC ? { ...res, price: APC, capped: true } : res; }
+
   // ---- frequency control (one simplified raise service) ----
   function clearFcas(S, energyBids) {
     const offers = [
@@ -289,15 +346,15 @@ const Sim = (() => {
       { mw: 120, price: 20, owner: 'rival' }, { mw: 100, price: 70, owner: 'rival' }, { mw: 60, price: 600, owner: 'rival' },
     ];
     for (const p of S.plants) {
-      if (p.status !== 'online' || !TECH[p.tech].fcas || p.fcas === false) continue;
+      if (!running(p) || !TECH[p.tech].fcas || p.fcas === false) continue;
       const T = TECH[p.tech];
       let head;
       if (T.kind === 'storage') {
         const used = energyBids.reduce((a, b) => a + (b.ref === p ? (b.out ?? b.take ?? 0) : 0), 0);
-        head = (p.strategy === 'fcas' ? p.mw : Math.max(0, p.mw - used)) * (p.soc > p.mw * T.hours * 0.1 ? 1 : 0);
+        head = (p.strategy === 'fcas' ? p.mw : Math.max(0, p.mw - used)) * (p.soc > p.mw * hoursOf(p) * 0.1 ? 1 : 0);
       } else {
         const used = energyBids.reduce((a, b) => a + (b.ref === p ? (b.out ?? 0) : 0), 0);
-        head = Math.max(0, p.mw - used) * 0.4;
+        head = Math.max(0, p.mw - used) * (p.upg && p.tech === 'peaker' ? 0.8 : 0.4);   // fast-start controls double it
       }
       if (head > 0.5) offers.push({ mw: head, price: 2, owner: 'player', ref: p });
     }
@@ -318,8 +375,12 @@ const Sim = (() => {
     stepWeather(S);
     const c = conditions(S);
     const { supply, demandBids } = buildBids(S, c);
-    let res = clear(supply, demandBids, c.demand);
+    const res = administer(S, clear(supply, demandBids, c.demand));
     const fc = clearFcas(S, [...supply, ...demandBids]);
+    // about the last day's prices added up: past the threshold, the operator caps prices at $600
+    S.cpt = (S.cpt || 0) * (1 - 1 / IPD) + res.price;
+    if (!S.apc && S.cpt > CPT) { S.apc = true; addNews(S, 'info', `Prices have been so high for so long that the market operator has capped them at ${fmtPrice(APC)}/MWh until things calm down.`); }
+    else if (S.apc && S.cpt < CPT * 0.35) { S.apc = false; addNews(S, 'info', 'The administered price cap has been lifted. Prices can rise to the full cap again.'); }
 
     // settle the player's money and storage
     const T = TECH, d = S.today;
@@ -330,9 +391,8 @@ const Sim = (() => {
       const p = b.ref, t = T[p.tech];
       out.set(p, (out.get(p) || 0) + b.out);
       rev += b.out * res.price * H;
-      const vc = t.kind === 'thermal' ? t.vc * (p.tech === 'coal' ? 1 : S.fuelMult) : t.vc;
-      cost += b.out * vc * H;
-      emis += b.out * t.emis * H;
+      cost += b.out * vcOf(S, p) * H;
+      emis += b.out * emisOf(p) * H;
       mine += b.out;
       if (b.storage) p.soc = Math.max(0, p.soc - b.out * H);
     }
@@ -340,7 +400,7 @@ const Sim = (() => {
       if (db.owner !== 'player' || !db.take) continue;
       const p = db.ref, t = T[p.tech];
       rev -= db.take * res.price * H;
-      p.soc = Math.min(p.mw * t.hours, p.soc + db.take * H * t.eff);
+      p.soc = Math.min(p.mw * hoursOf(p), p.soc + db.take * H * t.eff);
       out.set(p, (out.get(p) || 0) - db.take);
     }
     for (const o of fc.offers) if (o.owner === 'player' && o.take) fcasRev += o.take * fc.price * H;
@@ -348,13 +408,13 @@ const Sim = (() => {
       const o = out.get(p) || 0;
       p.last = Math.max(0, o);
       p.now = o;
-      if (p.status === 'online') {
+      if (running(p)) {
         const pr = (p.today ||= { energy: 0, money: 0 });
         pr.energy += o * H;
       }
     }
     // per-plant money (for the plant cards)
-    for (const b of supply) if (b.owner === 'player') { const pt = b.ref.today; const t = T[b.ref.tech]; const vc = t.kind === 'thermal' ? t.vc * (b.ref.tech === 'coal' ? 1 : S.fuelMult) : t.vc; pt.money += b.out * (res.price - vc) * H; }
+    for (const b of supply) if (b.owner === 'player') b.ref.today.money += b.out * (res.price - vcOf(S, b.ref)) * H;
     for (const db of demandBids) if (db.owner === 'player' && db.take) db.ref.today.money -= db.take * res.price * H;
     for (const o of fc.offers) if (o.owner === 'player' && o.take) o.ref.today.money += o.take * fc.price * H;
 
@@ -368,8 +428,17 @@ const Sim = (() => {
     for (const r of S.rivals) if (r.tech === 'coal') { r.last = r.lastAcc ?? (r.out > 0 ? 0 : r.cap * 0.45); r.lastAcc = 0; }
     for (const db of demandBids) if (db.owner !== 'player' && db.ref.tech === 'battery') db.ref.soc = Math.min(db.ref.cap * db.ref.hours, db.ref.soc + db.take * H * 0.86);
 
-    S.cash += rev - cost + fcasRev;
-    d.revenue += rev; d.costs += cost; d.fcas += fcasRev; d.emis += emis;
+    // contracts settle against this interval's price
+    let hedge = 0;
+    for (const k of S.contracts) {
+      // caps earn their daily premium a little every interval, so it matches the time at risk
+      const v = k.type === 'swap' ? (k.strike - res.price) * k.mw * H : k.premium / IPD - Math.max(0, res.price - k.strike) * k.mw * H;
+      k.pnl += v; hedge += v;
+    }
+
+    S.cash += rev - cost + fcasRev + hedge;
+    d.revenue += rev; d.costs += cost; d.fcas += fcasRev; d.emis += emis; d.contracts += hedge;
+    d.capPay += Math.max(0, res.price - 300) * H;
     d.energy += Math.max(0, mine) * H; d.regionEnergy += c.demand * H;
     d.price.push(res.price); d.demand.push(c.demand); d.mine.push(Math.max(0, mine));
     d.maxP = d.maxP == null ? res.price : Math.max(d.maxP, res.price); d.minP = d.minP == null ? res.price : Math.min(d.minP, res.price);
@@ -390,11 +459,17 @@ const Sim = (() => {
       if (p.status === 'building') {
         p.buildLeft -= 1 / IPD;
         if (p.buildLeft <= 0) { p.status = 'online'; p.today = { energy: 0, money: 0 }; addNews(S, 'good', `${p.name} is connected and trading.`); }
+      } else if (p.status === 'upgrading') {
+        p.upgLeft -= 1 / IPD;
+        if (p.upgLeft <= 0) finishUpgrade(S, p);
       }
     }
 
-    S.last = { c, res, fc, supply, demandBids, mine, rev: rev - cost + fcasRev };
+    S.last = { c, res, fc, supply, demandBids, mine, hedge, rev: rev - cost + fcasRev + hedge };
     S.t++;
+    // contracts that have run their term end
+    for (const k of S.contracts) if (S.t >= k.until) addNews(S, k.pnl >= 0 ? 'good' : 'bad', `Your ${k.mw} MW ${k.type === 'swap' ? `swap at ${fmtPrice(k.strike)}` : '$300 cap'} has ended. It ${k.pnl >= 0 ? 'made' : 'cost'} you ${fmtMoney(Math.abs(k.pnl))} overall.`);
+    if (S.contracts.length) S.contracts = S.contracts.filter(k => S.t < k.until);
     if (S.obligation && S.t >= S.obligation.to) settleObligation(S);
     return S.last;
   }
@@ -402,7 +477,7 @@ const Sim = (() => {
   function firmCapacity(S, live) {
     let mw = 0;
     for (const p of S.plants) {
-      if (p.status !== 'online') continue;
+      if (!running(p)) continue;
       const T = TECH[p.tech];
       if (T.kind === 'thermal') mw += p.mw;
       else if (T.kind === 'storage') mw += live ? Math.min(p.mw, p.soc / 2) : p.mw;
@@ -414,7 +489,7 @@ const Sim = (() => {
     const o = S.obligation; S.obligation = null;
     const short = Math.max(0, o.mw - (o.worst ?? 0));
     if (short > 1) {
-      const pen = Math.round(short / o.mw * o.payment * 3);
+      const pen = Math.round(short / o.mw * o.payment * 3 * diff(S).penalty);
       S.cash -= pen; S.today.penalties += pen;
       addNews(S, 'bad', `You were ${fmtMW(short)} short of the reserve you promised. Penalty: ${fmtMoney(pen)}.`);
     } else {
@@ -427,17 +502,20 @@ const Sim = (() => {
   function endOfDay(S) {
     const d = S.today, day = dayIndex(S) - 1;
     let upkeep = 0;
-    for (const p of S.plants) if (p.status !== 'building') upkeep += p.mw * TECH[p.tech].upkeep;
+    for (const p of S.plants) if (p.status !== 'building') upkeep += upkeepOf(S, p);
     S.cash -= upkeep; d.upkeep = upkeep;
-    const profit = d.revenue - d.costs + d.fcas - upkeep - d.penalties + d.bonus;
+    // an overdraft costs interest every day
+    if (S.cash < 0) { const i = Math.round(-S.cash * OVERDRAFT_RATE * diff(S).penalty); S.cash -= i; d.interest += i; }
+    const profit = d.revenue - d.costs + d.fcas + d.contracts - upkeep - d.penalties - d.repairs - d.interest + d.bonus;
     const priceSorted = [...d.price].sort((a, b) => a - b);
     const avg = d.price.reduce((a, b) => a + b, 0) / Math.max(1, d.price.length);
-    const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
-      avg, max: d.maxP, min: d.minP, emis: d.emis, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties };
+    const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, contracts: d.contracts, repairs: d.repairs, interest: d.interest, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
+      avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus };
     S.days.push(rec);
     if (S.days.length > 3) { const old = S.days[S.days.length - 4]; delete old.price; delete old.demand; delete old.mine; }
     if (S.days.length > 60) S.days.shift();
     S.totals.profit += profit; S.totals.energy += d.energy;
+    S.totals.contracts = (S.totals.contracts || 0) + d.contracts;
     for (const p of S.plants) p.today = { energy: 0, money: 0 };
     S.today = freshDay();
 
@@ -460,11 +538,33 @@ const Sim = (() => {
       if (p.status === 'outage') { p.outLeft--; if (p.outLeft <= 0) { p.status = 'online'; addNews(S, 'good', `${p.name} is repaired and back online.`); } }
       else if (p.status === 'online' && T.outage) {
         const roll = rnd(S, P), len = rnd(S, P);
-        if (roll < T.outage) { p.status = 'outage'; p.outLeft = 1 + Math.floor(len * 2); const fix = Math.round(p.mw * 60); S.cash -= fix; addNews(S, 'bad', `${p.name} has broken down. Repairs cost ${fmtMoney(fix)} and take ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}.`); }
+        const odds = T.outage * diff(S).outage * (p.upg && p.tech === 'peaker' ? 0.5 : 1);
+        if (roll < odds) {
+          p.status = 'outage'; p.outLeft = 1 + Math.floor(len * 2);
+          const fix = Math.round(p.mw * 150 * diff(S).upkeep); S.cash -= fix; S.today.repairs += fix;
+          addNews(S, 'bad', `${p.name} has broken down. Repairs cost ${fmtMoney(fix)} and take ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}.`);
+        }
       }
       if (p.status === 'retiring') { p.retireLeft--; if (p.retireLeft <= 0) { p.status = 'closed'; addNews(S, 'info', `${p.name} has closed.`); } }
     }
     S.plants = S.plants.filter(p => p.status !== 'closed');
+    // past the limit the bank gives you three days to get back under it, then sells plant
+    const lim = overdraftLimit(S);
+    S.overLimit = S.cash < -lim ? (S.overLimit || 0) + 1 : 0;
+    if (S.overLimit && S.overLimit < 3) addNews(S, 'bad', `You owe ${fmtMoney(-S.cash)}, past your ${fmtMoney(lim)} overdraft limit. Get back under it within ${3 - S.overLimit} day${S.overLimit === 2 ? '' : 's'} or the bank will sell plant, most valuable first.`);
+    if (S.overLimit >= 3) {
+      const order = S.plants.slice().sort((a, b) => (a.status === 'building') - (b.status === 'building') || b.value - a.value);
+      for (const p of order) {
+        if (S.cash >= -lim / 2) break;
+        const got = Math.round(p.value * 0.35);
+        S.cash += got; p.status = 'closed'; S.totals.sold = (S.totals.sold || 0) + got;
+        addNews(S, 'bad', `You owed ${fmtMoney(got - S.cash)}, past your overdraft limit, so the bank sold ${p.name} for ${fmtMoney(got)}.`);
+      }
+      S.plants = S.plants.filter(p => p.status !== 'closed'); S.overLimit = 0;
+      if (!S.plants.length && S.cash < 0) { S.bust = true; addNews(S, 'bad', 'With nothing left to sell, the bank has put your company into administration.'); }
+    }
+    if (S.cash < 0 && !S.inDebt) addNews(S, 'bad', `You're overdrawn. The bank charges interest every day and will sell plant if you owe more than ${fmtMoney(overdraftLimit(S))}.`);
+    S.inDebt = S.cash < 0;
 
     // events: today's ones age, tomorrow's begin, new ones are forecast a day ahead
     S.events = S.events.filter(e => --e.left > 0);
@@ -486,15 +586,104 @@ const Sim = (() => {
     // a rival coal unit announces its closure on day 40 and closes on day 70
     if (dayIndex(S) === 40 && !S.challenge) { const r = S.rivals.find(x => x.id === 'bh1'); r.closing = 70; addNews(S, 'info', 'Black Hill 1 will close for good in 30 days. That leaves a gap in the evening peak.'); }
     makeOffers(S);
+    if (dayIndex(S) % 3 === 0) makeContractOffers(S);
+    rec.value = companyValue(S);
     checkGoals(S, rec);
+  }
+
+  const OVERDRAFT_RATE = 0.003;
+  function overdraftLimit(S) { return 150000 + 0.3 * S.plants.reduce((a, p) => a + (p.status === 'building' ? 0 : p.value || 0), 0); }
+
+  function upkeepOf(S, p) {
+    const T = TECH[p.tech];
+    const extra = p.upg ? (UPGRADES[p.tech].upkeep || 1) : 1;
+    return p.mw * T.upkeep * extra * diff(S).upkeep;
+  }
+
+  // ---- upgrades: one per plant ----
+  const UPGRADES = {
+    solar:   { name: 'Single-axis trackers', cost: 0.3, days: 0.5, blurb: 'Panels follow the sun for about 20% more energy, mostly early and late in the day when prices are better.' },
+    wind:    { name: 'Repower with taller turbines', cost: 0.35, days: 1, blurb: 'Bigger rotors catch lighter winds for about 20% more energy.' },
+    battery: { name: 'Extend to 4 hours', cost: 0.45, days: 1, upkeep: 1.3, blurb: 'Doubles the storage so it can cover the whole evening peak and hold a reserve.' },
+    peaker:  { name: 'Fast-start controls', cost: 0.2, days: 0.5, blurb: 'Offers twice as much frequency control and breaks down half as often.' },
+    ccgt:    { name: 'Efficiency upgrade', cost: 0.2, days: 1, blurb: 'New blades and controls cut running cost and emissions by about 12%.' },
+    hydro:   { name: 'Extra turbine', cost: 0.3, days: 2, upkeep: 1.15, blurb: 'A fourth turbine adds 25% more power from the same reservoir.' },
+    coal:    { name: 'Flexible operation retrofit', fixed: 600000, days: 3, blurb: 'Turns down to 30% and changes output twice as fast, so it loses less money when prices go negative.' },
+  };
+  function upgradeCost(S, p) { const U = UPGRADES[p.tech]; return U.fixed ? Math.round(U.fixed * diff(S).capex) : Math.round(p.value * U.cost / 100) * 100; }
+  function upgrade(S, p) {
+    if (p.upg || p.status !== 'online') return { ok: false, why: 'unavailable' };
+    const cost = upgradeCost(S, p);
+    if (S.cash < cost) return { ok: false, why: 'cash' };
+    S.cash -= cost; p.value += cost;
+    p.status = 'upgrading'; p.upgLeft = UPGRADES[p.tech].days; p.upg = true;
+    addNews(S, 'info', `${p.name} is offline for ${UPGRADES[p.tech].days} day${UPGRADES[p.tech].days === 1 ? '' : 's'} for its upgrade: ${UPGRADES[p.tech].name.toLowerCase()}.`);
+    return { ok: true, cost };
+  }
+  function finishUpgrade(S, p) {
+    p.status = 'online';
+    if (p.tech === 'battery') p.hours = 4;
+    if (p.tech === 'hydro') { const e = p.mw * hoursOf(p); p.mw = Math.round(p.mw * 1.25); p.hours = e / p.mw; }
+    addNews(S, 'good', `${p.name} is back with its upgrade: ${UPGRADES[p.tech].name.toLowerCase()}.`);
+  }
+
+  // ---- contracts with retailers ----
+  // Swap: each interval you receive (strike − spot) × MW, so you pay when spot is above the strike.
+  // Cap:  you're paid a premium every day and pay (spot − $300) × MW whenever spot is above $300.
+  const CONTRACT_DAYS = 7;
+  function contractRoom(S) {
+    const owned = S.plants.reduce((a, p) => a + (p.status === 'building' ? 0 : p.mw), 0);
+    const used = S.contracts.reduce((a, k) => a + k.mw, 0);
+    return Math.max(0, Math.round(Math.max(50, owned * 1.2) - used));
+  }
+  function makeContractOffers(S) {
+    const last = S.days.slice(-14);
+    const avg = last.length ? last.reduce((a, d) => a + d.avg, 0) / last.length : 105;
+    const capRisk = last.length ? last.reduce((a, d) => a + (d.capPay || 0), 0) / last.length : 25;   // $/MW/day the cap would have paid out
+    const r = [rnd(S, P), rnd(S, P), rnd(S, P)];
+    const size = v => Math.max(10, Math.round(v / 10) * 10);
+    const owned = S.plants.reduce((a, p) => a + p.mw, 0);
+    const firmMW = S.plants.reduce((a, p) => a + (TECH[p.tech].kind === 'thermal' || p.tech === 'hydro' ? p.mw : 0), 0);   // plant that can run through a spike
+    S.contractOffers = [
+      { type: 'swap', mw: size(Math.max(20, owned * 0.2)), strike: Math.round(avg * (0.92 + 0.16 * r[0])), days: CONTRACT_DAYS },
+      { type: 'swap', mw: size(Math.max(30, owned * 0.4)), strike: Math.round(avg * (0.85 + 0.16 * r[1])), days: CONTRACT_DAYS },
+      { type: 'cap', mw: size(Math.max(20, firmMW * 0.6, owned * 0.15)), strike: 300, days: CONTRACT_DAYS, perMW: Math.round((capRisk * (1 + 0.3 * r[2]) + 3) * 10) / 10 },
+    ];
+    for (const o of S.contractOffers) if (o.type === 'cap') o.premium = Math.round(o.perMW * o.mw);
+  }
+  function signContract(S, i) {
+    const o = S.contractOffers[i];
+    if (!o) return { ok: false, why: 'gone' };
+    if (o.mw > contractRoom(S)) return { ok: false, why: 'room' };
+    S.contracts.push({ ...o, until: S.t + o.days * IPD, pnl: 0, signed: S.t });
+    S.contractOffers.splice(i, 1);
+    addNews(S, 'info', o.type === 'swap'
+      ? `You sold a ${o.mw} MW swap at ${fmtPrice(o.strike)}/MWh for ${o.days} days. You now earn that price on ${o.mw} MW whatever the market does, as long as you can supply it.`
+      : `You sold a ${o.mw} MW $300 cap for ${fmtMoney(o.premium)} a day. You pay out whenever the price goes above $300.`);
+    return { ok: true };
+  }
+
+  // ---- pre-dispatch: the price forecast for the next few hours ----
+  // Uses today's weather and offers as they stand, so it misses surprises, like the real thing.
+  function forecast(S, steps) {
+    const out = [];
+    const F = { ...S };
+    for (let k = 0; k < steps; k++) {
+      F.t = S.t + k;
+      const c = conditions(F);
+      const { supply, demandBids } = buildBids(F, c, true);
+      out.push({ t: F.t, price: administer(F, clear(supply, demandBids, c.demand)).price, demand: c.demand });
+    }
+    return out;
   }
 
   function rivalInvestment(S) {
     const last = S.days.slice(-15);
     const avg = last.reduce((a, d) => a + d.avg, 0) / last.length;
-    if (avg <= 140) return;
+    const D = diff(S);
+    if (avg <= D.rivalAt) return;
     const n = (S.rivalBuilds = (S.rivalBuilds || 0) + 1);
-    const mw = Math.round(Math.min(600, (avg - 140) * 3 + 150) / 50) * 50;
+    const mw = Math.round(Math.min(D.rivalMax, (avg - D.rivalAt) * 3 + 150) / 50) * 50;
     const battery = n % 2 === 0;
     const r = battery
       ? { id: `rb${n}`, name: `Rival battery ${n}`, tech: 'battery', cap: mw, hours: 2, soc: mw }
@@ -511,7 +700,7 @@ const Sim = (() => {
     const target = Math.max(0.2, 0.7 - 0.08 * year);
     const intensity = emis / energy;
     if (intensity > target) {
-      const over = emis - target * energy, pen = Math.round(over * 30);
+      const over = emis - target * energy, pen = Math.round(over * 30 * diff(S).penalty);
       S.cash -= pen; S.today.penalties += pen;
       addNews(S, 'bad', `Your emissions were ${intensity.toFixed(2)} t per MWh, above the ${target.toFixed(2)} target. Penalty: ${fmtMoney(pen)}.`);
     } else if (emis > 0) {
@@ -526,9 +715,10 @@ const Sim = (() => {
     const r = [rnd(S, W), rnd(S, W), rnd(S, W)];
     if (S.upcoming.some(u => u.start >= tomorrow) || S.events.length >= 2) return;
     const odds = [['heatwave', 0.02 + 0.07 * summer], ['cold', 0.05 * (1 - summer)], ['still', 0.05], ['windy', 0.05], ['cloudy', 0.05], ['linktrip', 0.015], ['gascrunch', 0.012]];
+    const em = diff(S).events;
     let acc = 0;
     for (const [key, p] of odds) {
-      acc += p;
+      acc += p * (key === 'windy' ? 1 : em);
       if (r[0] < acc) {
         if (S.events.some(e => e.key === key)) return;
         const [a, b] = EVENTS[key].days, len = a + Math.floor(r[1] * (b - a + 1));
@@ -543,7 +733,7 @@ const Sim = (() => {
   function offerReserve(S, day, len, r) {
     const firm = firmCapacity(S, false);
     if (firm < 20) return;
-    const mw = Math.round(firm * 0.8 / 5) * 5, payment = Math.round(mw * (90 + 60 * r));
+    const mw = Math.round(firm * 0.8 / 5) * 5, payment = Math.round(mw * (220 + 150 * r) / 100) * 100;
     S.offer = { type: 'reserve', mw, payment, from: day * IPD + Math.round(15 / H), to: day * IPD + Math.round(20 / H), expires: day * IPD,
       text: `The market operator expects a supply shortfall tomorrow afternoon. Promise ${fmtMW(mw)} of reserve between 3 and 8 pm for ${fmtMoney(payment)}? If you can't deliver, you pay back three times the shortfall.` };
   }
@@ -555,7 +745,7 @@ const Sim = (() => {
     if (day >= 12 && day % 17 === 5) {
       const r = S.rivals.find(x => x.tech === 'coal' && !x.gone && !x.closing && !x.sold && x.id !== 'bh1');
       if (r) {
-        const price = Math.round(r.cap * 950 * Math.max(0.6, 1 - day / 400));
+        const price = Math.round(r.cap * 2400 * Math.max(0.6, 1 - day / 400) / 1000) * 1000;
         S.offer = { type: 'coal', rival: r.id, price, expires: S.t + IPD * 2,
           text: `The owner of ${r.name} (${fmtMW(r.cap)} of coal) wants out and offers it to you for ${fmtMoney(price)}. It earns well most nights, but it's slow, breaks down and counts heavily against your emissions target.` };
       }
@@ -581,7 +771,7 @@ const Sim = (() => {
   function declineOffer(S) { S.offer = null; }
 
   // ---- building and closing ----
-  function priceOf(S, tech, mw) { return Math.round(TECH[tech].capex * S.costMult[tech] * mw / 100) * 100; }
+  function priceOf(S, tech, mw) { return Math.round(TECH[tech].capex * S.costMult[tech] * diff(S).capex * mw / 100) * 100; }
   function nameFor(S, tech) {
     const list = NAMES[tech], k = S.nameUse[tech] || 0; S.nameUse[tech] = k + 1;
     const base = list[k % list.length] + (k >= list.length ? ` ${Math.floor(k / list.length) + 1}` : '');
@@ -594,7 +784,7 @@ const Sim = (() => {
     if (S.cash < cost) return { ok: false, why: 'cash' };
     S.cash -= cost;
     const p = { id: `p${S.t}_${S.plants.length}`, tech, mw, name: nameFor(S, tech), status: 'building', buildLeft: T.build, built: S.t, value: cost,
-      bid: T.kind === 'vre' ? 'always' : T.kind === 'thermal' ? (tech === 'peaker' ? 'peak' : 'cost') : undefined,
+      bid: T.kind === 'vre' ? 'nonneg' : T.kind === 'thermal' ? (tech === 'peaker' ? 'peak' : 'cost') : undefined,
       strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mw * T.hours * 0.5 : 0, last: 0, fcas: T.fcas ? true : undefined, today: { energy: 0, money: 0 } };
     S.plants.push(p);
     addNews(S, 'info', `Construction has started on ${p.name} (${fmtMW(mw)}). It connects in ${T.build} day${T.build === 1 ? '' : 's'}.`);
@@ -609,15 +799,15 @@ const Sim = (() => {
 
   // ---- goals ----
   const GOALS = [
-    { id: 'first', text: 'Build your first plant', reward: 20000, test: S => S.plants.length > 0 },
+    { id: 'first', text: 'Build your first plant', reward: 50000, test: S => S.plants.length > 0 },
     { id: 'day10k', text: 'Make $10k profit in one day', reward: 0, unlock: 'wind', test: (S, d) => d && d.profit >= 10000 },
-    { id: 'fcas', text: 'Earn $5k from frequency control', reward: 15000, test: S => S.totals.fcas >= 5000 },
+    { id: 'fcas', text: 'Earn $5k from frequency control', reward: 40000, test: S => S.totals.fcas >= 5000 },
     { id: 'share5', text: 'Supply 5% of the region in one day', reward: 0, unlock: 'ccgt', test: (S, d) => d && d.share >= 0.05 },
-    { id: 'reserve', text: 'Keep a reserve promise through a shortfall', reward: 60000, test: S => S.goalFlags?.reserveKept },
+    { id: 'reserve', text: 'Keep a reserve promise through a shortfall', reward: 150000, test: S => S.goalFlags?.reserveKept },
     { id: 'mw500', text: 'Own 500 MW of plant', reward: 0, unlock: 'hydro', test: S => S.plants.reduce((a, p) => a + p.mw, 0) >= 500 },
-    { id: 'day100k', text: 'Make $100k profit in one day', reward: 100000, test: (S, d) => d && d.profit >= 100000 },
-    { id: 'value5m', text: 'Grow your company to $5M', reward: 250000, test: S => companyValue(S) >= 5e6 },
-    { id: 'share25', text: 'Supply a quarter of the region in one day', reward: 500000, test: (S, d) => d && d.share >= 0.25 },
+    { id: 'day100k', text: 'Make $100k profit in one day', reward: 250000, test: (S, d) => d && d.profit >= 100000 },
+    { id: 'value10m', text: 'Grow your company to $10M', reward: 500000, test: S => companyValue(S) >= 1e7 },
+    { id: 'share25', text: 'Supply a quarter of the region in one day', reward: 1000000, test: (S, d) => d && d.share >= 0.25 },
   ];
   function checkGoals(S, d) {
     for (const g of GOALS) {
@@ -649,6 +839,7 @@ const Sim = (() => {
       const r = step(S);
       maxP = Math.max(maxP, r.res.price); minP = Math.min(minP, r.res.price);
       if (r.res.shortfall) shed++;
+      if (S.bust) break;
     }
     const newNews = [];
     for (const n2 of S.news) { if (n2 === before.news) break; newNews.push(n2); }
@@ -675,8 +866,9 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, year, time: clock(hourOf(S)) };
   }
 
-  return { IPD, H, FLOOR, CAP, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS,
-    create, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
+  return { IPD, H, FLOOR, CAP, APC, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+    create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
+    upgrade, upgradeCost, upkeepOf, signContract, contractRoom, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;

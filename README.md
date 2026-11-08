@@ -10,7 +10,7 @@ screen and works offline. No app store, no APK, no build step.
 | --- | --- |
 | [Tide Pool](https://jbronko.github.io/2611TABLET/tide-pool/) | A 12-level channel puzzle: lay channels so the tide fills every rock pool. |
 | [Tide Digger](https://jbronko.github.io/2611TABLET/tide-digger/) | Dig channels in the sand with your finger; real-feeling water and sand physics carry the tide into rock pools. 8 beaches plus a sandbox. |
-| [Merit Order](https://jbronko.github.io/2611TABLET/merit-order/) | An electricity market tycoon: build plants, bid into a 5-minute NEM-style market, earn from frequency control, and keep trading while you're away. Challenge friends with share codes. |
+| [Merit Order](https://jbronko.github.io/2611TABLET/merit-order/) | An electricity market tycoon: build plants, bid into a 5-minute NEM-style market, earn from frequency control, sell contracts, upgrade plants and keep trading while you're away. Three difficulty levels; challenge friends with share codes. |
 | [Tablet Tasks](https://jbronko.github.io/2611TABLET/tablet-tasks/) | A small, touch-friendly to-do list. |
 
 ## Install an app on Android
