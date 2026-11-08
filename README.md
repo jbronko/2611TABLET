@@ -30,12 +30,12 @@ node tools/make-icons.js word-garden
 node tools/check-pwa.js word-garden   # installable + offline + no errors
 ```
 
-Commit and push; the new app appears on the launcher page.
+Commit and push; once the change is merged into `main`, the new app appears on the launcher page.
 
 ## Hosting (one-time setup)
 
-On GitHub: **Settings → Pages → Source: Deploy from a branch**, choose the branch and **/ (root)**, Save.
-`.nojekyll` at the root makes Pages serve every file as-is.
+GitHub Pages serves the `main` branch. On GitHub: **Settings → Pages → Source: Deploy from a branch**,
+branch **main**, folder **/ (root)**, Save. `.nojekyll` at the root makes Pages serve every file as-is.
 
 To run locally: `python3 -m http.server 8000` and open http://localhost:8000.
 

@@ -31,7 +31,8 @@ tools/check-pwa.js  verify an app: manifest, service worker, installable, works 
    (radius 205). Then `node tools/make-icons.js <slug>`.
 4. Test the app's own behaviour in Playwright (Chromium is preinstalled; `require('playwright')`),
    then `node tools/check-pwa.js <slug>` must print "All checks passed".
-5. Commit and push. The app is live once the branch Pages deploys from has the commit.
+5. Commit and push. GitHub Pages deploys from `main`, so the app goes live once the commit is on
+   `main` (merge the working branch into `main`, or open a pull request for the owner to merge).
 
 ## Rules that keep apps working
 
