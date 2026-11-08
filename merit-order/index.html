@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Merit Order</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0b1a21">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap">
+<style>
+  /* Layout: a dark control room. Left: the merit-order chart (the heart of the game) above your
+     plants. Right: today's price and demand, the generation mix and the news. Portrait stacks the
+     panels in one scrolling column. One look in both system themes: it's a control room. */
+  :root {
+    --bg: #0b1a21; --panel: #11222b; --panel-2: #172c36; --raise: #1d3541;
+    --line: rgba(255, 255, 255, 0.08); --line-2: rgba(255, 255, 255, 0.14);
+    --ink: #eef4f5; --ink-2: #a9bcc3; --ink-3: #74909a;
+    --amber: #f2a33a; --amber-ink: #241300;
+    --good: #3cc46b; --bad: #ff6b5e; --info: #8fb8c7;
+    --font: "Archivo", "Segoe UI", Roboto, system-ui, sans-serif;
+    --r: 16px;
+    --st: env(safe-area-inset-top, 0px); --sr: env(safe-area-inset-right, 0px);
+    --sb: env(safe-area-inset-bottom, 0px); --sl: env(safe-area-inset-left, 0px);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+  body { background: var(--bg); color: var(--ink); font: 500 15px/1.4 var(--font); font-stretch: 100%; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+  button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+  button, .topbar, canvas { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  :focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+  svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  svg.fill { fill: currentColor; stroke: none; }
+  .num { font-variant-numeric: tabular-nums; }
+  .eyebrow { font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-stretch: 112%; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 12px; font-weight: 700; transition: transform 0.12s ease, background-color 0.2s ease; }
+  .btn:active, .card:active, .plant:active, .icon-btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--amber); color: var(--amber-ink); }
+  .btn-quiet { background: var(--raise); border: 1px solid var(--line-2); }
+  .btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+  .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
+
+  /* ---------- title ---------- */
+  .title-screen { position: fixed; inset: 0; z-index: 30; display: grid; align-items: center; overflow: hidden; background: var(--bg); }
+  .title-screen canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.55; }
+  .title-screen::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(11, 26, 33, 0.96) 0%, rgba(11, 26, 33, 0.82) 38%, rgba(11, 26, 33, 0.15) 75%); pointer-events: none; }
+  .title-inner { position: relative; z-index: 1; width: min(100%, 470px); display: grid; gap: 30px; padding: max(28px, var(--st)) 24px max(28px, var(--sb)) max(56px, calc(var(--sl) + 24px)); }
+  .title-inner h1 { margin: 8px 0 0; font-size: clamp(54px, 8vw, 88px); line-height: 0.88; font-weight: 800; font-stretch: 75%; letter-spacing: -0.01em; text-transform: uppercase; }
+  .title-inner h1 span { color: var(--amber); }
+  .title-inner p { margin: 16px 0 0; font-size: 17px; color: var(--ink-2); max-width: 34ch; }
+  .title-actions { display: grid; gap: 12px; }
+  .title-actions .btn { min-height: 56px; font-size: 17px; }
+  .continue { justify-content: space-between; padding: 0 20px; min-height: 68px !important; text-align: left; }
+  .continue span:first-child { display: grid; }
+  .continue small { font-weight: 600; font-size: 13.5px; opacity: 0.75; }
+  .title-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (orientation: portrait) {
+    .title-screen { align-items: end; }
+    .title-screen::after { background: linear-gradient(0deg, rgba(11, 26, 33, 0.97) 0%, rgba(11, 26, 33, 0.8) 45%, rgba(11, 26, 33, 0.1) 80%); }
+    .title-inner { margin: 0 auto; width: min(100%, 560px); padding: 24px max(24px, var(--sr)) max(36px, calc(var(--sb) + 16px)) max(24px, var(--sl)); }
+  }
+
+  /* ---------- app shell ---------- */
+  .app { min-height: 100%; display: grid; grid-template-rows: auto auto 1fr; }
+  .topbar {
+    position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: max(10px, var(--st)) max(16px, var(--sr)) 10px max(16px, var(--sl));
+    background: rgba(11, 26, 33, 0.92); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--amber); color: var(--amber-ink); display: grid; place-items: center; flex: none; }
+  .brand .mark svg { width: 22px; height: 22px; }
+  .brand .who { display: grid; min-width: 0; }
+  .brand .who b { font-size: 16px; font-weight: 750; font-stretch: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand .who span { font-size: 13px; color: var(--ink-2); }
+  .speed { display: flex; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 3px; gap: 2px; margin-left: auto; }
+  .speed button { min-width: 46px; height: 38px; border-radius: 9px; font-weight: 750; font-size: 14px; color: var(--ink-2); display: grid; place-items: center; }
+  .speed button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink); }
+  .cash { display: grid; justify-items: end; line-height: 1.1; }
+  .cash b { font-size: 24px; font-weight: 800; font-stretch: 85%; }
+  .cash span { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+  .up { color: var(--good); } .down { color: var(--bad); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px max(16px, var(--sr)) 0 max(16px, var(--sl)); }
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; border-radius: 999px; font-size: 13.5px; font-weight: 650; background: var(--panel); border: 1px solid var(--line-2); }
+  .chip svg { width: 17px; height: 17px; }
+  .chip.bad { border-color: rgba(255, 107, 94, 0.45); } .chip.bad svg { color: var(--bad); }
+  .chip.good svg { color: var(--good); } .chip.soon { color: var(--ink-2); border-style: dashed; }
+
+  .main {
+    display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 14px;
+    padding: 12px max(16px, var(--sr)) max(16px, var(--sb)) max(16px, var(--sl)); align-items: start;
+  }
+  .col { display: grid; gap: 14px; min-width: 0; }
+  @media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px 16px; min-width: 0; position: relative; }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+  .panel-head h2 { margin: 0; font-size: 15px; font-weight: 750; font-stretch: 105%; letter-spacing: 0.01em; }
+  .panel-head .meta { font-size: 13px; color: var(--ink-2); }
+  .big { font-size: 30px; font-weight: 800; font-stretch: 80%; line-height: 1; }
+  .kpis { display: flex; gap: 22px; align-items: baseline; flex-wrap: wrap; }
+  .kpis .k { display: grid; gap: 2px; }
+  .kpis .k span { font-size: 12.5px; color: var(--ink-2); }
+  canvas.chart { display: block; width: 100%; touch-action: pan-y; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .legend .mine i { background: transparent; box-shadow: inset 0 0 0 2px #fff; }
+  .note { font-size: 12px; color: var(--ink-3); margin: 6px 0 0; }
+
+  .plants { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .plant, .add-plant { text-align: left; border-radius: 13px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); display: grid; gap: 6px; transition: transform 0.12s ease, border-color 0.2s; min-height: 108px; }
+  .plant:hover, .add-plant:hover { border-color: var(--line-2); }
+  .plant .top, .plant-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .plant-head .tech-dot { width: 42px; height: 42px; border-radius: 12px; }
+  .plant-head .tech-dot svg { width: 24px; height: 24px; }
+  .plant-head .name { font-weight: 800; font-size: 22px; font-stretch: 88%; line-height: 1.15; }
+  .plant-head .sub { font-size: 13.5px; color: var(--ink-2); }
+  .tech-dot { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: none; color: #0b1a21; }
+  .tech-dot svg { width: 19px; height: 19px; stroke-width: 2.1; }
+  .plant .name { font-weight: 700; font-size: 14.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plant .sub { font-size: 12.5px; color: var(--ink-2); }
+  .plant .bar { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+  .plant .bar i { display: block; height: 100%; border-radius: inherit; transition: width 0.4s ease; }
+  .plant .row { display: flex; justify-content: space-between; font-size: 13px; gap: 8px; }
+  .plant .status { color: var(--ink-2); }
+  .add-plant { place-items: center; align-content: center; gap: 6px; border-style: dashed; border-color: rgba(242, 163, 58, 0.5); color: var(--amber); font-weight: 750; }
+  .add-plant svg { width: 28px; height: 28px; }
+
+  .mix { display: flex; height: 26px; gap: 2px; border-radius: 8px; overflow: hidden; }
+  .mix span { height: 100%; transition: flex-grow 0.5s ease; min-width: 0; }
+  .news { display: grid; gap: 10px; max-height: 260px; overflow: auto; margin: 0; padding: 0; list-style: none; }
+  @media (min-width: 901px) { .main .news { max-height: max(110px, calc(100vh - 640px)); } }
+  .news li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; font-size: 13.5px; color: var(--ink-2); }
+  .news li svg { width: 18px; height: 18px; margin-top: 1px; }
+  .news li.good svg { color: var(--good); } .news li.bad svg { color: var(--bad); } .news li.info svg { color: var(--info); }
+  .news time { display: block; font-size: 11.5px; color: var(--ink-3); }
+
+  .offer { position: fixed; z-index: 20; left: 50%; transform: translateX(-50%); bottom: max(16px, var(--sb)); width: min(calc(100% - 32px), 640px);
+    background: #1a2f3a; border: 1px solid rgba(242, 163, 58, 0.55); border-radius: 18px; padding: 16px 18px; display: grid; gap: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .offer p { margin: 0; color: var(--ink); }
+  .offer .actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+
+  .tooltip { position: fixed; z-index: 25; pointer-events: none; max-width: 260px; padding: 8px 11px; border-radius: 10px; background: #050f13; border: 1px solid var(--line-2); font-size: 13px; color: var(--ink); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
+  .tooltip b { display: block; font-size: 13.5px; }
+  .tooltip span { color: var(--ink-2); }
+  .toast { position: fixed; z-index: 45; left: 50%; top: max(16px, var(--st)); transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; background: #050f13; border: 1px solid var(--line-2); font-weight: 650; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); transition: opacity 0.4s; }
+
+  /* ---------- sheets ---------- */
+  .backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(2, 10, 13, 0.62);
+    padding: max(16px, var(--st)) max(16px, var(--sr)) max(16px, var(--sb)) max(16px, var(--sl)); animation: fade 0.2s ease both; }
+  .sheet { width: min(100%, 860px); max-height: 100%; overflow: auto; overscroll-behavior: contain; background: var(--panel); border: 1px solid var(--line-2); border-radius: 22px; padding: 20px 22px 22px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); animation: rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .sheet.narrow { width: min(100%, 480px); }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .sheet h2 { margin: 0; font-size: 26px; font-weight: 800; font-stretch: 85%; }
+  .sheet h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); font-stretch: 110%; }
+  .sheet p { margin: 0 0 10px; color: var(--ink-2); }
+  .tech-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .card { text-align: left; border-radius: 14px; padding: 14px; background: var(--panel-2); border: 1px solid var(--line); display: grid; gap: 10px; align-content: start; transition: transform 0.12s ease; }
+  .card .head { display: flex; gap: 10px; align-items: center; }
+  .card .head b { font-size: 16px; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+  .stats { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 13px; }
+  .stats dt { color: var(--ink-2); } .stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
+  .sizes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .sizes button { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-2); font-weight: 700; font-size: 13.5px; color: var(--ink-2); }
+  .sizes button[aria-pressed="true"] { border-color: var(--amber); color: var(--ink); background: rgba(242, 163, 58, 0.14); }
+  .card .lock { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .card.locked .head, .card.locked p { opacity: 0.55; }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px; padding: 4px; }
+  .seg button { min-height: 44px; border-radius: 9px; font-weight: 700; font-size: 13.5px; color: var(--ink-2); padding: 4px 8px; line-height: 1.15; }
+  .seg button small { display: block; font-weight: 600; font-size: 11.5px; opacity: 0.8; }
+  .seg button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink); }
+  .slider { display: grid; gap: 6px; margin-top: 12px; }
+  .slider label { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--ink-2); }
+  .slider label b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--amber); height: 32px; }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); margin-top: 12px; width: 100%; text-align: left; font-weight: 650; }
+  .switch-row small { display: block; font-weight: 500; color: var(--ink-2); font-size: 12.5px; }
+  .switch { width: 46px; height: 28px; border-radius: 99px; background: rgba(255, 255, 255, 0.18); position: relative; flex: none; transition: background-color 0.2s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform 0.2s; }
+  [aria-checked="true"] .switch { background: var(--amber); } [aria-checked="true"] .switch::after { transform: translateX(18px); }
+  .soc { height: 12px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; margin-top: 6px; }
+  .soc i { display: block; height: 100%; background: #9085e9; border-radius: inherit; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+  .kv div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; }
+  .kv span { font-size: 12.5px; color: var(--ink-2); } .kv b { font-size: 19px; font-variant-numeric: tabular-nums; font-stretch: 88%; }
+  .danger { color: var(--bad); }
+  .goal { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .goal:last-child { border-bottom: 0; }
+  .goal .tick { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line-2); flex: none; }
+  .goal.done .tick { background: var(--good); border-color: var(--good); color: #062b13; }
+  .goal .gtext { flex: 1; } .goal .gtext small { display: block; color: var(--ink-2); }
+  .menu-list { display: grid; gap: 8px; }
+  .menu-list .switch-row { margin: 0; }
+  table.res { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+  table.res th, table.res td { text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  table.res th:first-child, table.res td:first-child { text-align: left; }
+  table.res th { color: var(--ink-2); font-weight: 650; font-size: 12.5px; }
+  .code { font: 800 22px/1.2 var(--font); font-stretch: 75%; letter-spacing: 0.06em; padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line-2); text-align: center; user-select: all; -webkit-user-select: all; }
+  input[type=text] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px; min-height: 48px; padding: 0 14px; width: 100%; }
+  .field-row { display: flex; gap: 8px; } .field-row input { flex: 1; min-width: 0; }
+
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes rise { from { opacity: 0; transform: translate(var(--tx, 0), 16px) scale(0.98); } }
+  .offer { --tx: -50%; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M3 20h4v-4H3zM8 20h4v-7H8zM13 20h4v-10h-4zM18 20h3V5h-3z" fill="currentColor" stroke="none"/><path d="M2 12.5h20" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2"/></symbol>
+  <symbol id="t-solar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.2 5.2l1.8 1.8M17 17l1.8 1.8M5.2 18.8 7 17M17 7l1.8-1.8"/></symbol>
+  <symbol id="t-wind" viewBox="0 0 24 24"><path d="M12 11.3v10.2M9.5 21.5h5"/><circle cx="12" cy="10" r="1.3"/><path d="M12 8.7V2.5M13.1 10.7l5.4 3.1M10.9 10.7l-5.4 3.1"/></symbol>
+  <symbol id="t-battery" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10.5v3M11.5 9 9 12.5h3.5L10 16"/></symbol>
+  <symbol id="t-peaker" viewBox="0 0 24 24"><path d="M12 21c-3.6 0-6-2.4-6-5.6 0-3.9 3.4-5.5 3.7-9.4 2.2 1.4 3.5 3.5 3.6 5.6 1-.7 1.6-1.9 1.7-3.1 1.9 1.6 3 3.9 3 6.4 0 3.4-2.4 6.1-6 6.1z"/></symbol>
+  <symbol id="t-ccgt" viewBox="0 0 24 24"><path d="M3 21V11l5 3V11l5 3V7h5v14z"/><path d="M15.5 4.5c0-1 .8-1.5 1.5-1.5"/></symbol>
+  <symbol id="t-hydro" viewBox="0 0 24 24"><path d="M12 3c3.3 4.2 6 7.4 6 11a6 6 0 0 1-12 0c0-3.6 2.7-6.8 6-11z"/><path d="M9 14.5a3 3 0 0 0 3 3"/></symbol>
+  <symbol id="t-coal" viewBox="0 0 24 24"><path d="M3 21V12h4V5h3v7h3l4-3v3l4-3v12z"/><path d="M8 3.2c.9-.6 2.1-.4 2.7.4"/></symbol>
+  <symbol id="t-other" viewBox="0 0 24 24"><path d="M4 12h16M14 6l6 6-6 6"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.8v12.4l10-6.2z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 14l5-5 5 5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+  <symbol id="i-good" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></symbol>
+  <symbol id="i-bad" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.3"/></symbol>
+  <symbol id="i-heat" viewBox="0 0 24 24"><path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 9v8"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5A3.5 3.5 0 0 1 16.5 11M12 14v4M8.5 21h7"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8 15.8 7.2M8.2 13.2l7.6 3.6"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.8M12 17v.3"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+</svg>
+
+<!-- Title -->
+<section class="title-screen" id="title">
+  <canvas id="title-chart" aria-hidden="true"></canvas>
+  <div class="title-inner">
+    <header>
+      <div class="eyebrow">An electricity market tycoon</div>
+      <h1>Merit<br><span>Order</span></h1>
+      <p>Build power plants, bid into the market every five minutes and keep the lights on through heatwaves, still weeks and breakdowns.</p>
+    </header>
+    <div class="title-actions">
+      <button type="button" class="btn btn-primary continue" id="t-continue"><span><b id="t-cont-k">Start your company</b><small id="t-cont-sub">$250k and an empty site</small></span><svg class="i"><use href="#i-play"/></svg></button>
+      <div class="title-row">
+        <button type="button" class="btn btn-quiet" id="t-challenge"><svg class="i"><use href="#i-flag"/></svg>Challenges</button>
+        <button type="button" class="btn btn-quiet" id="t-help"><svg class="i"><use href="#i-help"/></svg>How it works</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Control room -->
+<div class="app" id="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark"><svg class="fill"><use href="#i-logo"/></svg></span>
+      <div class="who"><b id="co-name">Your company</b><span class="num" id="clock">Day 1 · 1 Nov · 12:00 am</span></div>
+    </div>
+    <div class="speed" role="group" aria-label="Game speed">
+      <button type="button" data-speed="0" aria-label="Pause" aria-pressed="false"><svg class="i"><use href="#i-pause"/></svg></button>
+      <button type="button" data-speed="1" aria-pressed="true">1×</button>
+      <button type="button" data-speed="4" aria-pressed="false">4×</button>
+      <button type="button" data-speed="16" aria-pressed="false">16×</button>
+    </div>
+    <div class="cash"><b class="num" id="cash">$250k</b><span class="num" id="today-pl">Today $0</span></div>
+    <button type="button" class="icon-btn" id="open-menu" aria-label="Menu"><svg class="i"><use href="#i-menu"/></svg></button>
+  </header>
+  <div class="chips" id="chips"></div>
+
+  <main class="main">
+    <div class="col">
+      <section class="panel" aria-labelledby="mo-title">
+        <div class="panel-head">
+          <h2 id="mo-title">Merit order now</h2>
+          <div class="kpis">
+            <div class="k"><span>Spot price</span><b class="big num" id="k-price">$0</b></div>
+            <div class="k"><span>Demand</span><b class="big num" id="k-demand">0 MW</b></div>
+            <div class="k"><span>You supply</span><b class="big num" id="k-mine">0 MW</b></div>
+          </div>
+        </div>
+        <canvas class="chart" id="c-merit" data-h="330" aria-label="Merit order chart: every generator's offers stacked cheapest first; the demand line sets the price."></canvas>
+        <div class="legend" id="lg-merit"></div>
+        <p class="note">Bars are offers, cheapest first. Where demand crosses them sets the price everyone is paid. The price scale is squeezed above $300.</p>
+      </section>
+      <section class="panel" aria-labelledby="pl-title">
+        <div class="panel-head"><h2 id="pl-title">Your plants</h2><span class="meta num" id="pl-meta">None yet</span></div>
+        <div class="plants" id="plants"></div>
+      </section>
+    </div>
+    <div class="col">
+      <section class="panel" aria-labelledby="pr-title">
+        <div class="panel-head"><h2 id="pr-title">Spot price today</h2><span class="meta num" id="pr-meta"></span></div>
+        <canvas class="chart" id="c-price" data-h="170" aria-label="Spot price through today"></canvas>
+        <div class="legend"><span><i style="background:#f2a33a"></i>Today</span><span><i style="background:#56707a"></i>Yesterday</span></div>
+      </section>
+      <section class="panel" aria-labelledby="dm-title">
+        <div class="panel-head"><h2 id="dm-title">Demand and your output</h2><span class="meta num" id="dm-meta"></span></div>
+        <canvas class="chart" id="c-demand" data-h="150" aria-label="Region demand and your output through today"></canvas>
+        <div class="legend"><span><i style="background:#c7d6db"></i>Region demand</span><span><i style="background:#f2a33a"></i>Your output</span></div>
+      </section>
+      <section class="panel" aria-labelledby="mx-title">
+        <div class="panel-head"><h2 id="mx-title">Generation now</h2><span class="meta num" id="mx-meta"></span></div>
+        <div class="mix" id="mix"></div>
+        <div class="legend" id="lg-mix"></div>
+      </section>
+      <section class="panel" aria-labelledby="nw-title">
+        <div class="panel-head"><h2 id="nw-title">Market news</h2></div>
+        <ul class="news" id="news"></ul>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="offer" id="offer" hidden role="alertdialog" aria-labelledby="offer-text">
+  <div class="eyebrow" id="offer-kind">Offer</div>
+  <p id="offer-text"></p>
+  <div class="actions"><button type="button" class="btn btn-quiet" id="offer-no">No thanks</button><button type="button" class="btn btn-primary" id="offer-yes">Accept</button></div>
+</div>
+<div class="tooltip" id="tip" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<!-- Sheets -->
+<div class="backdrop" id="sh-build" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="b-title">
+  <div class="sheet-head"><h2 id="b-title">Build a plant</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button></div>
+  <p>Building costs are scaled down so your company grows in days, not decades. Plants start trading as soon as they connect.</p>
+  <div class="tech-grid" id="tech-grid"></div>
+</section></div>
+
+<div class="backdrop" id="sh-plant" hidden><section class="sheet narrow" role="dialog" aria-modal="true" aria-labelledby="p-title">
+  <div class="sheet-head"><div class="plant-head" id="p-top"></div><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button></div>
+  <h2 id="p-title" hidden></h2>
+  <div class="kv" id="p-kv"></div>
+  <div id="p-bid"></div>
+  <div id="p-actions"></div>
+</section></div>
+
+<div class="backdrop" id="sh-menu" hidden><section class="sheet narrow" role="dialog" aria-modal="true" aria-labelledby="m-title">
+  <div class="sheet-head"><h2 id="m-title">Menu</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button></div>
+  <div class="menu-list">
+    <button type="button" class="switch-row" id="m-goals"><span><svg class="i"><use href="#i-trophy"/></svg> Goals</span><span class="num" id="m-goals-n"></span></button>
+    <button type="button" class="switch-row" id="m-report"><span>Recent days</span></button>
+    <button type="button" class="switch-row" id="m-share"><span><svg class="i"><use href="#i-share"/></svg> Share your company</span></button>
+    <button type="button" class="switch-row" id="m-challenge"><span><svg class="i"><use href="#i-flag"/></svg> Challenges</span></button>
+    <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
+    <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
+    <button type="button" class="switch-row" id="m-title"><span>Title screen</span></button>
+    <button type="button" class="switch-row danger" id="m-reset"><span>Start a new company</span></button>
+  </div>
+</section></div>
+
+<div class="backdrop" id="sh-info" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="i-title" style="width:min(100%, 640px)">
+  <div class="sheet-head"><h2 id="i-title">Title</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button></div>
+  <div id="i-body"></div>
+</section></div>
+
+<script src="sim.js"></script>
+<script>
+(() => {
+  'use strict';
+  const { TECH, TECH_ORDER, OTHER, IPD, H, FLOOR, CAP, fmtMoney, fmtMW, fmtPrice } = Sim;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const techColor = t => (TECH[t] || OTHER).color;
+  const techIcon = t => `<svg class="i"><use href="#t-${TECH[t] ? t : 'other'}"/></svg>`;
+  const dot = t => `<span class="tech-dot" style="background:${techColor(t)}">${techIcon(t)}</span>`;
+  const MS_PER_INTERVAL = 1250;     // 1x: one game day is 6 real minutes
+
+  // ---------------------------------------------------------------------------------
+  // Storage: the main company, an optional challenge run, results from friends.
+  // ---------------------------------------------------------------------------------
+  const KEY = 'merit-order';
+  let store = {};
+  try { store = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { store = {}; }
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {} };
+  function pack(S) {
+    const copy = { ...S, last: undefined };
+    copy.days = S.days.map((d, i) => i < S.days.length - 2 ? { ...d, priceSorted: undefined, price: undefined, demand: undefined, mine: undefined } : d);
+    return copy;
+  }
+  let S = null, slot = 'career', speed = 1;
+  function save() {
+    if (!S || S.ended) return;
+    store[slot] = pack(S); store[`${slot}Seen`] = Date.now(); store.slot = slot; store.speed = speed;
+    persist();
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Charts (Canvas 2D). The price scale is linear up to $300 and squeezed above it, so
+  // ordinary prices are readable and spikes to the cap still fit.
+  // ---------------------------------------------------------------------------------
+  function priceF(p) {
+    if (p <= 0) return 0.12 * (1 + Math.max(FLOOR, p) / 1000);
+    if (p <= 300) return 0.12 + 0.58 * p / 300;
+    if (p <= 1000) return 0.70 + 0.12 * (p - 300) / 700;
+    return 0.82 + 0.18 * Math.log(Math.min(CAP, p) / 1000) / Math.log(CAP / 1000);
+  }
+  const PRICE_TICKS = [-1000, 0, 100, 200, 300, 1000, 5000, 20000];
+  const tickLabel = p => p === 0 ? '$0' : p < 0 ? `−$${Math.abs(p) >= 1000 ? `${Math.abs(p) / 1000}k` : Math.abs(p)}` : p >= 1000 ? `$${p / 1000}k` : `$${p}`;
+  function setup(canvas) {
+    // Layout height lives in data-h (the canvas's own height attribute is its pixel size).
+    const dpr = Math.min(2, window.devicePixelRatio || 1), w = canvas.clientWidth;
+    const h = canvas.dataset.h ? Number(canvas.dataset.h) : canvas.clientHeight;
+    if (canvas.dataset.h && canvas.style.height !== `${h}px`) canvas.style.height = `${h}px`;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+  const GRID = 'rgba(255,255,255,0.07)', AXIS = 'rgba(255,255,255,0.18)', MUTED = '#74909a', INK2 = '#a9bcc3';
+  function priceAxis(ctx, x0, x1, top, bottom, ticks = PRICE_TICKS) {
+    ctx.font = '600 11px Archivo, system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (const p of ticks) {
+      const y = bottom - priceF(p) * (bottom - top);
+      ctx.strokeStyle = p === 0 ? AXIS : GRID; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x0, Math.round(y) + 0.5); ctx.lineTo(x1, Math.round(y) + 0.5); ctx.stroke();
+      ctx.fillStyle = MUTED; ctx.fillText(tickLabel(p), x0 - 6, y);
+    }
+  }
+
+  // --- merit order: bars animate from their last positions ---
+  const meritAnim = new Map();
+  let meritBands = [], meritGeom = null;
+  function bandKey(b) { return `${b.owner}:${b.ref.id || b.ref.name}:${b.price.toFixed(2)}`; }
+  function drawMerit(canvas, state, opts = {}) {
+    const last = state.last; if (!last) return false;
+    const { ctx, w, h } = setup(canvas);
+    const left = opts.bare ? 0 : 52, right = w - (opts.bare ? 0 : 8), top = 18, bottom = h - (opts.bare ? 0 : 24);
+    const bands = last.supply.filter(b => b.mw > 0.5).sort((a, b) => a.key - b.key);
+    const total = bands.reduce((a, b) => a + b.mw, 0);
+    const xMax = Math.max(total, last.res.traded) * 1.02;
+    const X = mw => left + (mw / xMax) * (right - left), Y = p => bottom - priceF(p) * (bottom - top);
+    if (!opts.bare) {
+      priceAxis(ctx, left, right, top, bottom);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = MUTED;
+      for (let gw = 0; gw * 1000 <= xMax; gw += 2) ctx.fillText(`${gw} GW`, X(gw * 1000), bottom + 7);
+    }
+    const y0 = Y(0);
+    let cum = 0, animating = false;
+    const geo = [];
+    for (const b of bands) {
+      const k = bandKey(b), tx0 = X(cum), tx1 = X(cum + b.mw), ty = Y(b.price);
+      let a = meritAnim.get(k);
+      if (!a) { a = { x0: tx0, x1: tx1, y: y0 }; meritAnim.set(k, a); }
+      const ease = opts.instant ? 1 : 0.22;
+      a.x0 += (tx0 - a.x0) * ease; a.x1 += (tx1 - a.x1) * ease; a.y += (ty - a.y) * ease; a.seen = true;
+      if (Math.abs(a.x0 - tx0) + Math.abs(a.x1 - tx1) + Math.abs(a.y - ty) > 0.5) animating = true;
+      const gap = a.x1 - a.x0 > 4 ? 1 : 0;
+      const bx = a.x0 + gap, bw = Math.max(0.6, a.x1 - a.x0 - gap * 2);
+      const yTop = Math.min(a.y, y0), hh = Math.max(1, Math.abs(a.y - y0));
+      const used = b.mw > 0 ? b.out / b.mw : 0;
+      ctx.fillStyle = techColor(b.tech);
+      ctx.globalAlpha = 0.3; ctx.beginPath(); ctx.roundRect(bx, yTop, bw, hh, bw > 6 ? 3 : 0); ctx.fill();
+      if (used > 0.001) { ctx.globalAlpha = 1; ctx.beginPath(); ctx.roundRect(bx, yTop, Math.max(0.6, bw * used), hh, bw > 6 ? 3 : 0); ctx.fill(); }
+      ctx.globalAlpha = 1;
+      if (b.owner === 'player' && !opts.bare) {
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(bx + 1, yTop + 1, Math.max(1, bw - 2), Math.max(1, hh - 2), bw > 6 ? 3 : 0); ctx.stroke();
+      }
+      geo.push({ b, x0: bx, x1: bx + bw, yTop, yBot: yTop + hh });
+      cum += b.mw;
+    }
+    for (const [k, a] of meritAnim) { if (!a.seen) meritAnim.delete(k); else a.seen = false; }
+    // demand line and price
+    const dx = X(last.res.traded), py = Y(last.res.price);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(dx, top - 4); ctx.lineTo(dx, bottom); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(left, py); ctx.lineTo(dx, py); ctx.stroke(); ctx.setLineDash([]);
+    if (!opts.bare) {
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(dx, py, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.font = '700 12px Archivo, system-ui, sans-serif'; ctx.textBaseline = 'middle';
+      const lab = `${fmtPrice(last.res.price)}/MWh`, tw = ctx.measureText(lab).width + 16;
+      const lx = Math.min(right - tw, dx + 10), ly = Math.max(top + 12, Math.min(bottom - 12, py - 16));
+      ctx.fillStyle = '#f2a33a'; ctx.beginPath(); ctx.roundRect(lx, ly - 12, tw, 24, 12); ctx.fill();
+      ctx.fillStyle = '#241300'; ctx.textAlign = 'left'; ctx.fillText(lab, lx + 8, ly + 0.5);
+      ctx.fillStyle = INK2; ctx.textAlign = dx > right - 120 ? 'right' : 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(`Demand ${fmtMW(last.res.traded)}`, dx + (dx > right - 120 ? -8 : 8), top - 4);
+    }
+    meritBands = geo; meritGeom = { left, right, top, bottom };
+    return animating;
+  }
+
+  function drawDayLine(canvas, values, opts) {
+    const { ctx, w, h } = setup(canvas);
+    const left = opts.left ?? 52, right = w - 10, top = 10, bottom = h - 22;
+    const X = i => left + (i / (IPD - 1)) * (right - left);
+    opts.axis(ctx, left, right, top, bottom);
+    ctx.font = '600 11px Archivo, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = MUTED;
+    for (const [i, l] of [[0, '12am'], [72, '6am'], [144, '12pm'], [216, '6pm'], [287, '12am']]) ctx.fillText(l, X(i), bottom + 6);
+    for (const s of values) {
+      if (!s.data || !s.data.length) continue;
+      ctx.beginPath();
+      s.data.forEach((v, i) => { const x = X(i), y = opts.Y(v, top, bottom); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      if (s.fill) {
+        ctx.lineTo(X(s.data.length - 1), bottom); ctx.lineTo(X(0), bottom); ctx.closePath();
+        ctx.globalAlpha = 0.28; ctx.fillStyle = s.color; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.beginPath(); s.data.forEach((v, i) => { const x = X(i), y = opts.Y(v, top, bottom); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      }
+      ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 2; ctx.setLineDash(s.dash || []); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]);
+      if (s.marker) { const i = s.data.length - 1; ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(X(i), opts.Y(s.data[i], top, bottom), 4.5, 0, Math.PI * 2); ctx.fill(); }
+    }
+    return { X, left, right, top, bottom };
+  }
+  let priceGeom = null, demandGeom = null, demandMax = 10000;
+  function drawPrice() {
+    const d = S.today, y = S.days.length ? S.days[S.days.length - 1].price : null;
+    priceGeom = drawDayLine($('c-price'), [
+      { data: y, color: '#56707a', width: 1.5, dash: [4, 4] },
+      { data: d.price, color: '#f2a33a', width: 2, marker: true },
+    ], { axis: (ctx, x0, x1, t, b) => priceAxis(ctx, x0, x1, t, b, [-1000, 0, 100, 200, 300, 1000, 20000]), Y: (v, top, bottom) => bottom - priceF(v) * (bottom - top) });
+  }
+  function drawDemand() {
+    const d = S.today;
+    const max = Math.max(4000, ...d.demand, ...(S.days.length && S.days[S.days.length - 1].demand ? S.days[S.days.length - 1].demand : [0])) * 1.08;
+    demandMax = Math.ceil(max / 2000) * 2000;
+    const Y = (v, top, bottom) => bottom - (v / demandMax) * (bottom - top);
+    demandGeom = drawDayLine($('c-demand'), [
+      { data: d.demand, color: '#c7d6db', width: 2 },
+      { data: d.mine, color: '#f2a33a', width: 2, fill: true },
+    ], {
+      Y, axis: (ctx, x0, x1, top, bottom) => {
+        ctx.font = '600 11px Archivo, system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        for (let v = 0; v <= demandMax; v += demandMax / 4) {
+          const y = Y(v, top, bottom); ctx.strokeStyle = v ? GRID : AXIS; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x0, Math.round(y) + 0.5); ctx.lineTo(x1, Math.round(y) + 0.5); ctx.stroke();
+          ctx.fillStyle = MUTED; ctx.fillText(v >= 1000 ? `${v / 1000} GW` : `${v}`, x0 - 6, y);
+        }
+      },
+    });
+  }
+
+  // ---- tooltips on the charts ----
+  const tip = $('tip');
+  function showTip(x, y, html) { tip.innerHTML = html; tip.hidden = false; const r = tip.getBoundingClientRect(); tip.style.left = `${Math.min(window.innerWidth - r.width - 8, Math.max(8, x + 14))}px`; tip.style.top = `${Math.max(8, y - r.height - 12)}px`; }
+  const hideTip = () => { tip.hidden = true; };
+  function chartHover(canvas, fn) {
+    const go = e => { const r = canvas.getBoundingClientRect(); const html = fn(e.clientX - r.left, e.clientY - r.top); if (html) showTip(e.clientX, e.clientY, html); else hideTip(); };
+    canvas.addEventListener('pointermove', go); canvas.addEventListener('pointerdown', go);
+    canvas.addEventListener('pointerleave', hideTip);
+  }
+  chartHover($('c-merit'), (x) => {
+    const g = meritBands.find(g => x >= g.x0 - 1 && x <= g.x1 + 1); if (!g) return null;
+    const b = g.b, name = b.ref.name || 'Unknown', tname = (TECH[b.tech] || OTHER).name;
+    return `<b>${esc(name)}</b><span>${tname}${b.owner === 'player' ? ' · yours' : ''}</span><br>${fmtMW(b.mw)} offered at ${fmtPrice(b.price)}/MWh<br>Running ${fmtMW(b.out)}`;
+  });
+  chartHover($('c-price'), (x) => {
+    if (!priceGeom) return null;
+    const i = Math.round((x - priceGeom.left) / (priceGeom.right - priceGeom.left) * (IPD - 1));
+    const v = S.today.price[i], yv = S.days.length && S.days[S.days.length - 1].price ? S.days[S.days.length - 1].price[i] : null;
+    if (v == null && yv == null) return null;
+    return `<b>${Sim.clock(i * H)}</b>${v != null ? `Today ${fmtPrice(v)}/MWh<br>` : ''}${yv != null ? `<span>Yesterday ${fmtPrice(yv)}/MWh</span>` : ''}`;
+  });
+  chartHover($('c-demand'), (x) => {
+    if (!demandGeom) return null;
+    const i = Math.round((x - demandGeom.left) / (demandGeom.right - demandGeom.left) * (IPD - 1));
+    if (S.today.demand[i] == null) return null;
+    return `<b>${Sim.clock(i * H)}</b>Region demand ${fmtMW(S.today.demand[i])}<br>Your output ${fmtMW(S.today.mine[i])}`;
+  });
+
+  // ---------------------------------------------------------------------------------
+  // Panels
+  // ---------------------------------------------------------------------------------
+  function legendFor(techs, mine) {
+    return techs.map(t => `<span><i style="background:${techColor(t)}"></i>${(TECH[t] || OTHER).short}</span>`).join('') + (mine ? '<span class="mine"><i></i>Outlined: yours</span>' : '');
+  }
+  $('lg-merit').innerHTML = legendFor([...TECH_ORDER.filter(t => t !== 'ccgt'), 'other'], true).replace('>Peaker<', '>Gas<');
+
+  let shownCash = null;
+  function renderTop() {
+    const dl = Sim.dateLabel(S);
+    $('clock').textContent = `${S.challenge ? `Challenge day ${dl.day} of 30` : `Day ${dl.day}`} · ${dl.date} · ${dl.time}`;
+    $('co-name').textContent = S.company || 'Your company';
+    const pl = S.today.revenue - S.today.costs + S.today.fcas - S.today.penalties + S.today.bonus;
+    $('today-pl').innerHTML = `<svg class="i" style="width:15px;height:15px"><use href="#i-${pl >= 0 ? 'up' : 'down'}"/></svg>Today ${fmtMoney(pl)}`;
+    $('today-pl').className = `num ${pl >= 0 ? 'up' : 'down'}`;
+  }
+  function tickCash() {
+    if (!S) return;
+    shownCash = shownCash == null ? S.cash : shownCash + (S.cash - shownCash) * 0.2;
+    if (Math.abs(S.cash - shownCash) < 1) shownCash = S.cash;
+    $('cash').textContent = fmtMoney(shownCash);
+    $('cash').style.color = shownCash < 0 ? 'var(--bad)' : '';
+  }
+  function renderChips() {
+    const icon = { heatwave: 'i-heat', cold: 'i-info', still: 't-wind', windy: 't-wind', cloudy: 't-solar', linktrip: 'i-bad', gascrunch: 't-peaker' };
+    const html = S.events.map(e => { const E = Sim.EVENTS[e.key]; return `<span class="chip ${E.tone}"><svg class="i"><use href="#${icon[e.key]}"/></svg>${E.name} · ${e.left} day${e.left > 1 ? 's' : ''} left</span>`; })
+      .concat(S.upcoming.map(u => `<span class="chip soon"><svg class="i"><use href="#${icon[u.key]}"/></svg>Tomorrow: ${Sim.EVENTS[u.key].name}</span>`))
+      .concat(S.obligation ? [`<span class="chip"><svg class="i"><use href="#i-flag"/></svg>Reserve promised: ${fmtMW(S.obligation.mw)}</span>`] : []);
+    $('chips').innerHTML = html.join('');
+    $('chips').hidden = !html.length;
+  }
+  function renderKpis() {
+    const L = S.last; if (!L) return;
+    $('k-price').textContent = `${fmtPrice(L.res.price)}`;
+    $('k-price').style.color = L.res.price >= 1000 ? 'var(--bad)' : L.res.price < 0 ? 'var(--info)' : '';
+    $('k-demand').textContent = fmtMW(L.res.traded);
+    $('k-mine').textContent = fmtMW(Math.max(0, L.mine));
+    const d = S.today;
+    if (d.price.length) {
+      const avg = d.price.reduce((a, b) => a + b, 0) / d.price.length;
+      $('pr-meta').textContent = `Average ${fmtPrice(avg)} · high ${fmtPrice(d.maxP)} · low ${fmtPrice(d.minP)}`;
+      $('dm-meta').textContent = `Your share today ${(d.energy / Math.max(1, d.regionEnergy) * 100).toFixed(1)}%`;
+    }
+  }
+  function renderMix() {
+    const L = S.last; if (!L) return;
+    const by = {};
+    let tot = 0, mine = 0;
+    for (const b of L.supply) { const t = b.tech === 'ccgt' ? 'peaker' : b.tech; by[t] = (by[t] || 0) + b.out; tot += b.out; if (b.owner === 'player') mine += b.out; }
+    const order = ['peaker', 'hydro', 'coal', 'battery', 'wind', 'solar', 'other'].filter(t => by[t] > 1);
+    $('mix').innerHTML = order.map(t => `<span style="flex-grow:${by[t]};background:${techColor(t)}" title="${(TECH[t] || OTHER).short} ${fmtMW(by[t])}"></span>`).join('');
+    $('lg-mix').innerHTML = order.map(t => `<span><i style="background:${techColor(t)}"></i>${t === 'peaker' ? 'Gas' : (TECH[t] || OTHER).short} ${Math.round(by[t] / tot * 100)}%</span>`).join('');
+    $('mx-meta').textContent = `You ${(mine / Math.max(1, tot) * 100).toFixed(1)}%`;
+  }
+  let newsKey = '';
+  function renderNews() {
+    const key = `${S.news.length}:${S.news[0] ? S.news[0].t + S.news[0].text : ''}`;
+    if (key === newsKey) return;
+    newsKey = key;
+    const icon = { good: 'i-good', bad: 'i-bad', info: 'i-info' };
+    $('news').innerHTML = S.news.slice(0, 10).map(n => {
+      const dl = Sim.dateLabel({ ...S, t: n.t });
+      return `<li class="${n.tone}"><svg class="i"><use href="#${icon[n.tone] || 'i-info'}"/></svg><span>${esc(n.text)}<time>Day ${dl.day} · ${dl.time}</time></span></li>`;
+    }).join('') || '<li class="info"><svg class="i"><use href="#i-info"/></svg><span>Quiet so far.</span></li>';
+  }
+  function plantStatus(p) {
+    const T = TECH[p.tech];
+    if (p.status === 'building') return `Building · ${Math.max(0.1, p.buildLeft).toFixed(1)} days left`;
+    if (p.status === 'outage') return `Broken down · back in ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}`;
+    if (p.status === 'retiring') return `Closing in ${p.retireLeft} day${p.retireLeft > 1 ? 's' : ''}`;
+    const now = p.now || 0;
+    if (T.kind === 'storage') return now > 0.5 ? `Selling ${fmtMW(now)}` : now < -0.5 ? `Charging ${fmtMW(-now)}` : `Holding · ${Math.round(p.soc / (p.mw * T.hours) * 100)}% full`;
+    return now > 0.5 ? `Running ${fmtMW(now)}` : 'Not running';
+  }
+  // Plant cards are updated in place; they're only rebuilt when plants are added or removed,
+  // so a tap never lands on a card that is being replaced.
+  let plantIds = null;
+  function plantFrac(p) {
+    const T = TECH[p.tech];
+    return p.status === 'online' ? (T.kind === 'storage' ? p.soc / (p.mw * T.hours) : Math.max(0, p.now || 0) / p.mw) : p.status === 'building' ? 1 - p.buildLeft / T.build : 0;
+  }
+  function renderPlants() {
+    const ids = S.plants.map(p => p.id).join(',');
+    if (ids !== plantIds) {
+      plantIds = ids;
+      $('plants').innerHTML = `<button type="button" class="add-plant" id="add-plant"><svg class="i"><use href="#i-plus"/></svg>Build a plant</button>` + S.plants.map(p => {
+        const T = TECH[p.tech];
+        return `<button type="button" class="plant" data-plant="${p.id}">
+          <div class="top">${dot(p.tech)}<div style="min-width:0"><div class="name">${esc(p.name)}</div><div class="sub">${T.short} · ${fmtMW(p.mw)}${T.hours ? ` · ${T.hours} h` : ''}</div></div></div>
+          <div class="bar"><i></i></div>
+          <div class="row"><span class="status"></span><span class="num money"></span></div>
+        </button>`;
+      }).join('');
+    }
+    for (const p of S.plants) {
+      const el = $('plants').querySelector(`[data-plant="${p.id}"]`); if (!el) continue;
+      const T = TECH[p.tech], money = p.today ? p.today.money : 0;
+      const bar = el.querySelector('.bar i');
+      bar.style.width = `${Math.round(Math.min(1, Math.max(0, plantFrac(p))) * 100)}%`;
+      bar.style.background = p.status === 'building' ? 'var(--ink-3)' : T.color;
+      el.querySelector('.status').textContent = plantStatus(p);
+      const m = el.querySelector('.money');
+      m.textContent = p.status === 'online' ? fmtMoney(money) : '';
+      m.className = `num money ${money >= 0 ? 'up' : 'down'}`;
+    }
+    const mw = S.plants.reduce((a, p) => a + p.mw, 0);
+    $('pl-meta').textContent = S.plants.length ? `${S.plants.length} plant${S.plants.length > 1 ? 's' : ''} · ${fmtMW(mw)} · value ${fmtMoney(Sim.companyValue(S))}` : 'None yet';
+  }
+  $('plants').addEventListener('click', e => {
+    const b = e.target.closest('[data-plant]'); if (b) return openPlant(b.dataset.plant);
+    if (e.target.closest('#add-plant')) openBuild();
+  });
+
+  function renderOffer() {
+    const o = S.offer, el = $('offer');
+    if (!o || offerDismissed === o) { el.hidden = true; return; }
+    if (el.dataset.for === String(o.expires) && !el.hidden) return;
+    el.dataset.for = String(o.expires);
+    $('offer-kind').textContent = o.type === 'reserve' ? 'Request from the market operator' : 'Offer';
+    $('offer-text').textContent = o.text;
+    $('offer-yes').textContent = o.type === 'reserve' ? `Promise ${fmtMW(o.mw)}` : `Buy for ${fmtMoney(o.price)}`;
+    el.hidden = false;
+  }
+  let offerDismissed = null;
+  $('offer-yes').onclick = () => {
+    const o = S.offer;
+    if (o && o.type === 'coal' && S.cash < o.price) { toast(`You need ${fmtMoney(o.price - S.cash)} more.`); return; }
+    if (Sim.acceptOffer(S)) { $('offer').hidden = true; renderAll(); save(); }
+  };
+  $('offer-no').onclick = () => { Sim.declineOffer(S); $('offer').hidden = true; save(); };
+
+  // Fit the charts to the screen: on a landscape tablet everything shows without scrolling.
+  function sizeCharts() {
+    const wide = window.innerWidth > 900, h = window.innerHeight;
+    const set = (id, v) => { const c = $(id); if (c.dataset.h !== String(v)) c.dataset.h = String(v); };
+    if (wide) {
+      set('c-merit', Math.round(Math.max(200, Math.min(380, h - 560))));
+      set('c-price', Math.round(Math.max(105, Math.min(220, (h - 500) * 0.42))));
+      set('c-demand', Math.round(Math.max(90, Math.min(180, (h - 500) * 0.32))));
+    } else { set('c-merit', 300); set('c-price', 170); set('c-demand', 150); }
+  }
+  let lastDrawnT = -1;
+  function renderAll() {
+    if (!S) return;
+    sizeCharts();
+    renderTop(); renderChips(); renderKpis(); renderMix(); renderNews(); renderPlants(); renderOffer();
+    drawPrice(); drawDemand();
+    lastDrawnT = S.t;
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Sheets
+  // ---------------------------------------------------------------------------------
+  let openId = null;
+  function openSheet(id) { closeSheets(); openId = id; $(`sh-${id}`).hidden = false; const f = $(`sh-${id}`).querySelector('[data-close], button'); if (f) f.focus({ preventScroll: true }); }
+  function closeSheets() { document.querySelectorAll('.backdrop').forEach(b => { b.hidden = true; }); openId = null; }
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeSheets);
+  document.querySelectorAll('.backdrop').forEach(b => b.addEventListener('pointerdown', e => { if (e.target === b) closeSheets(); }));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheets(); });
+  function info(title, html) { $('i-title').textContent = title; $('i-body').innerHTML = html; openSheet('info'); }
+  let toastT = 0;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => { t.style.opacity = 0; toastT = setTimeout(() => { t.hidden = true; }, 400); }, 2600); }
+
+  // --- build ---
+  const chosenSize = {};
+  function openBuild() { renderBuild(); openSheet('build'); }
+  function renderBuild() {
+    const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'];
+    $('tech-grid').innerHTML = order.map(t => {
+      const T = TECH[t], unlocked = !!S.unlocked[t];
+      const size = chosenSize[t] || T.sizes[0], cost = Sim.priceOf(S, t, size);
+      const goal = Sim.GOALS.find(g => g.unlock === t);
+      const vc = T.kind === 'thermal' ? `${fmtPrice(T.vc * (S.fuelMult || 1))}/MWh` : T.kind === 'storage' ? `${Math.round(T.eff * 100)}% round trip` : 'Free';
+      return `<div class="card ${unlocked ? '' : 'locked'}">
+        <div class="head">${dot(t)}<b>${T.name}</b></div>
+        <p>${T.blurb}</p>
+        ${unlocked ? `<div class="sizes" role="group" aria-label="Size">${T.sizes.map(s => `<button type="button" data-size="${t}:${s}" aria-pressed="${s === size}">${fmtMW(s)}</button>`).join('')}</div>
+        <dl class="stats"><dt>Build cost</dt><dd>${fmtMoney(cost)}</dd><dt>Build time</dt><dd>${T.build} day${T.build === 1 ? '' : 's'}</dd>
+          <dt>${T.kind === 'storage' ? 'Storage' : 'Running cost'}</dt><dd>${T.kind === 'storage' ? `${T.hours} hours · ${vc}` : vc}</dd>
+          <dt>Upkeep</dt><dd>${fmtMoney(T.upkeep * size)}/day</dd><dt>Emissions</dt><dd>${T.emis ? `${T.emis} t/MWh` : 'None'}</dd></dl>
+        <button type="button" class="btn btn-primary" data-build="${t}" ${S.cash < cost ? 'disabled' : ''}>${S.cash < cost ? `Need ${fmtMoney(cost - S.cash)} more` : `Build for ${fmtMoney(cost)}`}</button>`
+        : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>Unlock: ${goal ? goal.text.toLowerCase() : 'later'}</div>`}
+      </div>`;
+    }).join('');
+  }
+  $('tech-grid').addEventListener('click', e => {
+    const s = e.target.closest('[data-size]'); if (s) { const [t, mw] = s.dataset.size.split(':'); chosenSize[t] = +mw; renderBuild(); return; }
+    const b = e.target.closest('[data-build]'); if (!b) return;
+    const t = b.dataset.build, r = Sim.build(S, t, chosenSize[t] || TECH[t].sizes[0]);
+    if (r.ok) { closeSheets(); renderAll(); save(); toast(`Construction started on ${r.plant.name}.`); }
+  });
+
+  // --- plant detail ---
+  let plantOpen = null;
+  function openPlant(id) { plantOpen = id; renderPlantSheet(); openSheet('plant'); }
+  function renderPlantSheet() {
+    const p = S.plants.find(x => x.id === plantOpen); if (!p) { closeSheets(); return; }
+    const T = TECH[p.tech];
+    $('p-top').innerHTML = `${dot(p.tech)}<div style="min-width:0"><div class="name" style="font-size:19px">${esc(p.name)}</div><div class="sub">${T.name} · ${fmtMW(p.mw)}${T.hours ? ` · ${T.hours} hours` : ''} · ${plantStatus(p)}</div></div>`;
+    const today = p.today || { energy: 0, money: 0 };
+    $('p-kv').innerHTML = `<div><span>Earned today</span><b class="${today.money >= 0 ? 'up' : 'down'}">${fmtMoney(today.money)}</b></div>
+      <div><span>${T.kind === 'storage' ? 'Net energy today' : 'Energy today'}</span><b>${Math.round(today.energy).toLocaleString()} MWh</b></div>
+      <div><span>Upkeep</span><b>${fmtMoney(T.upkeep * p.mw)}/day</b></div>`;
+    let bid = '';
+    if (T.kind === 'vre') {
+      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['always', 'Always run', 'bid −$1,000'], ['nonneg', 'Avoid negative prices', 'bid $0'], ['custom', 'Custom', fmtPrice(p.price ?? 0)]])}
+        ${p.bid === 'custom' ? slider('price', 'Bid price', p.price ?? 0, -1000, 300, 5) : ''}
+        <p class="note">Bidding −$1,000 means you always run, even when the price goes negative and you pay to generate.</p>`;
+    } else if (T.kind === 'thermal') {
+      const vc = T.vc * (p.tech === 'coal' ? 1 : S.fuelMult);
+      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['cost', 'Cover running costs', fmtPrice(vc)], ['peak', 'Peaks only', fmtPrice(Math.max(300, vc * 2.5))], ['custom', 'Custom', fmtPrice(p.price ?? vc)]])}
+        ${p.bid === 'custom' ? slider('price', 'Bid price', p.price ?? vc, 0, 15000, 10, true) : ''}
+        ${p.tech === 'coal' ? '<p class="note">Coal must keep 45% running at all times and changes output slowly.</p>' : ''}`;
+    } else {
+      bid = `<h3>Charge level</h3><div class="soc"><i style="width:${Math.round(p.soc / (p.mw * T.hours) * 100)}%"></i></div>
+        <p class="note num">${Math.round(p.soc)} of ${p.mw * T.hours} MWh</p>
+        <h3>Strategy</h3>${seg('strategy', p.strategy, [['arb', 'Trade the spread', 'cheap in, dear out'], ['evening', 'Evening peak', 'fill by day'], ['fcas', 'Frequency only', 'stay ready'], ['custom', 'Custom', 'set prices']])}
+        ${p.strategy === 'custom' ? slider('chargeBelow', 'Charge when below', p.chargeBelow ?? 40, -1000, 300, 5) + slider('dischargeAbove', 'Sell when above', p.dischargeAbove ?? 150, 0, 15000, 10, true) : ''}`;
+    }
+    if (T.fcas) bid += `<button type="button" class="switch-row" role="switch" aria-checked="${p.fcas !== false}" data-fcas><span>Offer frequency control<small>Get paid to keep spare capacity ready to steady the grid</small></span><span class="switch"></span></button>`;
+    $('p-bid').innerHTML = bid;
+    const sell = p.tech === 'coal' ? (p.status === 'retiring' ? '' : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Give notice to close (5 days)</button>`)
+      : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Sell for ${fmtMoney(Math.round(p.value * 0.4))}</button>`;
+    $('p-actions').innerHTML = p.status === 'building' ? '' : sell;
+  }
+  function seg(field, value, opts) {
+    return `<div class="seg" role="group">${opts.map(([v, l, s]) => `<button type="button" data-set="${field}:${v}" aria-pressed="${value === v}">${l}<small>${s}</small></button>`).join('')}</div>`;
+  }
+  // Price sliders: linear below $300, logarithmic above, so the whole range fits under a thumb.
+  const toSlider = v => v <= 300 ? v : 300 + Math.log(v / 300) / Math.log(15000 / 300) * 700;
+  const fromSlider = s => s <= 300 ? s : 300 * Math.pow(15000 / 300, (s - 300) / 700);
+  function slider(field, label, value, min, max, step, logTop) {
+    const sv = logTop ? toSlider(value) : value, smax = logTop ? 1000 : max;
+    return `<div class="slider"><label>${label} <b id="sv-${field}">${fmtPrice(value)}/MWh</b></label><input type="range" min="${min}" max="${smax}" step="${step}" value="${sv}" data-slide="${field}" data-log="${logTop ? 1 : 0}"></div>`;
+  }
+  $('sh-plant').addEventListener('click', e => {
+    const p = S.plants.find(x => x.id === plantOpen); if (!p) return;
+    const s = e.target.closest('[data-set]');
+    if (s) { const [f, v] = s.dataset.set.split(':'); p[f] = v; renderPlantSheet(); save(); return; }
+    if (e.target.closest('[data-fcas]')) { p.fcas = p.fcas === false; renderPlantSheet(); save(); return; }
+    const r = e.target.closest('[data-retire]');
+    if (r) {
+      if (r.dataset.confirm !== '1') { r.dataset.confirm = '1'; r.textContent = p.tech === 'coal' ? 'Tap again to give notice' : 'Tap again to sell'; return; }
+      Sim.retire(S, p); closeSheets(); renderAll(); save();
+    }
+  });
+  $('sh-plant').addEventListener('input', e => {
+    const el = e.target.closest('[data-slide]'); if (!el) return;
+    const p = S.plants.find(x => x.id === plantOpen); if (!p) return;
+    let v = +el.value; if (el.dataset.log === '1') v = Math.round(fromSlider(v) / 10) * 10;
+    p[el.dataset.slide] = v; $(`sv-${el.dataset.slide}`).textContent = `${fmtPrice(v)}/MWh`;
+    const b = $('p-bid').querySelector('[aria-pressed="true"] small'); if (b && el.dataset.slide === 'price') b.textContent = fmtPrice(v);
+  });
+  $('sh-plant').addEventListener('change', () => save());
+
+  // --- menu, goals, reports ---
+  $('open-menu').onclick = () => { $('m-goals-n').textContent = `${Object.keys(S.goalsDone).length} of ${Sim.GOALS.length}`; $('m-challenge').hidden = false; openSheet('menu'); };
+  $('m-goals').onclick = () => info('Goals', Sim.GOALS.map(g => {
+    const done = S.goalsDone[g.id] !== undefined;
+    const reward = [g.reward ? `${fmtMoney(g.reward)} bonus` : '', g.unlock ? `unlocks ${TECH[g.unlock].name.toLowerCase()}s` : ''].filter(Boolean).join(' · ');
+    return `<div class="goal ${done ? 'done' : ''}"><span class="tick">${done ? '<svg class="i"><use href="#i-good"/></svg>' : ''}</span><span class="gtext">${g.text}<small>${reward}${done ? ` · done on day ${S.goalsDone[g.id] + 1}` : ''}</small></span></div>`;
+  }).join(''));
+  $('m-report').onclick = () => {
+    const rows = S.days.slice(-10).reverse().map(d => `<tr><td>Day ${d.day + 1}</td><td>${fmtPrice(d.avg)}</td><td>${fmtPrice(d.max)}</td><td>${(d.share * 100).toFixed(1)}%</td><td class="${d.profit >= 0 ? 'up' : 'down'}">${fmtMoney(d.profit)}</td></tr>`).join('');
+    info('Recent days', rows ? `<table class="res"><thead><tr><th>Day</th><th>Average price</th><th>High</th><th>Your share</th><th>Profit</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="note">Totals so far: profit ${fmtMoney(S.totals.profit)} · energy ${Math.round(S.totals.energy).toLocaleString()} MWh · frequency control ${fmtMoney(S.totals.fcas)} · emissions ${Math.round(S.totals.emis).toLocaleString()} t</p>` : '<p>No full days yet. Check back tomorrow.</p>');
+  };
+  $('m-help').onclick = () => showHelp();
+  $('t-help').onclick = () => showHelp();
+  function showHelp() {
+    info('How it works', `
+      <p><b style="color:var(--ink)">Every five minutes the market runs a dispatch.</b> Each generator offers its megawatts at a price. The offers are stacked cheapest first (the merit order) until demand is met, and the last offer needed sets the price that everyone running is paid.</p>
+      <p><b style="color:var(--ink)">So your bid decides when you run, not what you're paid.</b> Bid low and you run more often at whatever price the market sets. Bid high and you only run when prices are high.</p>
+      <p><b style="color:var(--ink)">Demand has a rhythm.</b> Rooftop solar makes middays cheap, sometimes negative. Evenings are the peak. Heatwaves, cold snaps, still weeks and breakdowns create spikes up to the price cap.</p>
+      <p><b style="color:var(--ink)">Batteries and hydro</b> charge when power is cheap and sell into the peak. They, and gas peakers, can also earn by staying ready for frequency control.</p>
+      <p><b style="color:var(--ink)">The rules:</b> plants take days to build and connect; coal must give 5 days' notice to close; the market operator may ask you to promise reserve before a heatwave and fines you if you can't deliver; and every 30 days your emissions are checked against a target that tightens each year.</p>
+      <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes.</p>`);
+  }
+  $('m-rename').onclick = () => {
+    info('Rename company', `<div class="field-row"><input type="text" id="rename-in" maxlength="28" value="${esc(S.company || 'Your company')}" aria-label="Company name"><button type="button" class="btn btn-primary" id="rename-ok">Save</button></div>`);
+    $('rename-ok').onclick = () => { S.company = $('rename-in').value.trim() || 'Your company'; save(); renderTop(); closeSheets(); };
+  };
+  $('m-title').onclick = () => { save(); closeSheets(); showTitle(); };
+  $('m-reset').onclick = () => {
+    info('Start a new company?', `<p>This deletes ${esc(S.company || 'your company')} and everything it owns. Challenge results are kept.</p><button type="button" class="btn btn-primary" id="reset-ok" style="width:100%">Delete and start again</button>`);
+    $('reset-ok').onclick = () => { delete store.career; delete store.careerSeen; persist(); closeSheets(); startCareer(true); };
+  };
+
+  // --- sharing ---
+  function companyText() {
+    const mw = S.plants.reduce((a, p) => a + p.mw, 0), dl = Sim.dateLabel(S), last = S.days.slice(-7);
+    const share = last.length ? last.reduce((a, d) => a + d.share, 0) / last.length : 0;
+    const mixBy = {}; for (const p of S.plants) mixBy[TECH[p.tech].short] = (mixBy[TECH[p.tech].short] || 0) + p.mw;
+    return `⚡ ${S.company || 'My company'} in Merit Order, day ${dl.day}\nCompany value ${fmtMoney(Sim.companyValue(S))} · ${fmtMW(mw)} of plant · ${(share * 100).toFixed(1)}% of the region\n` +
+      `${Object.entries(mixBy).map(([k, v]) => `${k} ${fmtMW(v)}`).join(' · ') || 'No plants yet'}\nEmissions ${Math.round(S.totals.emis).toLocaleString()} t · goals ${Object.keys(S.goalsDone).length}/${Sim.GOALS.length}`;
+  }
+  async function shareText(text) {
+    try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(text); toast('Copied. Paste it into a message.'); } catch { toast('Select the text and copy it.'); }
+  }
+  $('m-share').onclick = () => {
+    const text = companyText();
+    info('Share your company', `<pre class="code" style="text-align:left;white-space:pre-wrap;font-size:15px;letter-spacing:0">${esc(text)}</pre><button type="button" class="btn btn-primary" id="share-go" style="width:100%;margin-top:12px"><svg class="i"><use href="#i-share"/></svg>Share</button>`);
+    $('share-go').onclick = () => shareText(text);
+  };
+
+  // --- challenges: same 30-day scenario for everyone, compare result codes ---
+  const CH_DAYS = 30;
+  const b36 = n => Math.max(0, Math.round(n)).toString(36).toUpperCase();
+  const check2 = s => b36([...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 1296, 7)).padStart(2, '0');
+  const challengeCode = seed => `MO-${b36(seed).padStart(6, '0')}`;
+  function parseChallenge(code) { const m = /^MO-([0-9A-Z]{1,7})$/.exec(code.trim().toUpperCase()); return m ? parseInt(m[1], 36) : null; }
+  function resultCode(seed, value, emis) { const body = `${b36(seed)}-${b36(value / 100)}-${b36(emis)}`; return `MOR-${body}-${check2(body)}`; }
+  function parseResult(code) {
+    const m = /^MOR-([0-9A-Z]+)-([0-9A-Z]+)-([0-9A-Z]+)-([0-9A-Z]{2})$/.exec(code.trim().toUpperCase()); if (!m) return null;
+    const body = `${m[1]}-${m[2]}-${m[3]}`; if (check2(body) !== m[4]) return null;
+    return { seed: parseInt(m[1], 36), value: parseInt(m[2], 36) * 100, emis: parseInt(m[3], 36) };
+  }
+  function openChallenges() {
+    store.results ||= {};
+    const ch = store.challenge;
+    const active = ch ? `<h3>Your current challenge</h3><p>${challengeCode(ch.challenge.seed)} · day ${Math.min(CH_DAYS, Sim.dayIndex(ch) + 1)} of ${CH_DAYS}</p><button type="button" class="btn btn-primary" id="ch-resume" style="width:100%">Carry on</button>` : '';
+    const seeds = Object.keys(store.results);
+    const tables = seeds.map(seed => {
+      const rows = store.results[seed].slice().sort((a, b) => b.value - a.value)
+        .map((r, i) => `<tr><td>${i + 1}. ${esc(r.name)}</td><td>${fmtMoney(r.value)}</td><td>${Math.round(r.emis).toLocaleString()} t</td></tr>`).join('');
+      return `<h3>${challengeCode(+seed)}</h3><table class="res"><thead><tr><th>Company</th><th>Final value</th><th>Emissions</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }).join('');
+    info('Challenges', `<p>Everyone who plays the same code gets the same 30 days of weather, events and rivals, starting from $250k. Highest company value wins. Challenges only run while the app is open.</p>
+      ${active}
+      <h3>Start a challenge</h3>
+      <div class="field-row"><input type="text" id="ch-code" placeholder="Friend's code, e.g. MO-0K3X9P" aria-label="Challenge code" autocapitalize="characters"><button type="button" class="btn btn-quiet" id="ch-join">Play it</button></div>
+      <button type="button" class="btn btn-primary" id="ch-new" style="width:100%;margin-top:10px">Make a new challenge</button>
+      <h3>Add a friend's result</h3>
+      <div class="field-row"><input type="text" id="res-name" placeholder="Their name" aria-label="Friend's name" style="max-width:40%"><input type="text" id="res-code" placeholder="MOR-…" aria-label="Result code" autocapitalize="characters"><button type="button" class="btn btn-quiet" id="res-add">Add</button></div>
+      ${tables || '<p class="note">Results you add appear here, ranked.</p>'}`);
+    if (ch) $('ch-resume').onclick = () => startChallenge(null);
+    $('ch-new').onclick = () => startChallenge((Math.random() * 2 ** 31) >>> 0);
+    $('ch-join').onclick = () => { const s = parseChallenge($('ch-code').value); if (s == null) return toast('That code doesn’t look right. It starts with MO-.'); startChallenge(s); };
+    $('res-add').onclick = () => {
+      const r = parseResult($('res-code').value); if (!r) return toast('That result code doesn’t check out. Copy it again.');
+      (store.results[r.seed] ||= []).push({ name: $('res-name').value.trim() || 'Friend', value: r.value, emis: r.emis }); persist(); openChallenges();
+    };
+  }
+  $('m-challenge').onclick = openChallenges;
+  $('t-challenge').onclick = openChallenges;
+  function challengeEnd() {
+    const value = Sim.companyValue(S), seed = S.challenge.seed, code = resultCode(seed, value, S.totals.emis);
+    (store.results ||= {})[seed] ||= [];
+    store.results[seed].push({ name: `${S.company || 'You'} (you)`, value: Math.round(value / 100) * 100, emis: S.totals.emis });
+    delete store.challenge; S.ended = true; persist();
+    speed = 0; syncSpeed();
+    info('Challenge complete', `<div class="kv"><div><span>Final company value</span><b>${fmtMoney(value)}</b></div><div><span>Profit</span><b>${fmtMoney(S.totals.profit)}</b></div><div><span>Emissions</span><b>${Math.round(S.totals.emis).toLocaleString()} t</b></div></div>
+      <h3>Your result code</h3><div class="code">${code}</div>
+      <p class="note">Send this to whoever sent you the challenge (${challengeCode(seed)}). They add it under Challenges to see the ranking.</p>
+      <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-primary" id="ce-share" style="flex:1"><svg class="i"><use href="#i-share"/></svg>Share result</button><button type="button" class="btn btn-quiet" id="ce-back" style="flex:1">Back to my company</button></div>`);
+    $('ce-share').onclick = () => shareText(`I finished Merit Order challenge ${challengeCode(seed)} with ${fmtMoney(value)}. My result code: ${code}`);
+    $('ce-back').onclick = () => { closeSheets(); startCareer(false); };
+  }
+
+  // ---------------------------------------------------------------------------------
+  // Game loop
+  // ---------------------------------------------------------------------------------
+  function syncSpeed() { document.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed))); }
+  document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; syncSpeed(); store.speed = speed; persist(); });
+
+  let raf = 0, lastT = 0, acc = 0, lastSave = 0, meritAnimating = false;
+  function frame(t) {
+    raf = requestAnimationFrame(frame);
+    const dt = Math.min(0.25, (t - (lastT || t)) / 1000); lastT = t;
+    if (S && scene === 'app') {
+      if (speed > 0 && !(openId && openId !== 'plant')) {
+        acc += dt * 1000 * speed;
+        let n = 0;
+        while (acc >= MS_PER_INTERVAL && n < 6) {
+          const day = Sim.dayIndex(S);
+          Sim.step(S); acc -= MS_PER_INTERVAL; n++;
+          if (S.challenge && Sim.dayIndex(S) >= CH_DAYS && day < CH_DAYS) { acc = 0; challengeEnd(); break; }
+        }
+        if (n === 6) acc = 0;
+      }
+      if (S.t !== lastDrawnT) { renderAll(); if (openId === 'plant') renderPlantSheetLive(); }
+      if (S.t !== lastDrawnT || meritAnimating || resized) { meritAnimating = drawMerit($('c-merit'), S); resized = false; }
+      tickCash();
+      if (t - lastSave > 20000) { lastSave = t; save(); }
+    } else if (scene === 'title' && demo) {
+      demoAcc += dt * 1000;
+      if (demoAcc > 140) { demoAcc = 0; Sim.step(demo); }
+      drawMerit($('title-chart'), demo, { bare: true });
+    }
+  }
+  function renderPlantSheetLive() {
+    // refresh only the live numbers so sliders aren't disturbed while dragging
+    const p = S.plants.find(x => x.id === plantOpen); if (!p) return;
+    const today = p.today || { energy: 0, money: 0 }, T = TECH[p.tech];
+    const kv = $('p-kv').querySelectorAll('b');
+    if (kv[0]) { kv[0].textContent = fmtMoney(today.money); kv[0].className = today.money >= 0 ? 'up' : 'down'; }
+    if (kv[1]) kv[1].textContent = `${Math.round(today.energy).toLocaleString()} MWh`;
+    const soc = $('p-bid').querySelector('.soc i'); if (soc) soc.style.width = `${Math.round(p.soc / (p.mw * T.hours) * 100)}%`;
+    const sub = $('p-top').querySelector('.sub'); if (sub) sub.textContent = `${T.name} · ${fmtMW(p.mw)}${T.hours ? ` · ${T.hours} hours` : ''} · ${plantStatus(p)}`;
+  }
+  let resized = false;
+  window.addEventListener('resize', () => { resized = true; if (S && scene === 'app') renderAll(); });
+
+  // ---------------------------------------------------------------------------------
+  // Scenes
+  // ---------------------------------------------------------------------------------
+  let scene = 'title', demo = null, demoAcc = 0;
+  function showTitle() {
+    scene = 'title'; $('title').hidden = false; $('app').hidden = true; $('offer').hidden = true;
+    demo = Sim.create(4242, { cash: 0 });
+    for (let k = 0; k < 17 * 12; k++) Sim.step(demo);    // start the demo in the late afternoon
+    const has = !!store.career;
+    $('t-cont-k').textContent = has ? 'Continue' : 'Start your company';
+    $('t-cont-sub').textContent = has ? `${store.career.company || 'Your company'} · day ${Sim.dayIndex(store.career) + 1}` : '$250k and an empty site';
+  }
+  function enterApp() {
+    scene = 'app'; $('title').hidden = true; $('app').hidden = false;
+    meritAnim.clear(); shownCash = null; plantIds = null; newsKey = ''; syncSpeed(); renderAll(); resized = true;
+  }
+  function awayReport(rep) {
+    const hours = rep.intervals * H, days = hours / 24;
+    const span = days >= 1 ? `${days.toFixed(1)} game days` : `${Math.round(hours)} game hours`;
+    info('While you were away', `<p>The market kept trading for ${span}${rep.capped ? ` (the most it will run unattended is ${Sim.AWAY_CAP_DAYS} days)` : ''}.</p>
+      <div class="kv"><div><span>Your profit</span><b class="${rep.profit >= 0 ? 'up' : 'down'}">${fmtMoney(rep.profit)}</b></div><div><span>Energy sold</span><b>${Math.round(rep.energy).toLocaleString()} MWh</b></div>
+      <div><span>Highest price</span><b>${fmtPrice(rep.maxP)}</b></div><div><span>Lowest price</span><b>${fmtPrice(rep.minP)}</b></div></div>
+      ${rep.news.length ? `<h3>What happened</h3><ul class="news">${rep.news.map(n => `<li class="${n.tone}"><svg class="i"><use href="#i-${n.tone === 'good' ? 'good' : n.tone === 'bad' ? 'bad' : 'info'}"/></svg><span>${esc(n.text)}</span></li>`).join('')}</ul>` : ''}`);
+  }
+  function startCareer(fresh) {
+    slot = 'career';
+    if (!fresh && store.career) {
+      S = store.career;
+      const away = Math.floor((Date.now() - (store.careerSeen || Date.now())) / MS_PER_INTERVAL);
+      enterApp();
+      if (away >= 12) { const rep = Sim.catchUp(S, away); renderAll(); awayReport(rep); }
+    } else {
+      S = Sim.create((Math.random() * 2 ** 31) >>> 0); S.company = 'Your company';
+      Sim.step(S);
+      enterApp();
+      info('Welcome to the market', `<p>You have $250k and an empty site in a region of about 6 GW. Every five minutes, generators bid to supply power and the cheapest win. The last bid needed sets the price everyone is paid.</p>
+        <p>A good start: a solar farm for cheap midday energy and a small battery to sell into the evening peak. Tap <b style="color:var(--ink)">Build a plant</b>.</p>
+        <button type="button" class="btn btn-primary" data-close style="width:100%" id="welcome-ok">Let’s go</button>`);
+      $('welcome-ok').onclick = closeSheets;
+    }
+    store.career = S; save();
+  }
+  function startChallenge(seed) {
+    save();
+    slot = 'challenge';
+    if (seed == null) S = store.challenge;
+    else { S = Sim.create(seed, { challenge: { seed } }); S.company = (store.career && store.career.company) || 'You'; Sim.step(S); }
+    store.challenge = S;
+    closeSheets(); enterApp(); save();
+    if (seed != null) info(`Challenge ${challengeCode(seed)}`, `<p>30 days. $250k. Solar, wind, batteries and gas peakers are unlocked. Whoever ends with the highest company value wins.</p><div class="code">${challengeCode(seed)}</div><p class="note">Send this code to friends so they can play the same 30 days.</p><div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="cs-share" style="flex:1"><svg class="i"><use href="#i-share"/></svg>Send code</button><button type="button" class="btn btn-primary" id="cs-go" style="flex:1">Start</button></div>`);
+    if (seed != null) { $('cs-share').onclick = () => shareText(`Try my Merit Order challenge: ${challengeCode(seed)}. Same 30 days for everyone. Highest company value wins.`); $('cs-go').onclick = closeSheets; }
+  }
+  $('t-continue').onclick = () => startCareer(false);
+
+  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+  window.addEventListener('pagehide', save);
+
+  // ---- test hook ----
+  window.MeritOrder = { get state() { return S; }, Sim, startCareer, startChallenge, renderAll, resultCode, parseResult, challengeCode, parseChallenge,
+    setSpeed(v) { speed = v; syncSpeed(); }, scene: () => scene, drawMerit: () => drawMerit($('c-merit'), S, { instant: true }) };
+
+  showTitle();
+  raf = requestAnimationFrame(frame);
+
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  }
+})();
+</script>
+</body>
+</html>

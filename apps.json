@@ -13,5 +13,10 @@
     "slug": "tide-digger",
     "name": "Tide Digger",
     "description": "Dig channels in the sand with your finger and steer the real-feeling tide into rock pools."
+  },
+  {
+    "slug": "merit-order",
+    "name": "Merit Order",
+    "description": "A power-plant tycoon in an NEM-style electricity market: build plants, bid into the merit order and keep the lights on."
   }
 ]

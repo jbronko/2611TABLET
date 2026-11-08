@@ -25,7 +25,9 @@ tools/check-pwa.js  verify an app: manifest, service worker, installable, works 
    (slug: lowercase-with-hyphens).
 2. Build the app inside `<slug>/index.html`. Keep the template's head block, theme tokens (light on
    `:root`, dark in the two dark blocks), safe-area gutters, `[hidden]` rule and service-worker
-   registration. Keep it one file: inline CSS and JS. Make it touch-first (targets ≥ 48px, pointer
+   registration. Keep it one file: inline CSS and JS. Exception: a game engine with no DOM code may
+   live in a second file (as `merit-order/sim.js` does) so it can be tested directly in Node; list it
+   in the app's `sw.js` PRECACHE. Make it touch-first (targets ≥ 48px, pointer
    events for drag) and work in landscape and portrait.
 3. Redraw `<slug>/icon.svg` for the app: full-bleed 512×512, important parts inside the middle circle
    (radius 205). Then `node tools/make-icons.js <slug>`.

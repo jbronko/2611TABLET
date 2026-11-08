@@ -1,0 +1,18 @@
+<!-- Merit Order icon: offers stacked cheapest first, with the price line crossing them.
+     Full-bleed 512×512; the important parts sit inside the middle circle (radius 205). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0b1a21"/>
+  <rect x="0" y="0" width="512" height="512" fill="#11222b" opacity="0.6"/>
+  <!-- the stack: coal, wind, gas, battery, hydro, peaker -->
+  <rect x="96"  y="318" width="54" height="104" rx="8" fill="#a8692a"/>
+  <rect x="156" y="290" width="48" height="132" rx="8" fill="#199e70"/>
+  <rect x="210" y="248" width="48" height="174" rx="8" fill="#d95926"/>
+  <rect x="264" y="206" width="44" height="216" rx="8" fill="#9085e9"/>
+  <rect x="314" y="162" width="44" height="260" rx="8" fill="#3987e5"/>
+  <rect x="364" y="104" width="52" height="318" rx="8" fill="#d95926" opacity="0.45"/>
+  <!-- demand line and the price it sets -->
+  <path d="M336 92V432" stroke="#ffffff" stroke-width="10" stroke-dasharray="20 14" stroke-linecap="round"/>
+  <path d="M86 230H336" stroke="#f2a33a" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="336" cy="230" r="20" fill="#f2a33a"/>
+  <circle cx="336" cy="230" r="9" fill="#0b1a21"/>
+</svg>
