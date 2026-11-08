@@ -22,6 +22,20 @@ when the tide comes in, water reaches every rock pool.
 - Tap **Let the tide in** to test your layout. Pools take water from any channel that opens into them.
 - Stars: 3 for filling every pool on the first tide, 2 within three tides, 1 after that.
 
+### Install on an Android tablet
+
+Tide Pool is an installable web app: it gets a home-screen icon, opens full screen and plays offline.
+It's hosted with GitHub Pages at **https://jbronko.github.io/2611TABLET/tide-pool/**.
+
+1. Open that address in Chrome on the tablet.
+2. Tap the ⋮ menu, then **Install app** (on some versions, **Add to Home screen**, then **Install**).
+3. Launch Tide Pool from the home screen or app drawer. After the first launch it works without internet.
+
+Updates are picked up in the background and appear the next time you open the app.
+
+To turn hosting on (one time): on GitHub, open the repo's **Settings → Pages**, set **Source** to
+**Deploy from a branch**, pick the branch that has these files and the **/ (root)** folder, and save.
+
 There are 12 levels, from 5×5 to 7×7. Progress is saved in the browser's `localStorage`.
 
 Levels are drawn as solved shores in the `LEVELS` array using box-drawing characters (`│ ─ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼`),

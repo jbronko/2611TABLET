@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Tide Pool</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#e4ecec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c1a1f" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
@@ -36,11 +42,15 @@
 
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  html { overscroll-behavior: none; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
     font: 17px/1.45 var(--font-body);
     -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
   }
+  /* Feel like an app: no text selection or long-press menus on game controls. */
+  button, .board, .tray, .sea, h1, .eyebrow { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .wrap {
     max-width: 1100px; margin: 0 auto;
     padding-block: 20px 32px;
@@ -606,6 +616,13 @@
   };
 
   showSelect();
+
+  // Offline support when installed to the home screen (served over http/https only).
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => { /* The game still works online without it. */ });
+    });
+  }
 })();
 </script>
 </body>
