@@ -1,0 +1,28 @@
+<!-- Tide Digger icon: a winding channel dug from the sea down to a rock pool.
+     Full-bleed 512×512; the important parts sit inside the middle circle (radius 205). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#145f86"/>
+      <stop offset="1" stop-color="#2a9cc2"/>
+    </linearGradient>
+    <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c9a873"/>
+      <stop offset="0.3" stop-color="#ead6a8"/>
+      <stop offset="1" stop-color="#f2e2bb"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sand)"/>
+  <!-- trench: lit rim, shadowed wall, then water -->
+  <path id="ch" d="M236 100C226 200 304 220 292 282C284 324 246 330 262 372" fill="none" stroke="#fff3d6" stroke-width="80" stroke-linecap="round"/>
+  <path d="M236 100C226 200 304 220 292 282C284 324 246 330 262 372" fill="none" stroke="#a88a5c" stroke-width="62" stroke-linecap="round"/>
+  <path d="M236 100C226 200 304 220 292 282C284 324 246 330 262 372" fill="none" stroke="#2a9cc2" stroke-width="38" stroke-linecap="round"/>
+  <!-- sea over the top of the channel -->
+  <path d="M0 0H512V150C440 168 380 140 316 156C250 172 190 146 128 160C80 171 40 160 0 168Z" fill="url(#sea)"/>
+  <path d="M0 168C40 160 80 171 128 160C190 146 250 172 316 156C380 140 440 168 512 150" fill="none" stroke="#f4fbfb" stroke-width="12" stroke-linecap="round" opacity="0.9"/>
+  <path d="M240 196C248 226 292 240 286 276" fill="none" stroke="#e9f8fb" stroke-width="7" stroke-linecap="round" opacity="0.85"/>
+  <!-- rock pool with a gap in its rim where the channel runs in -->
+  <circle cx="262" cy="372" r="62" fill="#1f86ad"/>
+  <circle cx="262" cy="372" r="73" fill="none" stroke="#7d776f" stroke-width="24" stroke-dasharray="314 60 85"/>
+  <path d="M222 356a44 44 0 0 1 46-28" fill="none" stroke="#bfeaf5" stroke-width="9" stroke-linecap="round"/>
+</svg>

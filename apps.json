@@ -8,5 +8,10 @@
     "slug": "tablet-tasks",
     "name": "Tablet Tasks",
     "description": "A small, touch-friendly to-do list."
+  },
+  {
+    "slug": "tide-digger",
+    "name": "Tide Digger",
+    "description": "Dig channels in the sand with your finger and steer the real-feeling tide into rock pools."
   }
 ]

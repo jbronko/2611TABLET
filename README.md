@@ -9,6 +9,7 @@ screen and works offline. No app store, no APK, no build step.
 | App | What it is |
 | --- | --- |
 | [Tide Pool](https://jbronko.github.io/2611TABLET/tide-pool/) | A 12-level channel puzzle: lay channels so the tide fills every rock pool. |
+| [Tide Digger](https://jbronko.github.io/2611TABLET/tide-digger/) | Dig channels in the sand with your finger; real-feeling water and sand physics carry the tide into rock pools. 8 beaches plus a sandbox. |
 | [Tablet Tasks](https://jbronko.github.io/2611TABLET/tablet-tasks/) | A small, touch-friendly to-do list. |
 
 ## Install an app on Android
