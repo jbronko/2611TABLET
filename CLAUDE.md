@@ -49,6 +49,17 @@ tools/check-pwa.js  verify an app: manifest, service worker, installable, works 
 - `.nojekyll` must stay at the root so GitHub Pages serves every file as-is.
 - Tablet Tasks (`tablet-tasks/`) keeps its key `tablet-tasks`; Tide Pool uses `tide-pool-progress`.
 
+## Merit Order tests
+
+Merit Order (`merit-order/`) has its own checks in `merit-order/test/` (not precached, not needed offline):
+
+- `node merit-order/test/engine.js` and `node merit-order/test/ui.js` must both pass before pushing
+  changes to Merit Order (`ui.js --shots <folder>` also saves screenshots).
+- After changing prices, costs or rules, run `node merit-order/test/balance.js` and compare with the
+  targets in its header comment.
+- Bump `VERSION` in `merit-order/sw.js` with every published change, so `index.html` and `sim.js`
+  always update together.
+
 ## Optional: also publish to claude.ai
 
 A private claude.ai artifact is handy for a quick link, but it can't be installed. Build the artifact

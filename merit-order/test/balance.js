@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+// Balance check for Merit Order: simulated players with different strategies, on each difficulty.
+// Prints company value at days 10/30/60/end (median of the seeds, and the worst), the lowest cash,
+// how many went bust, and what contracts made. Run after changing prices, costs or rules:
+//
+//   node merit-order/test/balance.js [strategies] [difficulties] [days] [seeds]
+//   node merit-order/test/balance.js steady,reckless standard 120 1,2,3
+//
+// Strategies: idle (starter plants only), steady (reinvests in a mix, swaps on wind/solar),
+// peaker (gas peakers only), capseller (sells caps only against firm thermal plant),
+// capgambler (sells every cap), reckless (builds big on no cash, signs everything).
+// Targets after the last rebalance (Standard, day 120): steady about $15-25M, idle about $4M,
+// capseller about steady, capgambler and reckless usually bust.
+const Sim = require(require('path').join(__dirname, '..', 'sim.js'));
+const { IPD, TECH } = Sim;
+const owned = (S, f = () => true) => S.plants.filter(f).reduce((a, p) => a + p.mw, 0);
+const firm = S => owned(S, p => ['peaker', 'ccgt', 'hydro', 'battery', 'coal'].includes(p.tech) && p.status === 'online');
+const thermalFirm = S => owned(S, p => ['peaker', 'ccgt', 'hydro', 'coal'].includes(p.tech) && p.status === 'online');
+function tryBuild(S, t, buffer, big) {
+  if (!S.unlocked[t]) return false;
+  const sizes = big ? [...TECH[t].sizes].reverse() : TECH[t].sizes;
+  for (const mw of sizes) if (S.cash - Sim.priceOf(S, t, mw) >= buffer) return Sim.build(S, t, mw).ok;
+  return false;
+}
+const STRATS = {
+  idle: {
+    day(S, d) { if (d === 0) { tryBuild(S, 'solar', 0); tryBuild(S, 'battery', 0); } },
+    offer(S) { Sim.declineOffer(S); },
+  },
+  steady: {
+    day(S, d) {
+      const target = { solar: 0.22, wind: 0.25, battery: 0.2, peaker: 0.1, ccgt: 0.15, hydro: 0.08 };
+      const buffer = Math.max(60000, S.cash * 0.15);
+      for (let n = 0; n < 3; n++) {
+        const tot = Math.max(1, owned(S));
+        const order = Object.keys(target).filter(t => S.unlocked[t]).sort((a, b) => owned(S, p => p.tech === a) / tot - target[a] - (owned(S, p => p.tech === b) / tot - target[b]));
+        if (!order.some(t => tryBuild(S, t, buffer))) break;
+      }
+      for (const p of S.plants) if (!p.upg && p.status === 'online' && S.cash > Sim.upgradeCost(S, p) * 4 + buffer) Sim.upgrade(S, p);
+      const vre = owned(S, p => p.tech === 'solar' || p.tech === 'wind');
+      for (let i = S.contractOffers.length - 1; i >= 0; i--) {
+        const o = S.contractOffers[i];
+        if (o.type === 'swap' && S.contracts.filter(k => k.type === 'swap').reduce((a, k) => a + k.mw, 0) + o.mw <= vre * 0.3) Sim.signContract(S, i);
+      }
+    },
+    offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw * 1.2) Sim.acceptOffer(S); else Sim.declineOffer(S); },
+  },
+  peaker: {
+    day(S) { while (tryBuild(S, 'peaker', 50000)); },
+    offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
+  },
+  capseller: {   // sells caps only against firm plant that can run in a spike
+    day(S, d) {
+      STRATS.steady.day(S, d);
+      const capped = () => S.contracts.filter(k => k.type === 'cap').reduce((a, k) => a + k.mw, 0);
+      for (let i = S.contractOffers.length - 1; i >= 0; i--) { const o = S.contractOffers[i]; if (o.type === 'cap' && capped() + o.mw <= thermalFirm(S) * 0.8) Sim.signContract(S, i); }
+    },
+    offer(S) { STRATS.steady.offer(S); },
+  },
+  capgambler: {
+    day(S, d) {
+      STRATS.steady.day(S, d);
+      for (let i = S.contractOffers.length - 1; i >= 0; i--) if (S.contractOffers[i].type === 'cap') Sim.signContract(S, i);
+    },
+    offer(S) { STRATS.steady.offer(S); },
+  },
+  reckless: {
+    day(S) {
+      const techs = ['solar', 'wind', 'peaker', 'ccgt', 'battery', 'hydro'].filter(t => S.unlocked[t]);
+      for (let n = 0; n < 4; n++) { const t = techs[Math.floor(Math.random() * techs.length)]; tryBuild(S, t, 0, true); }
+      while (S.contractOffers.length && Sim.signContract(S, 0).ok);
+      for (const p of S.plants) if (p.bid !== undefined && TECH[p.tech].kind === 'vre') p.bid = 'always';
+    },
+    offer(S) { Sim.acceptOffer(S) || Sim.declineOffer(S); },
+  },
+};
+function run(kind, seed, difficulty, days) {
+  const S = Sim.create(seed, { difficulty });
+  const st = STRATS[kind], out = { minCash: S.cash, at: {} };
+  for (let d = 0; d < days; d++) {
+    if (S.bust) { for (const k of [10, 30, 60, 120, 180]) if (k > d) out.at[k] = Sim.companyValue(S); break; }
+    st.day(S, d);
+    for (let k = 0; k < IPD; k++) { Sim.step(S); if (S.offer && S.offer !== S._seen) { S._seen = S.offer; st.offer(S); } out.minCash = Math.min(out.minCash, S.cash); }
+    if ([10, 30, 60, 120, 180].includes(d + 1)) out.at[d + 1] = Sim.companyValue(S);
+  }
+  out.mw = owned(S); out.emis = S.totals.emis; out.contracts = S.totals.contracts || 0; out.sold = S.totals.sold || 0; out.goals = Object.keys(S.goalsDone).length;
+  out.cap = S.days.reduce((a, r) => a + (r.capPay > 0 ? 1 : 0), 0); out.bust = S.bust ? 1 : 0;
+  return out;
+}
+module.exports = { run, STRATS };
+if (require.main === module) {
+  const kinds = (process.argv[2] || 'idle,steady,peaker,capseller,reckless').split(',');
+  const diffs = (process.argv[3] || 'relaxed,standard,tough').split(',');
+  const days = +(process.argv[4] || 120), seeds = (process.argv[5] || '1,2,3,4').split(',').map(Number);
+  const M = v => Sim.fmtMoney(v).padStart(8);
+  for (const diff of diffs) for (const kind of kinds) {
+    const rs = seeds.map(s => run(kind, s, diff, days));
+    const med = k => { const v = rs.map(r => r.at[k]).filter(x => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
+    const lo = k => Math.min(...rs.map(r => r.at[k] ?? Infinity));
+    console.log(`${diff.padEnd(8)} ${kind.padEnd(9)} d10 ${M(med(10))} d30 ${M(med(30))} d60 ${M(med(60))} d${days} ${M(med(days))} (worst ${M(lo(days))}) minCash ${M(Math.min(...rs.map(r => r.minCash)))} mw ${Math.round(rs.reduce((a, r) => a + r.mw, 0) / rs.length)} contracts ${M(rs.reduce((a, r) => a + r.contracts, 0) / rs.length)} goals ${(rs.reduce((a, r) => a + r.goals, 0) / rs.length).toFixed(1)} sold ${M(rs.reduce((a, r) => a + r.sold, 0) / rs.length)} bust ${rs.reduce((a, r) => a + r.bust, 0)}/${rs.length} capdays ${(rs.reduce((a, r) => a + r.cap, 0) / rs.length).toFixed(0)}`);
+  }
+}

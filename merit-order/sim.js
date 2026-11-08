@@ -202,10 +202,11 @@ const Sim = (() => {
 
   // ---- bids ----
   // Supply bands: {mw, price, tech, owner, ref}. Elastic demand bands: {mw, price, ref}.
-  function percentile(arr, q) {
-    if (!arr.length) return null;
-    const a = [...arr].sort((x, y) => x - y);
-    return a[Math.min(a.length - 1, Math.max(0, Math.floor(q * (a.length - 1))))];
+  // q-th percentile of an array that is already sorted (yesterday's priceSorted), without re-sorting:
+  // this runs for every battery every interval, so it has to be cheap.
+  function percentile(sorted, q) {
+    if (!sorted.length) return null;
+    return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))];
   }
   function storageStrategy(S, p, c) {
     const strat = p.strategy || 'arb';
@@ -367,15 +368,16 @@ const Sim = (() => {
       { mw: 150, price: 2, owner: 'rival' }, { mw: 150, price: 5, owner: 'rival' }, { mw: 150, price: 8, owner: 'rival' },
       { mw: 120, price: 20, owner: 'rival' }, { mw: 100, price: 70, owner: 'rival' }, { mw: 60, price: 600, owner: 'rival' },
     ];
+    // how much of each player plant is already busy in the energy market (one pass, not one per plant)
+    const busy = new Map();
+    for (const b of energyBids) if (b.owner === 'player') busy.set(b.ref, (busy.get(b.ref) || 0) + (b.out ?? b.take ?? 0));
     for (const p of S.plants) {
       if (!running(p) || !TECH[p.tech].fcas || p.fcas === false) continue;
-      const T = TECH[p.tech];
+      const T = TECH[p.tech], used = busy.get(p) || 0;
       let head;
       if (T.kind === 'storage') {
-        const used = energyBids.reduce((a, b) => a + (b.ref === p ? (b.out ?? b.take ?? 0) : 0), 0);
         head = (p.strategy === 'fcas' ? p.mw : Math.max(0, p.mw - used)) * (p.soc > p.mw * hoursOf(p) * 0.1 ? 1 : 0);
       } else {
-        const used = energyBids.reduce((a, b) => a + (b.ref === p ? (b.out ?? 0) : 0), 0);
         head = Math.max(0, p.mw - used) * (p.upg && p.tech === 'peaker' ? 0.8 : 0.4);   // fast-start controls double it
       }
       if (head > 0.5) offers.push({ mw: head, price: 2, owner: 'player', ref: p });

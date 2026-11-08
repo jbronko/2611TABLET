@@ -1,7 +1,7 @@
 // Tide Pool service worker: makes the installed app work offline.
 // Every request is answered from the cache straight away when possible and refreshed
 // from the network in the background, so updates appear on the next launch.
-const CACHE = 'tide-pool-v1';
+const CACHE = 'tide-pool-v2';
 const PRECACHE = [
   './',
   './index.html',
@@ -14,7 +14,8 @@ const PRECACHE = [
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache so a new version never mixes old and new files
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
