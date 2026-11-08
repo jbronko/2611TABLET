@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tide Pool</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
+<style>
+  /* Layout: board on the left with the sea along its top edge; tray and controls beside it
+     in landscape, below it in portrait. Colors are a cool shoreline: wet sand, slate rock, sea water. */
+  :root {
+    --bg: #e4ecec; --panel: #f3f7f6; --ink: #13303a; --muted: #4f6a73; --line: #c6d3d3;
+    --sand: #e9e0cc; --sand-2: #dcd0b6; --groove: #b3a387; --rock: #66625d;
+    --water: #17779b; --on-water: #ffffff; --sea: #8ccbe0; --pool: #c4cfcb; --sun: #d99a17;
+    --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Atkinson Hyperlegible", "Segoe UI", Roboto, system-ui, sans-serif;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c1a1f; --panel: #132730; --ink: #dbeaed; --muted: #8fa8b0; --line: #24414b;
+      --sand: #2d2a23; --sand-2: #25221c; --groove: #5b5244; --rock: #8b867f;
+      --water: #3fb0d9; --on-water: #0c1a1f; --sea: #1f5d73; --pool: #2a3634; --sun: #f0c04a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c1a1f; --panel: #132730; --ink: #dbeaed; --muted: #8fa8b0; --line: #24414b;
+    --sand: #2d2a23; --sand-2: #25221c; --groove: #5b5244; --rock: #8b867f;
+    --water: #3fb0d9; --on-water: #0c1a1f; --sea: #1f5d73; --pool: #2a3634; --sun: #f0c04a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.45 var(--font-body);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap {
+    max-width: 1100px; margin: 0 auto;
+    padding-block: 20px 32px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: grid; gap: 20px;
+  }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+  h1 { font: 800 clamp(28px, 4vw, 40px)/1 var(--font-display); letter-spacing: -0.02em; margin: 0; }
+  h2 { font: 600 22px/1.2 var(--font-display); margin: 0; text-wrap: balance; }
+  .eyebrow { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+  button {
+    font: inherit; color: inherit; cursor: pointer; border-radius: 12px;
+    min-height: 48px; padding: 0 18px; border: 1px solid var(--line); background: var(--panel);
+  }
+  button:focus-visible { outline: 3px solid var(--water); outline-offset: 2px; }
+  button:disabled { cursor: default; opacity: 0.45; }
+  .primary { background: var(--water); color: var(--on-water); border-color: transparent; font-weight: 700; }
+  .ghost-btn { background: transparent; }
+
+  /* Level select */
+  .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .level-tile {
+    display: grid; gap: 4px; text-align: left; padding: 14px 16px; min-height: 104px; align-content: start;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .level-tile .num { font: 800 26px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+  .level-tile .name { font-size: 15px; }
+  .level-tile .stars { color: var(--sun); letter-spacing: 2px; font-size: 16px; }
+  .level-tile .stars .off { color: var(--line); }
+  .level-tile .locked { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+  /* Play screen */
+  .play { display: grid; gap: 20px; align-items: start; }
+  .board-col { display: grid; gap: 0; width: min(100%, 64vh, 620px); justify-self: center; }
+  @media (min-width: 760px) and (min-aspect-ratio: 1/1) {
+    .play { grid-template-columns: minmax(0, auto) minmax(260px, 340px); }
+    .board-col { width: min(calc(100vw - 440px), 78vh, 660px); }
+  }
+  .sea {
+    height: 26px; border-radius: var(--radius) var(--radius) 0 0;
+    background:
+      radial-gradient(circle at 12px -4px, transparent 13px, var(--sea) 14px) 0 100% / 24px 14px repeat-x,
+      var(--water);
+    position: relative;
+  }
+  .sea span { position: absolute; left: 12px; top: 3px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-water); }
+  .board {
+    display: grid; gap: 3px; padding: 3px; background: var(--sand-2);
+    border-radius: 0 0 var(--radius) var(--radius); touch-action: none; user-select: none;
+  }
+  .cell { position: relative; aspect-ratio: 1; background: var(--sand); border-radius: 6px; }
+  .cell svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .cell.pipe:not(.fixed), .cell.empty.can-drop { cursor: pointer; }
+  .cell.fixed::after {
+    content: ""; position: absolute; right: 8%; top: 8%; width: 11%; height: 11%;
+    border-radius: 50%; background: var(--rock);
+  }
+  .cell.empty.can-drop { box-shadow: inset 0 0 0 2px var(--water); }
+  .cell.drop-hover { box-shadow: inset 0 0 0 4px var(--water); }
+  .cell.lifting svg { opacity: 0.25; }
+
+  .spin { transition: transform 0.18s ease-out; transform-origin: 50% 50%; }
+  .groove line { stroke: var(--groove); stroke-width: 34; }
+  .groove circle { fill: var(--groove); }
+  .water { opacity: 0; transition: opacity 0.22s ease-in; }
+  .water line { stroke: var(--water); stroke-width: 18; stroke-linecap: round; }
+  .water circle { fill: var(--water); }
+  .cell.wet .water { opacity: 1; }
+  .rock path { fill: var(--rock); }
+  .pool-rim { fill: var(--rock); }
+  .pool-basin { fill: var(--pool); transition: fill 0.3s ease-in; }
+  .cell.wet .pool-basin { fill: var(--water); }
+
+  /* Side panel */
+  .panel { display: grid; gap: 16px; }
+  .panel-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 12px; }
+  .tray { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; touch-action: none; user-select: none; }
+  .tray-item {
+    display: grid; justify-items: center; gap: 2px; padding: 8px 4px; min-height: 0;
+    background: var(--sand); border: 2px solid transparent;
+  }
+  .tray-item svg { width: 100%; max-width: 64px; aspect-ratio: 1; }
+  .tray-item .count { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .tray-item[aria-pressed="true"] { border-color: var(--water); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .actions .primary { flex: 1 1 100%; }
+  .actions button:not(.primary) { flex: 1 1 0; }
+  .stats { display: flex; gap: 16px; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .status { min-height: 1.45em; margin: 0; }
+  .help { margin: 0; font-size: 15px; color: var(--muted); }
+
+  .ghost { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 20; opacity: 0.9; filter: drop-shadow(0 6px 10px rgba(0,0,0,0.25)); }
+  .ghost svg { width: 100%; height: 100%; display: block; }
+
+  /* Win card */
+  .overlay {
+    position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 28px 24px; width: min(100%, 380px); display: grid; gap: 14px; text-align: center; }
+  .card .big-stars { font-size: 44px; letter-spacing: 6px; color: var(--sun); line-height: 1; }
+  .card .big-stars .off { color: var(--line); }
+  .card .actions { justify-content: center; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spin, .water, .pool-basin { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow" id="eyebrow">A channel puzzle</div>
+      <h1>Tide Pool</h1>
+    </div>
+    <button type="button" id="to-levels" class="ghost-btn" hidden>All levels</button>
+  </header>
+
+  <section id="select" aria-label="Levels">
+    <div class="levels" id="levels"></div>
+  </section>
+
+  <section id="play" class="play" hidden>
+    <div class="board-col">
+      <div class="sea"><span>Sea</span></div>
+      <div class="board" id="board" role="grid" aria-label="Shore"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-card">
+        <div>
+          <div class="eyebrow" id="level-num">Level 1 of 12</div>
+          <h2 id="level-name">First Trickle</h2>
+        </div>
+        <p class="help">Drag channels from the tray onto the sand, or tap one and then tap a square. Tap a placed channel to turn it, drag it off the board to take it back. Pinned pieces stay put.</p>
+      </div>
+      <div class="panel-card">
+        <div class="tray" id="tray" aria-label="Channel pieces"></div>
+        <div class="stats"><span id="placed">0 placed</span><span id="tides">Tides: 0</span></div>
+        <div class="actions">
+          <button type="button" id="tide" class="primary">Let the tide in</button>
+          <button type="button" id="reset">Clear board</button>
+        </div>
+        <p class="status" id="status" aria-live="polite">Fill every pool in one tide for three stars.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="overlay" id="win" hidden>
+  <div class="card" role="dialog" aria-labelledby="win-title">
+    <div class="big-stars" id="win-stars"></div>
+    <h2 id="win-title">Every pool is full</h2>
+    <p class="help" id="win-text"></p>
+    <div class="actions">
+      <button type="button" id="win-next" class="primary">Next level</button>
+      <button type="button" id="win-retry">Play again</button>
+      <button type="button" id="win-levels">All levels</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---- Geometry ----------------------------------------------------------
+  // Each cell's open sides are a bitmask: N=1, E=2, S=4, W=8.
+  const N = 1, E = 2, S = 4, W = 8;
+  const SIDES = [[N, -1, 0], [E, 0, 1], [S, 1, 0], [W, 0, -1]];
+  const opp = s => ((s << 2) | (s >> 2)) & 15;
+  const rotCW = m => ((m << 1) | (m >> 3)) & 15;
+  const BASE = { straight: N | S, corner: N | E, tee: N | E | S, cross: 15 };
+  const TYPES = ['straight', 'corner', 'tee', 'cross'];
+  const TYPE_NAMES = { straight: 'Straight', corner: 'Bend', tee: 'Fork', cross: 'Crossing' };
+  const GLYPH = { '│': 5, '─': 10, '┌': 6, '┐': 12, '└': 3, '┘': 9, '├': 7, '┤': 13, '┬': 14, '┴': 11, '┼': 15 };
+
+  const maskOf = (type, turns) => { let m = BASE[type]; for (let i = 0; i < ((turns % 4) + 4) % 4; i++) m = rotCW(m); return m; };
+  const typeOf = m => {
+    const bits = [N, E, S, W].filter(b => m & b).length;
+    if (bits === 4) return 'cross';
+    if (bits === 3) return 'tee';
+    return (m === 5 || m === 10) ? 'straight' : 'corner';
+  };
+  const turnsFor = (type, mask) => { for (let t = 0; t < 4; t++) if (maskOf(type, t) === mask) return t; return -1; };
+
+  // ---- Levels ------------------------------------------------------------
+  // Rows show the solved shore. '.' sand, '#' rock, 'O' rock pool, box glyphs are channels.
+  // `fixed` lists [row, col] of channels that start pinned in place; every other channel
+  // goes in the tray, along with any `extra` spare pieces.
+  const LEVELS = [
+    { name: 'First Trickle', fixed: [[0, 1], [1, 1]], rows: [
+      '.│...',
+      '.│...',
+      '.└─┐.',
+      '...│.',
+      '...O.'] },
+    { name: 'Split Stream', fixed: [[0, 2]], extra: ['corner'], rows: [
+      '..│..',
+      '..├─O',
+      '..│..',
+      '#.│.#',
+      '..O..'] },
+    { name: 'Around the Rock', fixed: [[0, 0]], extra: ['straight'], rows: [
+      '│....',
+      '└─┐#.',
+      '#.│..',
+      '.┌┘.#',
+      '.O...'] },
+    { name: 'Twin Basins', fixed: [[0, 3]], extra: ['corner'], rows: [
+      '...│.',
+      '.┌─┤.',
+      '.│#│.',
+      '.O.└O',
+      '.....'] },
+    { name: 'Long Way Round', fixed: [[0, 1], [1, 3], [4, 5]], rows: [
+      '.│....',
+      '.└─┬─┐',
+      '#..│#│',
+      '.O─┘.│',
+      '.....│',
+      '..O──┘'] },
+    { name: 'Kelp Bed', fixed: [[0, 4]], extra: ['tee'], rows: [
+      '....│.',
+      '.┌──┘.',
+      '.│#...',
+      '.├──┐#',
+      '.│..O.',
+      '.O....'] },
+    { name: 'Two Inlets', fixed: [[0, 0], [0, 4]], extra: ['cross'], rows: [
+      '│...│.',
+      '│.#.└┐',
+      '└─O..│',
+      '#...┌┘',
+      '.O──┘.',
+      '......'] },
+    { name: 'Limpet Ledge', fixed: [[0, 2], [3, 4]], extra: ['corner'], rows: [
+      '..│...',
+      '#.├─┐.',
+      '..│#│.',
+      '┌─┘.├O',
+      '│...│.',
+      'O...O.'] },
+    { name: 'Crossroads', fixed: [[0, 3], [1, 3]], extra: ['straight', 'tee'], rows: [
+      '...│...',
+      '.┌─┼─┐.',
+      '.│#│#│.',
+      '.O.│.O.',
+      '#..│..#',
+      '.┌─┘...',
+      '.O.....'] },
+    { name: 'Barnacle Bay', fixed: [[0, 0], [0, 6], [3, 3]], extra: ['corner'], rows: [
+      '│.....│',
+      '└┐.#.┌┘',
+      '#│...│#',
+      '.└┬─┬┘.',
+      '..│#│..',
+      '..O.└─O',
+      '.......'] },
+    { name: "Hermit's Detour", fixed: [[0, 1]], extra: ['cross', 'straight'], rows: [
+      '.│.....',
+      '.├──┐#.',
+      '.│#.└─┐',
+      '.│.O..│',
+      '.└─┤#.│',
+      '...│..O',
+      '#..O...'] },
+    { name: 'Spring Tide', fixed: [[0, 0], [0, 3], [0, 6], [5, 3]], extra: ['tee'], rows: [
+      '│..│..│',
+      '├─O│O─┤',
+      '│.#│#.│',
+      '└┐.│.┌┘',
+      '#│.O.│#',
+      '.└─┬─┘.',
+      '...O...'] },
+  ];
+
+  function parse(def) {
+    const n = def.rows.length;
+    const fixed = new Set((def.fixed || []).map(([r, c]) => r * n + c));
+    const solution = [], start = [];
+    const tray = { straight: 0, corner: 0, tee: 0, cross: 0 };
+    def.rows.forEach((row, r) => {
+      const chars = Array.from(row);
+      if (chars.length !== n) throw new Error(`${def.name}: row ${r} has ${chars.length} cells, expected ${n}`);
+      chars.forEach((ch, c) => {
+        const i = r * n + c;
+        let cell;
+        if (ch === '.') cell = { kind: 'empty' };
+        else if (ch === '#') cell = { kind: 'rock' };
+        else if (ch === 'O') cell = { kind: 'pool' };
+        else {
+          const m = GLYPH[ch];
+          if (m == null) throw new Error(`${def.name}: unknown glyph ${ch}`);
+          const type = typeOf(m);
+          cell = { kind: 'pipe', type, turns: turnsFor(type, m), fixed: fixed.has(i) };
+        }
+        solution.push(cell);
+        if (cell.kind === 'pipe' && !cell.fixed) { tray[cell.type]++; start.push({ kind: 'empty' }); }
+        else start.push({ ...cell });
+      });
+    });
+    const par = Object.values(tray).reduce((a, b) => a + b, 0);
+    (def.extra || []).forEach(t => tray[t]++);
+    return { n, name: def.name, solution, start, tray, par };
+  }
+
+  // Breadth-first flood from the sea along the top edge. Pools take water from any
+  // channel that opens into them, but don't pass it on.
+  function flood(cells, n) {
+    const depth = new Map(), pools = new Map(), queue = [];
+    for (let c = 0; c < n; c++) {
+      const x = cells[c];
+      if (x.kind === 'pipe' && (maskOf(x.type, x.turns) & N)) { depth.set(c, 0); queue.push(c); }
+    }
+    while (queue.length) {
+      const i = queue.shift(), r = Math.floor(i / n), c = i % n, d = depth.get(i);
+      const m = maskOf(cells[i].type, cells[i].turns);
+      for (const [s, dr, dc] of SIDES) {
+        if (!(m & s)) continue;
+        const rr = r + dr, cc = c + dc;
+        if (rr < 0 || cc < 0 || rr >= n || cc >= n) continue;
+        const j = rr * n + cc, y = cells[j];
+        if (y.kind === 'pool') { if (!pools.has(j)) pools.set(j, d + 1); }
+        else if (y.kind === 'pipe' && (maskOf(y.type, y.turns) & opp(s)) && !depth.has(j)) { depth.set(j, d + 1); queue.push(j); }
+      }
+    }
+    const total = cells.filter(x => x.kind === 'pool').length;
+    return { depth, pools, filled: pools.size, total };
+  }
+
+  // ---- Progress (per device) --------------------------------------------
+  const STORE = 'tide-pool-progress';
+  const loadProgress = () => {
+    try { const p = JSON.parse(localStorage.getItem(STORE)); if (p && p.stars) return p; } catch {}
+    return { stars: {} };
+  };
+  let progress = loadProgress();
+  const saveProgress = () => { try { localStorage.setItem(STORE, JSON.stringify(progress)); } catch {} };
+  const unlockedUpTo = () => { let i = 0; while (i < LEVELS.length && progress.stars[i]) i++; return Math.min(i, LEVELS.length - 1); };
+
+  // ---- SVG ---------------------------------------------------------------
+  const ENDS = { 1: [50, 0], 2: [100, 50], 4: [50, 100], 8: [0, 50] };
+  function pipeSVG(type, turns) {
+    let arms = '';
+    for (const s of [N, E, S, W]) if (BASE[type] & s) { const [x, y] = ENDS[s]; arms += `<line x1="50" y1="50" x2="${x}" y2="${y}"/>`; }
+    return `<svg viewBox="0 0 100 100" aria-hidden="true"><g class="spin" style="transform: rotate(${turns * 90}deg)">` +
+      `<g class="groove">${arms}<circle cx="50" cy="50" r="17"/></g>` +
+      `<g class="water">${arms}<circle cx="50" cy="50" r="9"/></g></g></svg>`;
+  }
+  const ROCK_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true" class="rock"><path d="M18 62 Q16 36 38 24 Q60 12 78 32 Q92 50 78 72 Q60 88 36 82 Q20 76 18 62Z"/></svg>';
+  const POOL_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true"><circle class="pool-rim" cx="50" cy="50" r="40"/><circle class="pool-basin" cx="50" cy="50" r="31"/></svg>';
+
+  // ---- State & rendering -------------------------------------------------
+  const $ = id => document.getElementById(id);
+  let levelIndex = 0, level = null, cells = [], tray = {}, tides = 0, selected = null, busy = false;
+
+  function showSelect() {
+    $('select').hidden = false; $('play').hidden = true; $('to-levels').hidden = true; $('win').hidden = true;
+    $('eyebrow').textContent = 'A channel puzzle';
+    const open = unlockedUpTo();
+    $('levels').replaceChildren(...LEVELS.map((def, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'level-tile'; b.id = `level-${i + 1}`;
+      b.disabled = i > open;
+      const s = progress.stars[i] || 0;
+      b.innerHTML = `<span class="num">${i + 1}</span><span class="name"></span>` + (b.disabled
+        ? '<span class="locked">Locked</span>'
+        : `<span class="stars" aria-label="${s} of 3 stars">${'★'.repeat(s)}<span class="off">${'★'.repeat(3 - s)}</span></span>`);
+      b.querySelector('.name').textContent = def.name;
+      b.onclick = () => startLevel(i);
+      return b;
+    }));
+  }
+
+  function startLevel(i) {
+    levelIndex = i; level = parse(LEVELS[i]);
+    cells = level.start.map(c => ({ ...c })); tray = { ...level.tray };
+    tides = 0; selected = null; busy = false;
+    $('select').hidden = true; $('play').hidden = false; $('to-levels').hidden = false; $('win').hidden = true;
+    $('eyebrow').textContent = 'Low tide';
+    $('level-num').textContent = `Level ${i + 1} of ${LEVELS.length}`;
+    $('level-name').textContent = level.name;
+    $('board').style.gridTemplateColumns = `repeat(${level.n}, minmax(0, 1fr))`;
+    setStatus('Fill every pool in one tide for three stars.');
+    render();
+  }
+
+  function render() {
+    const board = $('board');
+    board.replaceChildren(...cells.map((c, i) => {
+      const el = document.createElement('div');
+      el.className = `cell ${c.kind}` + (c.fixed ? ' fixed' : '') + (c.kind === 'empty' && selected ? ' can-drop' : '');
+      el.dataset.i = i; el.setAttribute('role', 'gridcell');
+      const r = Math.floor(i / level.n) + 1, col = i % level.n + 1;
+      if (c.kind === 'pipe') { el.innerHTML = pipeSVG(c.type, c.turns); el.setAttribute('aria-label', `${TYPE_NAMES[c.type]} channel, row ${r}, column ${col}${c.fixed ? ', pinned' : ''}`); }
+      else if (c.kind === 'rock') { el.innerHTML = ROCK_SVG; el.setAttribute('aria-label', `Rock, row ${r}, column ${col}`); }
+      else if (c.kind === 'pool') { el.innerHTML = POOL_SVG; el.setAttribute('aria-label', `Rock pool, row ${r}, column ${col}`); }
+      else el.setAttribute('aria-label', `Sand, row ${r}, column ${col}`);
+      return el;
+    }));
+    $('tray').replaceChildren(...TYPES.map(t => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'tray-item'; b.dataset.type = t; b.id = `tray-${t}`;
+      b.disabled = !tray[t];
+      b.setAttribute('aria-pressed', String(selected === t));
+      b.setAttribute('aria-label', `${TYPE_NAMES[t]}, ${tray[t]} left`);
+      b.innerHTML = pipeSVG(t, 0) + `<span class="count">× ${tray[t]}</span>`;
+      return b;
+    }));
+    const placed = cells.filter(c => c.kind === 'pipe' && !c.fixed).length;
+    $('placed').textContent = `${placed} placed`;
+    $('tides').textContent = `Tides: ${tides}`;
+  }
+
+  const setStatus = t => { $('status').textContent = t; };
+
+  function changed() {
+    // Any edit drains the shore again.
+    $('eyebrow').textContent = 'Low tide';
+    document.querySelectorAll('.cell.wet').forEach(el => el.classList.remove('wet'));
+    render();
+  }
+
+  function place(i, type, turns = 0) {
+    if (!tray[type] || cells[i].kind !== 'empty') return;
+    tray[type]--; cells[i] = { kind: 'pipe', type, turns, fixed: false };
+    selected = null;
+    changed();
+  }
+  function takeBack(i) {
+    const c = cells[i]; tray[c.type]++; cells[i] = { kind: 'empty' }; changed();
+  }
+  function movePiece(i, j) {
+    cells[j] = cells[i]; cells[i] = { kind: 'empty' }; changed();
+  }
+  function turn(i) {
+    cells[i].turns++;
+    const el = $('board').children[i];
+    // Animate the existing SVG, then redraw state once the turn finishes.
+    el.querySelector('.spin').style.transform = `rotate(${cells[i].turns * 90}deg)`;
+    document.querySelectorAll('.cell.wet').forEach(x => x.classList.remove('wet'));
+    $('eyebrow').textContent = 'Low tide';
+  }
+  function toggleSelect(type) { selected = selected === type ? null : type; render(); }
+
+  // ---- Pointer handling (touch, pen and mouse) ----------------------------
+  const ghost = document.createElement('div');
+  ghost.className = 'ghost'; ghost.hidden = true; document.body.append(ghost);
+  let hoverEl = null;
+
+  function press(e, info) {
+    if (busy) return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY;
+    let dragging = false;
+    const size = $('board').children[0].getBoundingClientRect().width;
+    const setHover = el => { if (hoverEl) hoverEl.classList.remove('drop-hover'); hoverEl = el; if (el) el.classList.add('drop-hover'); };
+    const targetAt = (x, y) => { const t = document.elementFromPoint(x, y); return t && t.closest('#board .cell'); };
+    const move = ev => {
+      if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 10) {
+        dragging = true;
+        ghost.innerHTML = pipeSVG(info.type, info.turns || 0);
+        ghost.style.width = ghost.style.height = `${size}px`;
+        ghost.hidden = false;
+        if (info.from === 'board') $('board').children[info.i].classList.add('lifting');
+      }
+      if (!dragging) return;
+      ghost.style.transform = `translate(${ev.clientX - size / 2}px, ${ev.clientY - size / 2}px)`;
+      const t = targetAt(ev.clientX, ev.clientY);
+      setHover(t && cells[+t.dataset.i].kind === 'empty' ? t : null);
+    };
+    const end = (ev, cancelled) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      ghost.hidden = true; setHover(null);
+      if (info.from === 'board') { const el = $('board').children[info.i]; if (el) el.classList.remove('lifting'); }
+      if (cancelled) return;
+      if (!dragging) { info.from === 'board' ? turn(info.i) : toggleSelect(info.type); return; }
+      const t = targetAt(ev.clientX, ev.clientY);
+      const j = t ? +t.dataset.i : -1;
+      if (info.from === 'tray') { if (j >= 0) place(j, info.type); }
+      else if (j < 0) takeBack(info.i);
+      else if (j !== info.i && cells[j].kind === 'empty') movePiece(info.i, j);
+    };
+    const up = ev => end(ev, false);
+    const cancel = ev => end(ev, true);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+  }
+
+  $('board').addEventListener('pointerdown', e => {
+    const el = e.target.closest('.cell'); if (!el || busy) return;
+    const i = +el.dataset.i, c = cells[i];
+    if (c.kind === 'pipe' && !c.fixed) press(e, { from: 'board', i, type: c.type, turns: c.turns });
+    else if (c.kind === 'empty' && selected) { e.preventDefault(); place(i, selected); }
+  });
+  $('tray').addEventListener('pointerdown', e => {
+    const b = e.target.closest('.tray-item'); if (!b || b.disabled) return;
+    press(e, { from: 'tray', type: b.dataset.type });
+  });
+  // Keyboard: Enter/Space on a tray button selects it.
+  $('tray').addEventListener('keydown', e => {
+    const b = e.target.closest('.tray-item');
+    if (b && !b.disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleSelect(b.dataset.type); $(`tray-${b.dataset.type}`).focus(); }
+  });
+
+  // ---- Tide --------------------------------------------------------------
+  const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function letTideIn() {
+    if (busy) return;
+    busy = true; tides++;
+    render();
+    $('eyebrow').textContent = 'Flood tide';
+    const res = flood(cells, level.n);
+    const step = reduceMotion() ? 0 : 110;
+    const boardEls = $('board').children;
+    let last = 0;
+    for (const [i, d] of res.depth) { last = Math.max(last, d); setTimeout(() => boardEls[i].classList.add('wet'), d * step); }
+    for (const [i, d] of res.pools) { last = Math.max(last, d); setTimeout(() => boardEls[i].classList.add('wet'), d * step); }
+    setTimeout(() => {
+      busy = false;
+      if (res.total && res.filled === res.total) win();
+      else if (!res.depth.size) setStatus('No channel reaches the sea yet. Start one on the top row.');
+      else setStatus(`${res.filled} of ${res.total} pools filled. Adjust the channels and try another tide.`);
+    }, last * step + 350);
+  }
+
+  function starsFor(t) { return t === 1 ? 3 : t <= 3 ? 2 : 1; }
+
+  function win() {
+    const s = starsFor(tides);
+    progress.stars[levelIndex] = Math.max(progress.stars[levelIndex] || 0, s);
+    saveProgress();
+    $('eyebrow').textContent = 'High water';
+    const lastLevel = levelIndex === LEVELS.length - 1;
+    $('win-stars').innerHTML = `${'★'.repeat(s)}<span class="off">${'★'.repeat(3 - s)}</span>`;
+    $('win-stars').setAttribute('aria-label', `${s} of 3 stars`);
+    $('win-title').textContent = lastLevel ? 'Every pool on the shore is full' : 'Every pool is full';
+    $('win-text').textContent = `${level.name} solved in ${tides} ${tides === 1 ? 'tide' : 'tides'}.` +
+      (s < 3 ? ' Solve it in one tide for three stars.' : '');
+    $('win-next').hidden = lastLevel;
+    setStatus('Solved.');
+    $('win').hidden = false;
+    (lastLevel ? $('win-levels') : $('win-next')).focus();
+  }
+
+  $('tide').onclick = letTideIn;
+  $('reset').onclick = () => { if (busy) return; cells = level.start.map(c => ({ ...c })); tray = { ...level.tray }; selected = null; changed(); setStatus('Board cleared.'); };
+  $('to-levels').onclick = showSelect;
+  $('win-levels').onclick = showSelect;
+  $('win-retry').onclick = () => startLevel(levelIndex);
+  $('win-next').onclick = () => startLevel(levelIndex + 1);
+
+  // For automated checks: confirms each level's drawn solution fills every pool.
+  window.TidePool = {
+    LEVELS, parse, flood,
+    validate: () => LEVELS.map(def => { const L = parse(def); const r = flood(L.solution, L.n); return { name: def.name, filled: r.filled, total: r.total, par: L.par, ok: r.total > 0 && r.filled === r.total }; }),
+  };
+
+  showSelect();
+})();
+</script>
+</body>
+</html>
