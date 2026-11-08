@@ -64,6 +64,13 @@
   table.res tr.link:hover td { background: var(--panel-2); }
   table.res tr.total td { font-weight: 750; border-top: 2px solid var(--line-2); }
   table.res.compact { font-size: 13px; } table.res.compact th, table.res.compact td { padding: 7px 4px; }
+  .mission { display: flex; align-items: center; gap: 14px; padding: 12px 14px; margin-bottom: 12px; border-radius: 13px; background: rgba(242, 163, 58, 0.09); border: 1px solid rgba(242, 163, 58, 0.45); }
+  .mission > div { flex: 1; display: grid; gap: 2px; min-width: 0; }
+  .mission .eyebrow { color: var(--amber); }
+  .mission b { font-size: 16px; } .mission small { color: var(--ink-2); font-size: 13.5px; }
+  .hint { outline: 2px solid var(--amber); outline-offset: 3px; animation: hint 1.6s ease-in-out infinite; }
+  @keyframes hint { 0% { box-shadow: 0 0 0 0 rgba(242, 163, 58, 0.55); } 70% { box-shadow: 0 0 0 12px rgba(242, 163, 58, 0); } 100% { box-shadow: 0 0 0 0 rgba(242, 163, 58, 0); } }
+  @media (prefers-reduced-motion: reduce) { .hint { animation: none; } }
   .upgrade b { font-size: 15.5px; } .upgrade p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
   .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
 
@@ -326,6 +333,7 @@
       </section>
       <section class="panel" aria-labelledby="pl-title">
         <div class="panel-head"><h2 id="pl-title">Your plants</h2><span class="head-actions"><span class="meta num" id="pl-meta">None yet</span><button type="button" class="btn btn-quiet small" id="open-contracts">Contracts</button></span></div>
+        <div class="mission" id="mission" hidden></div>
         <div class="plants" id="plants"></div>
       </section>
     </div>
@@ -385,6 +393,7 @@
     <button type="button" class="switch-row" id="m-share"><span><svg class="i"><use href="#i-share"/></svg> Share your company</span></button>
     <button type="button" class="switch-row" id="m-challenge"><span><svg class="i"><use href="#i-flag"/></svg> Challenges</span></button>
     <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
+    <button type="button" class="switch-row" id="m-tour"><span>Show me around<small>Restart the getting-started missions</small></span></button>
     <button type="button" class="switch-row" id="m-company"><span>Company report</span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
     <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive</small></span><span class="switch"></span></button>
@@ -605,6 +614,7 @@
   }
   chartHover($('c-merit'), (x) => {
     const g = meritBands.find(g => x >= g.x0 - 1 && x <= g.x1 + 1); if (!g) return null;
+    missionUi('merit');
     const b = g.b, name = b.ref.name || 'Unknown', tname = (TECH[b.tech] || OTHER).name;
     return `<b>${esc(name)}</b><span>${tname}${b.owner === 'player' ? ' · yours' : ''}</span><br>${fmtMW(b.mw)} offered at ${fmtPrice(b.price)}/MWh<br>Running ${fmtMW(b.out)}`;
   });
@@ -613,6 +623,7 @@
     const i = Math.round((x - priceGeom.left) / (priceGeom.right - priceGeom.left) * (IPD - 1));
     const v = S.today.price[i], yv = S.days.length && S.days[S.days.length - 1].price ? S.days[S.days.length - 1].price[i] : null;
     const fv = v == null && fcast ? fcast.data[i] : null;
+    if (fv != null) missionUi('forecast');
     if (v == null && yv == null && fv == null) return null;
     return `<b>${Sim.clock(i * H)}</b>${v != null ? `Today ${fmtPrice(v)}/MWh<br>` : ''}${fv != null ? `Forecast ${fmtPrice(fv)}/MWh<br>` : ''}${yv != null ? `<span>Yesterday ${fmtPrice(yv)}/MWh</span>` : ''}`;
   });
@@ -743,6 +754,44 @@
     if (e.target.closest('#add-plant')) openBuild();
   });
 
+  // --- getting started: one mission at a time, with the control it needs gently pulsing ---
+  let missionKey = '', missionCount = -1;
+  function hintTargets(m) {
+    const q = sel => [...document.querySelectorAll(sel)];
+    const bat = S.plants.find(p => p.tech === 'battery');
+    switch (m.hint) {
+      case 'build:solar': return q('#add-plant, [data-build="solar"]');
+      case 'speed': return q('[data-speed="4"], [data-speed="16"]');
+      case 'merit': return q('#c-merit');
+      case 'battery': return bat ? q(`[data-plant="${bat.id}"], #sh-plant .seg`) : q('#add-plant, [data-build="battery"]');
+      case 'forecast': return q('#c-price');
+      case 'contracts': return q('#open-contracts, [data-sign]:not([disabled])');
+      case 'upgrade': { const p = S.plants.find(x => x.status === 'online' && !x.upg); return q(`${p ? `[data-plant="${p.id}"], ` : ''}[data-upgrade]:not([disabled])`); }
+    }
+    return [];
+  }
+  function applyHints() {
+    document.querySelectorAll('.hint').forEach(x => x.classList.remove('hint'));
+    const m = S && !S.challenge ? Sim.missionNext(S) : null;
+    if (m) for (const el of hintTargets(m)) el.classList.add('hint');
+  }
+  function renderMission() {
+    const el = $('mission'), M = S.missions, m = S.challenge ? null : Sim.missionNext(S);
+    const count = M ? Object.keys(M.done).length : 0;
+    if (missionCount >= 0 && count > missionCount && M) toast(M.finished && !M.on ? 'Getting started: all done. The market is yours.' : 'Mission done. On to the next one.');
+    missionCount = count;
+    const key = m ? `${m.id}:${count}:${!!M.paid[m.id]}` : '';
+    if (key !== missionKey) {
+      missionKey = key;
+      el.hidden = !m;
+      if (m) el.innerHTML = `<div><span class="eyebrow">Getting started · ${count + 1} of ${Sim.MISSIONS.length}</span><b>${m.text}</b><small>${m.why}${!M.paid[m.id] ? ` Bonus ${fmtMoney(m.reward)}.` : ''}</small></div>
+        <button type="button" class="btn btn-quiet small" id="mission-skip">Skip</button>`;
+    }
+    applyHints();
+  }
+  $('mission').addEventListener('click', e => { if (e.target.closest('#mission-skip')) { Sim.skipTour(S); renderAll(); save(); toast('Missions skipped. Menu → Show me around brings them back.'); } });
+  function missionUi(id) { if (S && Sim.completeMission(S, id)) { renderAll(); save(); } }
+
   function renderOffer() {
     const o = S.offer, el = $('offer');
     if (!o || offerDismissed === o) { el.hidden = true; return; }
@@ -789,7 +838,7 @@
   function renderAll() {
     if (!S) return;
     sizeCharts();
-    renderTop(); renderChips(); renderKpis(); renderMix(); renderNews(); renderPlants(); renderOffer();
+    renderTop(); renderChips(); renderKpis(); renderMix(); renderNews(); renderPlants(); renderOffer(); renderMission();
     drawPrice(); drawDemand();
     lastDrawnT = S.t;
   }
@@ -813,7 +862,7 @@
 
   // --- build ---
   const chosenSize = {};
-  function openBuild() { renderBuild(); openSheet('build'); }
+  function openBuild() { renderBuild(); openSheet('build'); applyHints(); }
   function renderBuild() {
     const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'];
     $('tech-grid').innerHTML = order.map(t => {
@@ -842,7 +891,7 @@
 
   // --- plant detail ---
   let plantOpen = null;
-  function openPlant(id) { plantOpen = id; renderPlantSheet(); openSheet('plant'); }
+  function openPlant(id) { plantOpen = id; renderPlantSheet(); openSheet('plant'); applyHints(); }
   let sheetStatus = null;
   function renderPlantSheet() {
     const p = S.plants.find(x => x.id === plantOpen); if (!p) { closeSheets(); return; }
@@ -947,13 +996,17 @@
   $('sh-plant').addEventListener('click', e => {
     const p = S.plants.find(x => x.id === plantOpen); if (!p) return;
     const s = e.target.closest('[data-set]');
-    if (s) { const [f, v] = s.dataset.set.split(':'); p[f] = v; renderPlantSheet(); save(); return; }
+    if (s) {
+      const [f, v] = s.dataset.set.split(':'); p[f] = v;
+      if (f === 'strategy') { p.stratSet = true; Sim.checkMissions(S); renderAll(); }
+      renderPlantSheet(); applyHints(); save(); return;
+    }
     if (e.target.closest('[data-fcas]')) { p.fcas = p.fcas === false; renderPlantSheet(); save(); return; }
     const flip = e.target.closest('[data-flip]');
     if (flip) { const f = flip.dataset.flip, box = $(`nb-${f}`); setBid(p, f, -Number(box.value || 0)); box.value = p[f]; save(); return; }
     if (e.target.closest('[data-upgrade]')) {
       const r = Sim.upgrade(S, p);
-      if (r.ok) { renderPlantSheet(); renderAll(); save(); toast(`${p.name} is being upgraded.`); }
+      if (r.ok) { toast(`${p.name} is being upgraded.`); renderPlantSheet(); renderAll(); save(); }
       return;
     }
     const r = e.target.closest('[data-retire]');
@@ -1010,6 +1063,7 @@
       <h3>Your contracts</h3>${active || '<p class="note">None yet.</p>'}
       <h3>On offer</h3>${offers || '<p class="note">Nothing right now.</p>'}
       <p class="note">New offers every 3 days. You can sell contracts for up to 1.2 times the plant you own; you have room for ${fmtMW(room)} more.</p>`);
+    applyHints();
     $('i-body').querySelectorAll('[data-sign]').forEach(b => b.onclick = () => {
       const r = Sim.signContract(S, +b.dataset.sign);
       if (r.ok) { save(); renderAll(); openContracts(); toast('Contract signed.'); }
@@ -1111,6 +1165,7 @@
       <p class="note">Totals so far: profit ${fmtMoney(S.totals.profit)} · energy ${Math.round(S.totals.energy).toLocaleString()} MWh · frequency control ${fmtMoney(S.totals.fcas)} · emissions ${Math.round(S.totals.emis).toLocaleString()} t</p>` : '<p>No full days yet. Check back tomorrow.</p>');
   };
   $('m-help').onclick = () => showHelp();
+  $('m-tour').onclick = () => { if (S.challenge) { toast('Missions are for your own company, not challenges.'); return; } Sim.startTour(S); missionKey = ''; closeSheets(); renderAll(); save(); };
   $('t-help').onclick = () => showHelp();
   function showHelp() {
     info('How it works', `
@@ -1298,7 +1353,7 @@
   }
   function enterApp() {
     scene = 'app'; $('title').hidden = true; $('app').hidden = false;
-    meritAnim.clear(); shownCash = null; plantIds = null; newsKey = ''; fcast = null; syncSpeed(); renderAll(); resized = true;
+    meritAnim.clear(); shownCash = null; plantIds = null; newsKey = ''; fcast = null; missionKey = ''; missionCount = -1; syncSpeed(); renderAll(); resized = true;
     pausedFor = S.offer; seenOffers = S.contractOffers; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
   }
   function awayReport(rep) {
@@ -1317,11 +1372,11 @@
       enterApp();
       if (away >= 12) { const rep = Sim.catchUp(S, away); pausedFor = S.offer; seenOffers = S.contractOffers; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1; renderAll(); awayReport(rep); }
     } else {
-      S = Sim.create((Math.random() * 2 ** 31) >>> 0, { difficulty }); S.company = 'Your company';
+      S = Sim.create((Math.random() * 2 ** 31) >>> 0, { difficulty, tour: true }); S.company = 'Your company';
       Sim.step(S);
       enterApp();
       info('Welcome to the market', `<p>You have ${fmtMoney(S.cash)} and an empty site in a region of about 6 GW. Every five minutes, generators bid to supply power and the cheapest win. The last bid needed sets the price everyone is paid.</p>
-        <p>A good start: a solar farm for cheap midday energy, then a small battery to sell into the evening peak. Tap <b style="color:var(--ink)">Build a plant</b>.</p>
+        <p>A good start: a solar farm for cheap midday energy, then a small battery to sell into the evening peak. Tap <b style="color:var(--ink)">Build a plant</b>, or follow <b style="color:var(--ink)">Getting started</b> above your plants for a quick tour.</p>
         <button type="button" class="btn btn-primary" data-close style="width:100%" id="welcome-ok">Let’s go</button>`);
       $('welcome-ok').onclick = closeSheets;
     }

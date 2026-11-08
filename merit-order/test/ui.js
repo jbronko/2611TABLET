@@ -220,6 +220,29 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 7. Getting started: the tour walks through its missions with hints on the right controls.
+  {
+    const p = await page();
+    await newCompany(p, 'standard');
+    const card = async () => (await p.textContent('#mission')).replace(/\s+/g, ' ');
+    const hinted = () => p.$$eval('.hint', xs => xs.map(x => x.id || x.dataset.build || x.dataset.speed || x.dataset.plant || 'other'));
+    check('a new company starts the tour with Build hinted', /1 of 7.*Build a solar farm/.test(await card()) && (await hinted()).includes('add-plant'));
+    await p.click('#add-plant'); await p.waitForTimeout(150);
+    check('the right card in the build sheet is hinted', (await hinted()).includes('solar'));
+    await p.click('[data-build="solar"]'); await p.waitForTimeout(200);
+    check('building it moves on to speeding up', /2 of 7/.test(await card()) && (await hinted()).includes('16'));
+    await state(p, () => { const M = MeritOrder; while (M.state.plants[0].status !== 'online') M.Sim.step(M.state); M.renderAll(); M.drawMerit(); });
+    const r = await p.$eval('#c-merit', c => { const b = c.getBoundingClientRect(); return { x: b.left + b.width * 0.3, y: b.top + b.height * 0.75 }; });
+    await p.mouse.click(r.x, r.y); await p.waitForTimeout(200);
+    check('tapping the merit order completes that mission', /4 of 7.*battery/.test(await card()));
+    await shot(p, 'tour');
+    await p.click('#mission-skip'); await p.waitForTimeout(150);
+    check('skip hides the tour', await p.$eval('#mission', x => x.hidden));
+    await p.click('#open-menu'); await p.click('#m-tour'); await p.waitForTimeout(150);
+    check('"Show me around" brings it back', !(await p.$eval('#mission', x => x.hidden)));
+    await p.context().close();
+  }
+
   check('no errors on any page', errs.length === 0, errs.slice(0, 3).join(' | '));
   await browser.close(); server.close();
   console.log(fails ? `\n${fails} check(s) failed` : '\nAll browser checks passed');

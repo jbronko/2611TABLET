@@ -115,6 +115,7 @@ const Sim = (() => {
       today: freshDay(), days: [], last: null, totals: { profit: 0, energy: 0, fcas: 0, emis: 0 },
       challenge: opts.challenge || null,
       mode: opts.mode || 'career',
+      missions: opts.tour ? { on: true, done: {}, paid: {} } : null,
     };
     for (const k of Object.keys(TECH)) S.costMult[k] = 1;
     if (opts.challenge) Object.assign(S.unlocked, { wind: true });
@@ -483,7 +484,7 @@ const Sim = (() => {
     for (const p of S.plants) {
       if (p.status === 'building') {
         p.buildLeft -= 1 / IPD;
-        if (p.buildLeft <= 0) { p.status = 'online'; p.today = { energy: 0, money: 0 }; addNews(S, 'good', `${p.name} is connected and trading.`); }
+        if (p.buildLeft <= 0) { p.status = 'online'; p.today = { energy: 0, money: 0 }; addNews(S, 'good', `${p.name} is connected and trading.`); checkMissions(S); }
       } else if (p.status === 'upgrading') {
         p.upgLeft -= 1 / IPD;
         if (p.upgLeft <= 0) finishUpgrade(S, p);
@@ -656,6 +657,7 @@ const Sim = (() => {
     S.cash -= cost; p.value += cost; p.capital += cost;
     p.status = 'upgrading'; p.upgLeft = UPGRADES[p.tech].days; p.upg = true;
     addNews(S, 'info', `${p.name} is offline for ${UPGRADES[p.tech].days} day${UPGRADES[p.tech].days === 1 ? '' : 's'} for its upgrade: ${UPGRADES[p.tech].name.toLowerCase()}.`);
+    checkMissions(S);
     return { ok: true, cost };
   }
   function finishUpgrade(S, p) {
@@ -698,6 +700,7 @@ const Sim = (() => {
     addNews(S, 'info', o.type === 'swap'
       ? `You sold a ${o.mw} MW swap at ${fmtPrice(o.strike)}/MWh for ${o.days} days. You now earn that price on ${o.mw} MW whatever the market does, as long as you can supply it.`
       : `You sold a ${o.mw} MW $300 cap for ${fmtMoney(o.premium)} a day. You pay out whenever the price goes above $300.`);
+    checkMissions(S);
     return { ok: true };
   }
 
@@ -827,6 +830,7 @@ const Sim = (() => {
       capital: cost, life: freshLife() };
     S.plants.push(p);
     addNews(S, 'info', `Construction has started on ${p.name} (${fmtMW(mw)}). It connects in ${T.build} day${T.build === 1 ? '' : 's'}.`);
+    checkMissions(S);
     return { ok: true, plant: p };
   }
   function retire(S, p) {
@@ -848,6 +852,39 @@ const Sim = (() => {
     { id: 'value10m', text: 'Grow your company to $10M', reward: 500000, test: S => companyValue(S) >= 1e7 },
     { id: 'share25', text: 'Supply a quarter of the region in one day', reward: 1000000, test: (S, d) => d && d.share >= 0.25 },
   ];
+  // ---- the guided first week: short missions for a new company, each with a small reward ----
+  // `hint` names what the app highlights; `ui` missions are completed by the app (completeMission).
+  const MISSIONS = [
+    { id: 'solar', text: 'Build a solar farm', why: 'Free energy every sunny day.', hint: 'build:solar', reward: 15000, test: S => S.plants.some(p => p.tech === 'solar') },
+    { id: 'connect', text: 'Speed up the clock until your solar farm connects', why: 'Plants take a while to build. 4× or 16× gets there faster.', hint: 'speed', reward: 10000, test: S => S.plants.some(p => p.status === 'online') },
+    { id: 'merit', text: 'Tap a bar in the merit order', why: 'Each bar is someone\'s offer. The cheapest run first; the last one needed sets the price.', hint: 'merit', reward: 10000, ui: true },
+    { id: 'battery', text: 'Build a battery and choose how it trades', why: 'Batteries fill up when power is cheap and sell into the evening peak.', hint: 'battery', reward: 20000, test: S => S.plants.some(p => p.tech === 'battery' && p.stratSet) },
+    { id: 'forecast', text: 'Tap the dashed forecast line on the price chart', why: 'It shows where prices are heading over the next six hours.', hint: 'forecast', reward: 10000, ui: true },
+    { id: 'contract', text: 'Sign a contract', why: 'A swap fixes the price you get on part of your output for a week.', hint: 'contracts', reward: 15000, test: S => S.contracts.length > 0 || (S.totals.contracts || 0) !== 0 },
+    { id: 'upgrade', text: 'Upgrade a plant', why: 'Every plant has one upgrade. Open a plant to see it.', hint: 'upgrade', reward: 25000, test: S => S.plants.some(p => p.upg) },
+  ];
+  function missionNext(S) { const M = S.missions; return M && M.on ? MISSIONS.find(m => M.done[m.id] === undefined) || null : null; }
+  function finishMission(S, m) {
+    const M = S.missions;
+    M.done[m.id] = dayIndex(S);
+    const pay = !M.paid[m.id] ? m.reward : 0;
+    M.paid[m.id] = true;
+    if (pay) { S.cash += pay; S.totals.missions = (S.totals.missions || 0) + pay; }
+    if (MISSIONS.every(x => M.done[x.id] !== undefined)) { M.on = false; M.finished = true; addNews(S, 'good', `Getting started: all done${pay ? `. Bonus ${fmtMoney(pay)}` : ''}. The market is yours.`); }
+    else addNews(S, 'good', `Getting started: ${m.text.toLowerCase()} — done.${pay ? ` Bonus ${fmtMoney(pay)}.` : ''}`);
+  }
+  function checkMissions(S) {
+    const M = S.missions; if (!M || !M.on) return;
+    for (const m of MISSIONS) if (!m.ui && M.done[m.id] === undefined && m.test(S)) finishMission(S, m);
+  }
+  function completeMission(S, id) {
+    const M = S.missions, m = MISSIONS.find(x => x.id === id);
+    if (!M || !M.on || !m || M.done[id] !== undefined) return false;
+    finishMission(S, m); return true;
+  }
+  function startTour(S) { S.missions = { on: true, done: {}, paid: (S.missions && S.missions.paid) || {} }; checkMissions(S); }
+  function skipTour(S) { if (S.missions) S.missions.on = false; }
+
   function checkGoals(S, d) {
     for (const g of GOALS) {
       if (S.goalsDone[g.id] || !g.test(S, d)) continue;
@@ -907,7 +944,7 @@ const Sim = (() => {
 
   return { IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
-    upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, overdraftLimit, forecast, hoursOf, vcOf,
+    upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;

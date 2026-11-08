@@ -158,6 +158,21 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('nothing left to sell means administration', S.bust === true);
 }
 
+// 11. Getting started: missions complete in play, pay once, and can be restarted without paying again.
+{
+  const S = Sim.create(3, { tour: true }), c0 = S.cash;
+  const first = Sim.missionNext(S).id;
+  const cost = Sim.priceOf(S, 'solar', 50); Sim.build(S, 'solar', 50);
+  const afterBuild = S.cash - (c0 - cost);
+  for (let k = 0; k < 3 * Sim.IPD; k++) Sim.step(S);
+  const appSide = Sim.completeMission(S, 'merit') && !Sim.completeMission(S, 'merit');
+  const paid = S.totals.missions;
+  Sim.startTour(S); Sim.completeMission(S, 'merit');
+  check('missions complete in play and pay once', first === 'solar' && afterBuild === 15000 && appSide && Sim.missionNext(S).id === 'battery' && S.totals.missions === paid && paid === 35000,
+    `paid ${Sim.fmtMoney(paid)}, next ${Sim.missionNext(S).id}`);
+  check('no missions for challenges or tests', Sim.missionNext(Sim.create(5, { challenge: { seed: 5 } })) === null && Sim.missionNext(Sim.create(5)) === null);
+}
+
 // 10. Speed: a big company's 7-day catch-up (what runs when the app opens after a week away).
 {
   const S = Sim.create(1, { cash: 1e9 });
