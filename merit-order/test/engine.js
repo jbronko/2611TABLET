@@ -431,5 +431,38 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     && Sim.debt(B) <= Sim.LOAN_LTV * 600000 + Sim.LOAN_SECURED * 1500000, `${Sim.fmtMoney(Sim.debt(B))} borrowed`);
 }
 
+// 13. Bid stacks are offered as a stack: a coal unit climbs through its bands as the price passes
+//     each one and ramps back down below them; a gas plant in its minimum run offers the bands above
+//     its stable load at their own prices.
+{
+  const S = Sim.create(7, { cash: 3e6 });
+  for (let k = 0; k < Sim.IPD; k++) Sim.step(S);
+  const r = S.rivals.find(x => x.tech === 'coal' && x.id !== 'bh1');
+  S.offer = { type: 'coal', rival: r.id, price: 500000, expires: S.t + Sim.IPD, text: '' }; Sim.acceptOffer(S);
+  const p = S.plants.find(x => x.tech === 'coal'); p.bid = 'custom';
+  p.bands.prices = [-1000, 0, 32, 42, 300, 301, 600, 1000, 5000, 23200]; p.bands.mw = [0, 0, 260, 0, 400, 0, 0, 0, 0, 0]; p.last = 660;
+  const outs = [], prices = [];
+  for (let k = 0; k < 2 * Sim.IPD; k++) { Sim.step(S); if (S.offer) Sim.declineOffer(S); outs.push(S.last.supply.filter(b => b.ref === p).reduce((a, b) => a + b.out, 0)); prices.push(S.last.res.price); }
+  const firstSteps = outs.slice(0, 4).map(Math.round).join(' ');
+  check('a coal unit with 260 MW at $32 and 400 MW at $300 ramps down 33 MW a step and stays out of its $300 band below $300',
+    firstSteps === '627 594 561 557' && outs.every((o, i) => i < 3 || prices[i] >= 300 || o <= 557 + 1e-6), `${firstSteps} … max ${Math.round(Math.max(...outs))} MW, prices to ${Math.round(Math.max(...prices))}`);
+  // a price spike above $300: it climbs into the $300 band, 33 MW a step
+  const c = Sim.conditions(S); p.last = 557;
+  const spike = Sim.stackTarget(S, p, 400), calm = Sim.stackTarget(S, p, 100);
+  check('…and would climb into it above $300', spike === 660 && calm === 557, `${calm} MW at $100, ${spike} MW at $400`);
+  // coal custom bands cover the MW above the minimum
+  Sim.setBandMW(S, p, 'g', 4, 1000);
+  check('coal bands cover only the MW above its minimum', Math.abs(p.bands.mw.reduce((a, v) => a + v, 0) - Sim.flexMW(p)) < 1e-6 && Math.round(Sim.flexMW(p)) === 363);
+  // gas in its minimum run: stable load at the floor, then the bands above it at their own prices
+  const G = Sim.create(8, { cash: 1e8 }); G.unlocked.ccgt = true;
+  const cc = Sim.build(G, 'ccgt', 200).plant; cc.status = 'online'; cc.buildLeft = 0; cc.bid = 'custom';
+  cc.bands.prices = [-1000, 0, 50, 90, 120, 300, 600, 1000, 5000, 23200]; cc.bands.mw = [0, 0, 0, 0, 0, 200, 0, 0, 0, 0];
+  cc.onFor = 2; cc.last = 80;
+  Sim.step(G);
+  const offers = G.last.supply.filter(b => b.ref === cc);
+  check('a gas plant in its minimum run offers its stable load at the floor and the rest at its band price', offers.some(b => b.mustRun && Math.abs(b.mw - 80) < 1e-6) && offers.filter(b => !b.mustRun).every(b => (b.offer ?? b.price) === 300),
+    offers.map(b => `${Math.round(b.mw)}@${b.offer ?? b.price}`).join(', '));
+}
+
 console.log(fails ? `\n${fails} check(s) failed` : '\nAll engine checks passed');
 process.exit(fails ? 1 : 0);

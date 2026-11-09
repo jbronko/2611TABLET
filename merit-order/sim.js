@@ -322,6 +322,35 @@ const Sim = (() => {
 
   // ---- bids ----
   // Supply bands: {mw, price, tech, owner, ref}. Elastic demand bands: {mw, price, ref}.
+  // Coal must always run its minimum load; its bands cover the MW above that. Other plants' bands
+  // cover their whole capacity.
+  const coalMin = p => p.upg ? 0.3 : TECH.coal.minLoad;
+  const flexMW = p => p.tech === 'coal' ? p.mw * (1 - coalMin(p)) : p.mw;
+  const baseMW = p => p.tech === 'coal' ? p.mw * coalMin(p) : 0;
+  function stackOf(S, p) { return p.bid === 'custom' ? fillBands(p.bands.mw, flexMW(p)) : presetMW(S, p, flexMW(p)); }
+  // What the plant would run at this price if it could move freely: its base plus every band at or below it.
+  function stackTarget(S, p, price) {
+    if (!p.bands) freshBands(S, p);
+    const mw = stackOf(S, p);
+    return Math.min(p.mw, baseMW(p) + mw.reduce((a, m, i) => a + (p.bands.prices[i] <= price ? m : 0), 0));
+  }
+  // Offer the part of a plant's stack between output levels `from` and `to`. The stack is its base
+  // (coal's minimum load) and then its bands in price order. Below `from` the plant must run (its
+  // minimum, as far as it can ramp down this interval, or a gas plant's stable load in its minimum
+  // run), offered at the floor. Each MW above is offered at the price of the band that covers it,
+  // so a unit running in its $300 band ramps down when the price is below $300.
+  function offerSlice(S, p, base, from, to, supply) {
+    if (!p.bands) freshBands(S, p);
+    if (from > 0.05) supply.push({ mw: from, price: FLOOR, tech: p.tech, owner: 'player', ref: p, mustRun: true });
+    if (to <= from + 0.05) return;
+    const mw = stackOf(S, p);
+    let level = base;
+    for (let i = 0; i < NB; i++) {
+      const lo = Math.max(level, from), hi = Math.min(level + mw[i], to);
+      if (hi - lo > 0.05) supply.push({ mw: hi - lo, price: p.bands.prices[i], tech: p.tech, owner: 'player', ref: p, band: i });
+      level += mw[i];
+    }
+  }
   function offerBands(S, p, avail, supply) {
     if (!p.bands) freshBands(S, p);
     const mw = bandMW(S, p, avail);
@@ -408,7 +437,7 @@ const Sim = (() => {
   // Set a band's price for tomorrow / its MW now. Returns the value used (clamped, kept in order).
   function setBandPrice(S, p, stack, i, price) {
     const B = stack === 'g' ? p.bands : p.sbands[stack];
-    if (stack === 'g' && p.bid !== 'custom') { p.bands.mw = presetMW(S, p, p.mw); p.bid = 'custom'; }
+    if (stack === 'g' && p.bid !== 'custom') { p.bands.mw = presetMW(S, p, flexMW(p)); p.bid = 'custom'; }
     if (stack !== 'g') p.strategy = 'custom';
     const next = (B.next || B.prices).slice();
     const lo = i > 0 ? next[i - 1] + 1 : FLOOR, hi = i < NB - 1 ? next[i + 1] - 1 : CAP;
@@ -418,11 +447,12 @@ const Sim = (() => {
   }
   function setBandMW(S, p, stack, i, mw) {
     const B = stack === 'g' ? p.bands : p.sbands[stack];
-    if (stack === 'g' && p.bid !== 'custom') { p.bands.mw = presetMW(S, p, p.mw); p.bid = 'custom'; }
+    if (stack === 'g' && p.bid !== 'custom') { p.bands.mw = presetMW(S, p, flexMW(p)); p.bid = 'custom'; }
     if (stack !== 'g') p.strategy = 'custom';
     // raising a band moves MW out of the others, fullest band first, so the stack never exceeds the plant
-    B.mw[i] = Math.max(0, Math.min(mw, p.mw));
-    let over = B.mw.reduce((a, v) => a + v, 0) - p.mw;
+    const cap = stack === 'g' ? flexMW(p) : p.mw;
+    B.mw[i] = Math.max(0, Math.min(mw, cap));
+    let over = B.mw.reduce((a, v) => a + v, 0) - cap;
     while (over > 1e-9) {
       let k = -1; for (let j = 0; j < NB; j++) if (j !== i && B.mw[j] > 0 && (k < 0 || B.mw[j] > B.mw[k])) k = j;
       if (k < 0) break;
@@ -509,18 +539,14 @@ const Sim = (() => {
         if (mw > 0.1) offerBands(S, p, mw, supply);
       } else if (T.kind === 'thermal') {
         if (p.tech === 'coal') {
-          const minLoad = p.upg ? 0.3 : T.minLoad, ramp = p.upg ? T.ramp * 2 : T.ramp;
-          const min = p.mw * minLoad;
+          const ramp = p.upg ? T.ramp * 2 : T.ramp, min = baseMW(p);
           const up = forecast ? p.mw : Math.min(p.mw, (p.last ?? min) + p.mw * ramp), down = forecast ? min : Math.max(min, (p.last ?? min) - p.mw * ramp);
-          supply.push({ mw: down, price: FLOOR, tech: 'coal', owner: 'player', ref: p });   // must run: its minimum load
-          if (up > down) offerBands(S, p, up - down, supply);
+          offerSlice(S, p, min, down, up, supply);
         } else {
           const mw = T.ramp && !forecast ? Math.min(p.mw, (p.last ?? 0) + p.mw * T.ramp) : p.mw;
           if (T.startCost && p.onFor != null && p.onFor < T.minRun && !forecast) {
             // started and still inside its minimum run: it holds its stable load whatever the price
-            const must = Math.min(mw, p.mw * T.stableLoad);
-            supply.push({ mw: must, price: FLOOR, tech: p.tech, owner: 'player', ref: p, mustRun: true });
-            if (mw > must) offerBands(S, p, mw - must, supply);
+            offerSlice(S, p, 0, Math.min(mw, p.mw * T.stableLoad), mw, supply);
           } else offerBands(S, p, mw, supply);
         }
       } else {   // storage
@@ -1530,7 +1556,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { flexMW, baseMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

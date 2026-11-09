@@ -434,6 +434,33 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8e. A coal unit's page: the bid chart is drawn when it opens, Right now explains the minimum and
+//      the ramp, the Min row and Now column show what's running.
+  {
+    const p = await page();
+    await newCompany(p, 'standard');
+    const id = await state(p, () => {
+      const M = MeritOrder, S = M.state; M.setSpeed(0); S.cash = 3e6;
+      const r = S.rivals.find(x => x.tech === 'coal' && x.id !== 'bh1');
+      S.offer = { type: 'coal', rival: r.id, price: 500000, expires: S.t + 288, text: '' }; M.Sim.acceptOffer(S);
+      const c = S.plants.find(x => x.tech === 'coal'); c.bid = 'custom';
+      c.bands.prices = [-1000, 0, 32, 42, 300, 301, 600, 1000, 5000, 23200]; c.bands.mw = [0, 0, 260, 0, 103, 0, 0, 0, 0, 0]; c.last = 660;
+      for (let k = 0; k < 2; k++) M.Sim.step(S);
+      M.renderAll(); return c.id;
+    });
+    await p.click(`[data-plant="${id}"]`); await p.waitForTimeout(300);
+    const blank = await p.$eval('#stk-g', c => { const x = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < x.length; i += 4) if (x[i]) return false; return true; });
+    check('a plant\'s bid chart is drawn as soon as its page opens', !blank);
+    const now = await p.textContent('#p-now');
+    check('Right now explains the minimum load and the ramp', /Minimum load/.test(now) && /Ramping down/.test(now), now.replace(/\s+/g, ' ').slice(0, 160));
+    const run = await state(p, i => Math.round(MeritOrder.state.plants.find(x => x.id === i).now), id);
+    const shown = await p.$$eval('#p-bid td.now b', xs => xs.reduce((a, x) => a + parseFloat(x.textContent.replace(/[^0-9.]/g, '')) * (/GW/.test(x.textContent) ? 1000 : 1), 0));
+    check('the Min row and Now column add up to what it runs', Math.abs(shown - run) <= 2 && !!(await p.$('#sn-min')), `${shown} vs ${run} MW`);
+    check('the card says what it\'s doing', /ramping down/.test(await p.textContent(`[data-plant="${id}"]`)));
+    await shot(p, 'coal-now');
+    await p.context().close();
+  }
+
   // 9. Design a plant: a custom battery at a chosen site; a hydro valley can only be used once.
   {
     const p = await page();
