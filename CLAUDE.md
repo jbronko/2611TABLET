@@ -58,7 +58,8 @@ tools/tap-sweep.js  tap every button on every screen of an app; report errors, u
 
 ## Merit Order tests
 
-Merit Order (`merit-order/`) has its own checks in `merit-order/test/` (not precached, not needed offline):
+Merit Order (`merit-order/`) has its own notes in `merit-order/CLAUDE.md` (how the game works, balance
+targets, lessons) and its own checks in `merit-order/test/` (not precached, not needed offline):
 
 - `node merit-order/test/engine.js` and `node merit-order/test/ui.js` must both pass before pushing
   changes to Merit Order (`ui.js --shots <folder>` also saves screenshots).
