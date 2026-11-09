@@ -45,7 +45,7 @@
   .btn-primary { background: var(--amber); color: var(--amber-ink); }
   .btn-quiet { background: var(--raise); border: 1px solid var(--line-2); }
   .btn:disabled { opacity: 0.45; cursor: default; transform: none; }
-  .btn.small { min-height: 40px; padding: 0 14px; font-size: 14px; }
+  .btn.small { min-height: 44px; padding: 0 14px; font-size: 14px; }
   .head-actions { display: flex; align-items: center; gap: 12px; }
   .deal { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; align-items: center; padding: 14px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); margin-bottom: 10px; }
   .deal b { font-size: 16px; }
@@ -86,7 +86,7 @@
   ol.timeline li { display: grid; grid-template-columns: 5.5em 1fr; gap: 10px; padding: 9px 10px; border-radius: 10px; font-size: 14px; }
   ol.timeline li span { color: var(--ink-2); } ol.timeline li small { display: block; color: var(--ink-3); margin-top: 2px; }
   ol.timeline li.done { opacity: 0.6; } ol.timeline li.now { background: rgba(242, 163, 58, 0.12); border: 1px solid rgba(242, 163, 58, 0.45); }
-  button.chip { cursor: pointer; min-height: 36px; } .chip.warn { border-color: rgba(242, 163, 58, 0.55); } .chip.warn svg { color: var(--amber); }
+  button.chip { cursor: pointer; min-height: 44px; } .chip.warn { border-color: rgba(242, 163, 58, 0.55); } .chip.warn svg { color: var(--amber); }
   .upgrade b { font-size: 15.5px; } .upgrade p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
   .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
 
@@ -126,7 +126,7 @@
   .brand .who b { font-size: 16px; font-weight: 750; font-stretch: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .brand .who span { font-size: 13px; color: var(--ink-2); }
   .speed { display: flex; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 3px; gap: 2px; margin-left: auto; }
-  .speed button { min-width: 46px; height: 38px; border-radius: 9px; font-weight: 750; font-size: 14px; color: var(--ink-2); display: grid; place-items: center; }
+  .speed button { min-width: 46px; height: 44px; border-radius: 9px; font-weight: 750; font-size: 14px; color: var(--ink-2); display: grid; place-items: center; }
   .speed button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink); }
   .cash { display: grid; justify-items: end; line-height: 1.1; }
   .cash b { font-size: 24px; font-weight: 800; font-stretch: 85%; }
@@ -195,7 +195,7 @@
   .tooltip { position: fixed; z-index: 25; pointer-events: none; max-width: 260px; padding: 8px 11px; border-radius: 10px; background: #050f13; border: 1px solid var(--line-2); font-size: 13px; color: var(--ink); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
   .tooltip b { display: block; font-size: 13.5px; }
   .tooltip span { color: var(--ink-2); }
-  .toast { position: fixed; z-index: 45; left: 50%; top: max(16px, var(--st)); transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; background: #050f13; border: 1px solid var(--line-2); font-weight: 650; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); transition: opacity 0.4s; }
+  .toast { position: fixed; z-index: 45; pointer-events: none; left: 50%; top: max(16px, var(--st)); transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; background: #050f13; border: 1px solid var(--line-2); font-weight: 650; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); transition: opacity 0.4s; }
 
   /* ---------- sheets ---------- */
   .backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(2, 10, 13, 0.62);
@@ -214,7 +214,7 @@
   .stats { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 13px; }
   .stats dt { color: var(--ink-2); } .stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
   .sizes { display: flex; gap: 6px; flex-wrap: wrap; }
-  .sizes button { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-2); font-weight: 700; font-size: 13.5px; color: var(--ink-2); }
+  .sizes button { min-height: 44px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-2); font-weight: 700; font-size: 13.5px; color: var(--ink-2); }
   .sizes button[aria-pressed="true"] { border-color: var(--amber); color: var(--ink); background: rgba(242, 163, 58, 0.14); }
   .card .lock { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
   .card .btn-quiet { min-height: 44px; }
@@ -241,7 +241,7 @@
   .bidbox input { font: inherit; font-weight: 700; color: var(--ink); background: transparent; border: 0; width: 7ch; min-height: 46px; text-align: right; font-variant-numeric: tabular-nums; padding: 0 8px 0 2px; -moz-appearance: textfield; }
   .bidbox input::-webkit-inner-spin-button, .bidbox input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .bidbox input:focus { outline: none; }
-  .pm { min-width: 40px; min-height: 40px; border-radius: 9px; background: var(--raise); color: var(--ink); font-weight: 750; font-size: 17px; }
+  .pm { min-width: 44px; min-height: 44px; border-radius: 9px; background: var(--raise); color: var(--ink); font-weight: 750; font-size: 17px; }
   .bidnote { color: var(--bad); }
   table.stack td { vertical-align: middle; padding: 5px 4px; } table.stack td:first-child { color: var(--ink-3); width: 2.5em; }
   table.stack .bidbox { min-height: 44px; } table.stack .bidbox input { min-height: 42px; width: 7.5ch; }
@@ -330,7 +330,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 17</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 18</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -403,7 +403,7 @@
   <div class="actions"><button type="button" class="btn btn-quiet" id="offer-no">No thanks</button><button type="button" class="btn btn-primary" id="offer-yes">Accept</button></div>
 </div>
 <div class="tooltip" id="tip" hidden></div>
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <!-- Sheets -->
 <div class="backdrop" id="sh-build" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="b-title">

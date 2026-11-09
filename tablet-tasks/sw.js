@@ -3,7 +3,7 @@
 // from the network in the background, so updates appear on the next launch.
 // Bump VERSION whenever you change the list of files below.
 const APP = 'tablet-tasks';
-const VERSION = 3;
+const VERSION = 4;
 const CACHE = `${APP}-v${VERSION}`;
 const PRECACHE = [
   './',

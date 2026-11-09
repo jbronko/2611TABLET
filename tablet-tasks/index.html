@@ -48,12 +48,13 @@
     display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px;
     background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px;
   }
-  li input[type=checkbox] { width: 26px; height: 26px; accent-color: var(--accent); flex: none; }
+  li input[type=checkbox] { width: 26px; height: 26px; margin: 0; accent-color: var(--accent); flex: none; }
+  .tick { display: grid; place-items: center; width: 48px; height: 48px; margin: -8px -6px -8px -14px; flex: none; cursor: pointer; }
   li span { flex: 1; overflow-wrap: anywhere; }
   li.done span { color: var(--done); text-decoration: line-through; }
   .del { background: transparent; color: var(--muted); font-size: 24px; padding: 0 14px; }
   .footer { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 16px; margin-top: 12px; }
-  .footer button { background: transparent; color: var(--muted); min-height: 40px; padding: 0 8px; }
+  .footer button { background: transparent; color: var(--muted); min-height: 48px; padding: 0 8px; }
   .updates { margin: 28px 0 0; text-align: center; }
   .updates button { background: transparent; border: 0; color: var(--muted); min-height: 44px; padding: 0 12px; text-decoration: underline; text-underline-offset: 3px; }
   .empty { color: var(--muted); text-align: center; padding: 32px 0; }
@@ -110,12 +111,14 @@
       const cb = document.createElement('input');
       cb.type = 'checkbox'; cb.checked = t.done; cb.setAttribute('aria-label', 'Mark done');
       cb.onchange = () => { t.done = cb.checked; update(); };
+      const tick = document.createElement('label');   // a finger-sized area around the box
+      tick.className = 'tick'; tick.append(cb);
       const span = document.createElement('span');
       span.textContent = t.text;
       const del = document.createElement('button');
       del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', 'Delete task');
       del.onclick = () => { tasks = tasks.filter(x => x !== t); update(); };
-      li.append(cb, span, del);
+      li.append(tick, span, del);
       return li;
     }));
     $('empty').hidden = shown.length > 0;

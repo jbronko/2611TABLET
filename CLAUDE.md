@@ -16,6 +16,7 @@ _template/          starting point for new apps (placeholders like __APP_NAME__)
 tools/new-app.js    copy the template into <slug>/, fill placeholders, make icons, add to apps.json
 tools/make-icons.js render <slug>/icon.svg into <slug>/icons/*.png
 tools/check-pwa.js  verify an app: manifest, service worker, installable, works offline, no errors
+tools/tap-sweep.js  tap every button on every screen of an app; report errors, unreachable or dead taps
 <slug>/             one folder per app: index.html, manifest.webmanifest, sw.js, icon.svg, icons/
 ```
 
@@ -34,7 +35,10 @@ tools/check-pwa.js  verify an app: manifest, service worker, installable, works 
 3. Redraw `<slug>/icon.svg` for the app: full-bleed 512×512, important parts inside the middle circle
    (radius 205). Then `node tools/make-icons.js <slug>`.
 4. Test the app's own behaviour in Playwright (Chromium is preinstalled; `require('playwright')`),
-   then `node tools/check-pwa.js <slug>` must print "All checks passed".
+   then `node tools/check-pwa.js <slug>` must print "All checks passed" and
+   `node tools/tap-sweep.js <slug>` (and with `--portrait`) must report no errors, unreachable
+   buttons or dead taps. A tap that rightly changes nothing visible goes in its `ALLOW` list with
+   the reason; if the app has deeper screens, add a starting point for them to its `SEEDS`.
 5. Commit and push. GitHub Pages deploys from `main`, so the app goes live once the commit is on
    `main` (merge the working branch into `main`, or open a pull request for the owner to merge).
 
