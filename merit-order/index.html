@@ -333,7 +333,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 19</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 20</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -1675,8 +1675,10 @@
         }
         if (n === 6) acc = 0;
       }
-      if (S.t !== lastDrawnT) { renderAll(); if (openId === 'plant') renderPlantSheetLive(); }
-      if (S.t !== lastDrawnT || meritAnimating || resized) { meritAnimating = drawMerit($('c-merit'), S); resized = false; }
+      // renderAll() marks this moment as drawn, so decide before calling it whether it's new
+      const fresh = S.t !== lastDrawnT;
+      if (fresh) { renderAll(); if (openId === 'plant') renderPlantSheetLive(); }
+      if (fresh || meritAnimating || resized) { meritAnimating = drawMerit($('c-merit'), S); resized = false; }
       tickCash();
       if (t - lastSave > 20000) { lastSave = t; save(); }
     } else if (scene === 'title' && demo) {

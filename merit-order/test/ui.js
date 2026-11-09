@@ -70,6 +70,13 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#welcome-ok');
     await p.click('[data-speed="1"]');
     check('…and the pulse stops once the clock runs', !(await p.$eval('.speed', x => x.classList.contains('waiting'))));
+    // the merit order chart redraws live as the market moves, not just while its bars animate
+    await state(p, () => MeritOrder.setSpeed(16)); await p.waitForTimeout(1500);
+    const shot1 = await p.evaluate(() => [MeritOrder.state.t, document.getElementById('c-merit').toDataURL()]);
+    await p.waitForTimeout(1500);
+    const shot2 = await p.evaluate(() => [MeritOrder.state.t, document.getElementById('c-merit').toDataURL()]);
+    await state(p, () => MeritOrder.setSpeed(0));
+    check('the merit order chart updates live', shot2[0] > shot1[0] && shot2[1] !== shot1[1], `${shot2[0] - shot1[0]} intervals apart`);
     await p.click('#add-plant'); await p.waitForTimeout(200); await shot(p, 'build');
     await p.click('[data-build="solar"]'); await p.waitForTimeout(200);
     check('building a plant', (await state(p, () => MeritOrder.state.plants.length)) === 1);
