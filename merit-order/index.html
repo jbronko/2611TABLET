@@ -677,7 +677,7 @@
     $('clock').textContent = `${S.challenge ? `Challenge day ${dl.day} of 30` : sc ? `${sc.name} · day ${Math.min(dl.day, sc.days)} of ${sc.days}` : `Day ${dl.day}`} · ${dl.date} · ${dl.time}`;
     $('co-name').textContent = S.company || 'Your company';
     const t = S.today;
-    const pl = t.revenue - t.costs + t.fcas + (t.contracts || 0) - t.penalties - (t.repairs || 0) - (t.interest || 0) + t.bonus;
+    const pl = t.revenue - t.costs + t.fcas + (t.contracts || 0) + (t.certs || 0) - (t.starts || 0) - t.penalties - (t.repairs || 0) - (t.interest || 0) + t.bonus;
     $('today-pl').innerHTML = `<svg class="i" style="width:15px;height:15px"><use href="#i-${pl >= 0 ? 'up' : 'down'}"/></svg>Today ${fmtMoney(pl)}`;
     $('today-pl').className = `num ${pl >= 0 ? 'up' : 'down'}`;
   }
@@ -1022,12 +1022,14 @@
     let bid = '';
     const stackNote = '<p class="note">Ten bands, cheapest first, as in the NEM. Moving MW between bands is a rebid and applies now (raising one band takes MW from the fullest other band); new band prices apply from tomorrow. Changing anything here switches to Custom.</p>';
     if (T.kind === 'vre') {
-      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['always', 'Always run', 'bid −$1,000'], ['nonneg', 'Avoid negative prices', 'bid $0'], ['custom', 'Custom', 'your bands']])}
-        <p class="note">Bidding −$1,000 means you always run, even when the price goes negative and you pay to generate.</p>
+      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['always', 'Always run', 'bid −$1,000'], ['nonneg', 'Run while it pays', `bid −$${Sim.CERT}`], ['custom', 'Custom', 'your bands']])}
+        <p class="note">Every MWh you sell also earns a renewable certificate worth $${Sim.CERT}, so running pays until the price falls below −$${Sim.CERT}. Bidding −$1,000 means you always run, even when that costs you.</p>
         <h3>Bid stack</h3>${stackBlock(p, 'g')}${stackNote}`;
     } else if (T.kind === 'thermal') {
       const vc = Sim.vcOf(S, p);
-      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['cost', 'Cover running costs', fmtPrice(vc)], ['peak', 'Peaks only', fmtPrice(Math.max(300, vc * 2.5))], ['ladder', 'Ladder', 'cost, $300, $1k'], ['custom', 'Custom', 'your bands']])}
+      const sm = T.startMargin || 0;
+      bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['cost', sm ? 'Cover costs and start-ups' : 'Cover running costs', fmtPrice(vc + sm)], ['peak', 'Peaks only', fmtPrice(Math.max(300, vc * 2.5))], ['ladder', 'Ladder', 'cost, $300, $1k'], ['custom', 'Custom', 'your bands']])}
+        ${T.startCost ? `<p class="note">Each start costs ${fmtMoney(T.startCost * p.mw)} (wear and fuel to warm up), and once started it runs at least ${T.minRun * 5 >= 60 ? `${T.minRun * 5 / 60} hours` : `${T.minRun * 5} minutes`} at ${Math.round(T.stableLoad * 100)}% or more, whatever the price. ${(p.today && p.today.starts) || 0} start${(p.today && p.today.starts) === 1 ? '' : 's'} today. "Peaks only" starts least but runs least.</p>` : ''}
         ${p.tech === 'coal' ? `<p class="note">Coal must keep ${p.upg ? 30 : 45}% running at all times (offered at −$1,000) and changes output slowly. The bands below are for the rest.</p>` : ''}
         <h3>Bid stack</h3>${stackBlock(p, 'g')}${stackNote}`;
     } else {
@@ -1059,6 +1061,8 @@
         <span class="num">${p.paidBack != null ? `Paid for itself on day ${p.paidBack + 1}` : `Paid back ${Math.max(0, Math.round(frac * 100))}%`} of its ${fmtMoney(p.capital)} capital cost${p.upg ? ' (including its upgrade)' : ''}</span></div>
       <table class="res"><tbody>
         ${row('Energy sales', L.sales)}
+        ${T.kind === 'vre' ? row('Renewable certificates', L.certs || 0) : ''}
+        ${T.startCost ? row('Start-ups', -(L.starts || 0)) : ''}
         ${T.kind === 'storage' ? row('Charging', -L.charging) : ''}
         ${T.kind !== 'vre' ? row(T.kind === 'storage' ? 'Running costs' : 'Fuel and running costs', -L.fuel) : ''}
         ${T.fcas ? row('Frequency control', L.fcas) : ''}
@@ -1237,7 +1241,7 @@
       ${days.length >= 2 ? `<h3>Company value by day</h3><canvas class="chart" id="c-value" data-h="150" aria-label="Company value at the end of each day"></canvas>
       <h3>Profit by day</h3><canvas class="chart" id="c-profit" data-h="130" aria-label="Profit or loss each day"></canvas>` : '<p class="note">Charts appear after two full days.</p>'}
       ${days.length ? `<h3>Accounts, last ${days.length} day${days.length > 1 ? 's' : ''}</h3><table class="res"><tbody>
-        ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control: raise', days.reduce((a, d) => a + (d.fcasRaise ?? d.fcas ?? 0), 0))}${line('Frequency control: lower', sum('fcasLower'))}${line('Contracts', sum('contracts'))}
+        ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control: raise', days.reduce((a, d) => a + (d.fcasRaise ?? d.fcas ?? 0), 0))}${line('Frequency control: lower', sum('fcasLower'))}${line('Renewable certificates', sum('certs'))}${line('Start-ups', -sum('starts'))}${line('Contracts', sum('contracts'))}
         ${line('Upkeep', -sum('upkeep'))}${line('Repairs', -sum('repairs'))}${line('Interest', -sum('interest'))}${line('Fines', -sum('penalties'))}${line('Bonuses', sum('bonus'))}${line('Profit', sum('profit'), true)}
       </tbody></table><p class="note">Building costs, sales of plant and goal rewards aren't counted in profit.</p>` : ''}
       ${stationTable()}`);
@@ -1324,6 +1328,7 @@
   function showHelp() {
     info('How it works', `
       <p><b style="color:var(--ink)">Every five minutes the market runs a dispatch.</b> Each generator offers its megawatts at a price. The offers are stacked cheapest first (the merit order) until demand is met, and the last offer needed sets the price that everyone running is paid.</p>
+      <p><b style="color:var(--ink)">Real plant costs:</b> gas plants pay to start (wear and fuel to warm up) and, once started, must run for a minimum time: half an hour for a peaker, four hours for a combined-cycle plant, even if prices drop. So a peaker does best bidding a little above its running cost. Wind and solar earn a renewable certificate (like the NEM's LGCs) on every MWh they sell, so it can pay to keep running at small negative prices.</p>
       <p><b style="color:var(--ink)">Bid stacks:</b> like real NEM offers, each plant bids in ten price bands. The presets fill them for you; Custom lets you set each band. Band prices are fixed for the day, so new prices start tomorrow, but you can move MW between bands at any time (a rebid).</p>
       <p><b style="color:var(--ink)">So your bid decides when you run, not what you're paid.</b> Bid low and you run more often at whatever price the market sets. Bid high and you only run when prices are high.</p>
       <p><b style="color:var(--ink)">Demand has a rhythm.</b> Rooftop solar makes middays cheap, sometimes negative. Evenings are the peak. Heatwaves, cold snaps, still weeks and breakdowns create spikes up to the price cap.</p>

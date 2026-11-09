@@ -20,9 +20,9 @@ const Sim = (() => {
                blurb: 'Runs day and night while it blows, including the evening peak. Still weeks hurt.' },
     battery: { name: 'Battery', short: 'Battery', color: '#9085e9', sizes: [25, 50, 100], range: [5, 400], hours: 2, hoursRange: [0.5, 8], connect: 25000, capexMW: 3000, capexMWh: 2500, capex: 9000, build: 1.5, upkeep: 18, upkeepMW: 10, upkeepMWh: 4, vc: 5, eff: 0.86, kind: 'storage', fcas: true, fcasLower: true,
                blurb: 'Charges when power is cheap and sells into the peak. The best at frequency control.' },
-    peaker:  { name: 'Gas peaker', short: 'Peaker', color: '#d95926', sizes: [50, 150, 300], range: [20, 600], connect: 50000, capexMW: 10000, capex: 11000, build: 3, upkeep: 22, vc: 150, emis: 0.6, kind: 'thermal', fcas: true, fcasLower: true, outage: 0.006,
+    peaker:  { name: 'Gas peaker', short: 'Peaker', color: '#d95926', sizes: [50, 150, 300], range: [20, 600], connect: 50000, capexMW: 12500, capex: 11000, build: 3, upkeep: 22, vc: 150, emis: 0.6, kind: 'thermal', fcas: true, fcasLower: true, outage: 0.006, startCost: 25, minRun: 6, stableLoad: 0.3, startMargin: 30,
                blurb: 'Dear to run, but on in minutes when prices spike. Insurance for heatwaves.' },
-    ccgt:    { name: 'Combined-cycle gas', short: 'CCGT', color: '#d95926', sizes: [200, 400], range: [100, 800], connect: 200000, capexMW: 20000, capex: 21000, build: 6, upkeep: 45, vc: 82, emis: 0.38, kind: 'thermal', ramp: 0.25, fcasLower: true, outage: 0.008,
+    ccgt:    { name: 'Combined-cycle gas', short: 'CCGT', color: '#d95926', sizes: [200, 400], range: [100, 800], connect: 200000, capexMW: 20000, capex: 21000, build: 6, upkeep: 45, vc: 82, emis: 0.38, kind: 'thermal', ramp: 0.25, fcasLower: true, outage: 0.008, startCost: 90, minRun: 48, stableLoad: 0.4, startMargin: 12,
                blurb: 'Efficient gas for long evening and winter peaks. Pays when prices sit above $80.' },
     hydro:   { name: 'Pumped hydro', short: 'Hydro', color: '#3987e5', sizes: [250, 500], range: [100, 1000], hours: 8, capexMW: 8000, capex: 19000, build: 10, upkeep: 35, upkeepMW: 25, upkeepMWh: 1.25, vc: 3, eff: 0.78, kind: 'storage', fcas: true, fcasLower: true,
                blurb: 'Pumps water uphill when power is cheap and runs it back down for hours of firm supply.' },
@@ -30,6 +30,8 @@ const Sim = (() => {
                blurb: 'Cheap power around the clock, but slow to change output, prone to breakdowns and heavy on emissions.' },
   };
   const OTHER = { name: 'Other', short: 'Other', color: '#6f828c' };
+  // Renewable certificates (like the NEM's LGCs): wind and solar earn this on every MWh they sell.
+  const CERT = 10;
 
   // ---- sites: where you build changes what you get ----
   // mlf: marginal loss factor (each MWh is paid price x mlf, and offers rank at offer / mlf, as in the
@@ -183,15 +185,15 @@ const Sim = (() => {
   }
   function freshDay() {
     return { price: [], demand: [], mine: [], revenue: 0, costs: 0, fcas: 0, energy: 0, regionEnergy: 0, emis: 0, maxP: null, minP: null,
-      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0 };
+      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0, certs: 0, starts: 0 };
   }
   // Older saves: fill in fields added since they were made.
   function migrate(S) {
     S.contracts ||= []; S.difficulty ||= 'standard';
     if (!S.contractOffers) makeContractOffers(S);
-    for (const k of ['contracts', 'repairs', 'interest', 'capPay', 'fcasRaise', 'fcasLower']) S.today[k] ??= 0;
+    for (const k of ['contracts', 'repairs', 'interest', 'capPay', 'fcasRaise', 'fcasLower', 'certs', 'starts']) S.today[k] ??= 0;
     for (const p of S.plants) {
-      p.life ||= freshLife(); p.capital ??= p.value || 0;
+      p.life ||= freshLife(); p.capital ??= p.value || 0; p.life.certs ??= 0; p.life.starts ??= 0;
       if (!p.site) { p.site = 'legacy'; p.mlf = 1; p.res = 1; }
       if (p.fcasRaise === undefined && TECH[p.tech].fcas) p.fcasRaise = p.fcas !== false;
       if (p.fcasLower === undefined && TECH[p.tech].fcasLower) p.fcasLower = true;
@@ -322,9 +324,9 @@ const Sim = (() => {
   }
   function presetPrices(S, p) {
     const T = TECH[p.tech];
-    if (T.kind === 'vre') return ascend([FLOOR, -100, -30, 0, 30, 60, 100, 300, 1000, CAP]);
+    if (T.kind === 'vre') return ascend([FLOOR, -100, -CERT, 0, 30, 60, 100, 300, 1000, CAP]);
     const v = Math.round(vcOf(S, p));
-    return ascend([FLOOR, 0, v, v * 1.3, 300, Math.max(300, v * 2.5), 600, 1000, 5000, CAP].sort((a, b) => a - b));   // the presets' prices are all here
+    return ascend([FLOOR, 0, v, T.startMargin ? v + T.startMargin : v * 1.3, 300, Math.max(300, v * 2.5), 600, 1000, 5000, CAP].sort((a, b) => a - b));   // the presets' prices are all here
   }
   const STORE_PRICES = { d: [60, 90, 120, 150, 200, 300, 500, 1000, 5000, CAP], c: [FLOOR, -100, -20, 0, 20, 40, 60, 80, 100, 150] };
   function freshBands(S, p) {
@@ -340,10 +342,10 @@ const Sim = (() => {
     const place = (target, share) => { let i = B.prices.findIndex(x => x >= target - 1e-9); if (i < 0) i = NB - 1; out[i] += avail * share; };
     switch (p.bid) {
       case 'always': out[0] = avail; break;
-      case 'nonneg': place(0, 1); break;
+      case 'nonneg': place(-CERT, 1); break;   // run while price + certificate is above zero
       case 'peak': place(Math.max(300, vc * 2.5), 1); break;
       case 'ladder': place(Math.max(0, vc), 0.4); place(300, 0.3); place(1000, 0.3); break;
-      default: place(vc, 1);   // cover running costs
+      default: place(vc + (TECH[p.tech].startMargin || 0), 1);   // cover running costs and start-ups
     }
     return out;
   }
@@ -460,7 +462,12 @@ const Sim = (() => {
           if (up > down) offerBands(S, p, up - down, supply);
         } else {
           const mw = T.ramp && !forecast ? Math.min(p.mw, (p.last ?? 0) + p.mw * T.ramp) : p.mw;
-          offerBands(S, p, mw, supply);
+          if (T.startCost && p.onFor != null && p.onFor < T.minRun && !forecast) {
+            // started and still inside its minimum run: it holds its stable load whatever the price
+            const must = Math.min(mw, p.mw * T.stableLoad);
+            supply.push({ mw: must, price: FLOOR, tech: p.tech, owner: 'player', ref: p, mustRun: true });
+            if (mw > must) offerBands(S, p, mw - must, supply);
+          } else offerBands(S, p, mw, supply);
         }
       } else {   // storage
         const e = p.mw * hoursOf(p);
@@ -602,7 +609,7 @@ const Sim = (() => {
 
     // settle the player's money and storage
     const T = TECH, d = S.today;
-    let rev = 0, cost = 0, fcasRev = 0, mine = 0, emis = 0;
+    let rev = 0, cost = 0, fcasRev = 0, mine = 0, emis = 0, certs = 0, starts = 0;
     const out = new Map();
     for (const b of supply) {
       if (b.owner !== 'player') continue;
@@ -612,6 +619,7 @@ const Sim = (() => {
       rev += paid;
       cost += b.out * vcOf(S, p) * H;
       const L = p.life; L.sales += paid; L.fuel += b.out * vcOf(S, p) * H; L.energy += b.out * H;
+      if (t.kind === 'vre') { const cert = b.out * CERT * H; certs += cert; L.certs += cert; p.today.money += cert; }
       emis += b.out * emisOf(p) * H;
       mine += b.out;
       if (b.storage) p.soc = Math.max(0, p.soc - b.out * H);
@@ -631,6 +639,16 @@ const Sim = (() => {
     fcasRev = fcasR + fcasL;
     for (const p of S.plants) {
       const o = out.get(p) || 0;
+      // gas: a start costs money; once started it runs at least its minimum time
+      const G = T[p.tech];
+      if (G.startCost) {
+        if (!running(p)) p.onFor = null;
+        else if (o > 0.05) {
+          if (p.onFor == null) {
+            const c = G.startCost * p.mw; starts += c; p.life.starts += c; p.today.money -= c; p.today.starts = (p.today.starts || 0) + 1; p.onFor = 0;
+          } else p.onFor++;
+        } else if (p.onFor != null) { if (p.onFor >= G.minRun) p.onFor = null; else p.onFor++; }
+      }
       p.last = Math.max(0, o);
       p.now = o;
       if (running(p)) {
@@ -661,7 +679,8 @@ const Sim = (() => {
       k.pnl += v; hedge += v;
     }
 
-    S.cash += rev - cost + fcasRev + hedge;
+    S.cash += rev - cost + fcasRev + hedge + certs - starts;
+    d.certs += certs; d.starts += starts;
     d.revenue += rev; d.costs += cost; d.fcas += fcasRev; d.fcasRaise += fcasR; d.fcasLower += fcasL; d.emis += emis; d.contracts += hedge;
     d.capPay += Math.max(0, res.price - 300) * H;
     d.energy += Math.max(0, mine) * H; d.regionEnergy += c.demand * H;
@@ -733,10 +752,10 @@ const Sim = (() => {
     S.cash -= upkeep; d.upkeep = upkeep;
     // an overdraft costs interest every day
     if (S.cash < 0) { const i = Math.round(-S.cash * OVERDRAFT_RATE * diff(S).penalty); S.cash -= i; d.interest += i; }
-    const profit = d.revenue - d.costs + d.fcas + d.contracts - upkeep - d.penalties - d.repairs - d.interest + d.bonus;
+    const profit = d.revenue - d.costs + d.fcas + d.contracts + d.certs - d.starts - upkeep - d.penalties - d.repairs - d.interest + d.bonus;
     const priceSorted = [...d.price].sort((a, b) => a - b);
     const avg = d.price.reduce((a, b) => a + b, 0) / Math.max(1, d.price.length);
-    const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, fcasRaise: d.fcasRaise, fcasLower: d.fcasLower, contracts: d.contracts, repairs: d.repairs, interest: d.interest, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
+    const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, fcasRaise: d.fcasRaise, fcasLower: d.fcasLower, certs: d.certs, starts: d.starts, contracts: d.contracts, repairs: d.repairs, interest: d.interest, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
       avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus };
     S.days.push(rec);
     if (S.days.length > 3) { const old = S.days[S.days.length - 4]; delete old.price; delete old.demand; delete old.mine; }
@@ -826,8 +845,8 @@ const Sim = (() => {
   function overdraftLimit(S) { return 150000 + 0.3 * S.plants.reduce((a, p) => a + (p.status === 'building' ? 0 : p.value || 0), 0); }
 
   // ---- each plant's own accounts since it was built ----
-  const freshLife = () => ({ sales: 0, charging: 0, fuel: 0, fcas: 0, upkeep: 0, repairs: 0, energy: 0 });
-  function plantProfit(p) { const L = p.life; return L.sales - L.charging - L.fuel + L.fcas - L.upkeep - L.repairs; }
+  const freshLife = () => ({ sales: 0, charging: 0, fuel: 0, fcas: 0, upkeep: 0, repairs: 0, energy: 0, certs: 0, starts: 0 });
+  function plantProfit(p) { const L = p.life; return L.sales - L.charging - L.fuel + L.fcas + (L.certs || 0) - (L.starts || 0) - L.upkeep - L.repairs; }
   function retireRecord(S, p, salePrice) {
     (S.retired ||= []).unshift({ name: p.name, tech: p.tech, mw: p.mw, capital: p.capital, life: { ...p.life }, sold: salePrice, built: p.built, closed: S.t, paidBack: p.paidBack });
     if (S.retired.length > 20) S.retired.length = 20;
@@ -1072,7 +1091,7 @@ const Sim = (() => {
     const cost = priceOf(S, tech, mw, { site, mwh }), days = buildDays(tech, mw, site);
     S.cash -= cost;
     const p = { id: `p${S.t}_${S.plants.length}`, tech, mw, mwh, site, mlf: st.mlf, res: st.res ?? 1, name: nameFor(S, tech), status: 'building', buildLeft: days, buildDays: days, built: S.t, value: cost,
-      bid: T.kind === 'vre' ? 'nonneg' : T.kind === 'thermal' ? (tech === 'peaker' ? 'peak' : 'cost') : undefined,
+      bid: T.kind === 'vre' ? 'nonneg' : T.kind === 'thermal' ? 'cost' : undefined,
       strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mwh * 0.5 : 0, last: 0, fcasRaise: T.fcas ? true : undefined, fcasLower: T.fcasLower ? true : undefined, today: { energy: 0, money: 0 },
       capital: cost, life: freshLife() };
     freshBands(S, p);
@@ -1138,7 +1157,7 @@ const Sim = (() => {
   const SCENARIOS = [
     { id: 'first-light', name: 'First Light', days: 14, startDoy: 273, seed: 1101, cash: 600000, calm: true,
       blurb: 'Spring, a quiet market and $600k. Build your first plants and grow the company in two weeks.',
-      stars: [['Grow the company to $650k', r => r.value >= 650000], ['Grow it to $720k', r => r.value >= 720000], ['Grow it to $745k', r => r.value >= 745000]] },
+      stars: [['Grow the company to $650k', r => r.value >= 650000], ['Grow it to $745k', r => r.value >= 745000], ['Grow it to $775k', r => r.value >= 775000]] },
     { id: 'heatwave-week', name: 'Heatwave Week', days: 10, startDoy: 14, seed: 2202, cash: 300000,
       blurb: 'Two heatwaves are on the way. You own a 150 MW gas peaker and a 50 MW battery. Ride the spikes, and keep any reserve you promise.',
       plants: [['peaker', 150], ['battery', 50]], script: [{ day: 2, key: 'heatwave', len: 3 }, { day: 7, key: 'heatwave', len: 2 }],
@@ -1151,11 +1170,11 @@ const Sim = (() => {
       blurb: 'Midwinter. You own a 120 MW wind farm and have $1.5M. Gas is about to get very expensive, twice, and then the wind drops. Get ready.',
       plants: [['wind', 120]], unlock: ['wind', 'ccgt'],
       script: [{ day: 3, key: 'gascrunch', len: 5 }, { day: 5, key: 'cold', len: 3 }, { day: 10, key: 'gascrunch', len: 5 }, { day: 11, key: 'still', len: 4 }],
-      stars: [['Grow the company by $1.7M', r => r.gain >= 1700000], ['Grow it by $2.2M', r => r.gain >= 2200000], ['Grow it by $2.55M', r => r.gain >= 2550000]] },
+      stars: [['Grow the company by $1.8M', r => r.gain >= 1800000], ['Grow it by $2.45M', r => r.gain >= 2450000], ['Grow it by $2.75M', r => r.gain >= 2750000]] },
     { id: 'too-much-sun', name: 'Too Much Sun', days: 14, startDoy: 282, seed: 5505, cash: 300000, rooftop: 5200,
       blurb: 'Rooftop solar is everywhere and middays go deeply negative. You own 200 MW of solar, set to run whatever the price. Turn it into a business.',
       plants: [['solar', 200, { bid: 'always' }]],
-      stars: [['Make a profit', r => r.profit > 0], ['Grow the company by $280k', r => r.gain >= 280000], ['Grow it by $600k', r => r.gain >= 600000]] },
+      stars: [['Make a profit', r => r.profit > 0], ['Grow the company by $350k', r => r.gain >= 350000], ['Grow it by $600k', r => r.gain >= 600000]] },
     { id: 'big-build', name: 'The Big Build', days: 45, startDoy: 304, seed: 6606, cash: 3000000,
       blurb: '$3M, every technology but coal, and six weeks over summer. Build an empire.',
       unlock: ['wind', 'ccgt', 'hydro'],
@@ -1256,7 +1275,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, year, time: clock(hourOf(S)) };
   }
 
-  return { NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

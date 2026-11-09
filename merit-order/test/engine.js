@@ -48,7 +48,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   }
   const goals = Sim.GOALS.filter(g => S.goalsDone[g.id] !== undefined).reduce((a, g) => a + g.reward, 0);
   const t = S.today;
-  const ledger = S.days.reduce((a, r) => a + r.profit, 0) + t.revenue - t.costs + t.fcas + t.contracts - t.penalties - t.repairs - t.interest + t.bonus;
+  const ledger = S.days.reduce((a, r) => a + r.profit, 0) + t.revenue - t.costs + t.fcas + t.contracts + t.certs - t.starts - t.penalties - t.repairs - t.interest + t.bonus;
   const expect = start - capital + ledger + goals + (S.totals.sold || 0);   // forced sales by the bank aren't profit
   const repairs = S.days.reduce((a, r) => a + (r.repairs || 0), 0);
   check('money adds up (contracts, repairs, upgrades)', Math.abs(S.cash - expect) < 1,
@@ -62,6 +62,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     fcas: [sumL('fcas'), sumD('fcas') + t.fcas],
     upkeep: [sumL('upkeep'), sumD('upkeep')],
     repairs: [sumL('repairs'), sumD('repairs') + t.repairs],
+    certs: [sumL('certs'), sumD('certs') + t.certs],
+    starts: [sumL('starts'), sumD('starts') + t.starts],
   };
   const bad = Object.entries(lines).filter(([, [a, b]]) => Math.abs(a - b) > 1).map(([k, [a, b]]) => `${k} ${a.toFixed(0)}≠${b.toFixed(0)}`);
   check('each power station\'s accounts add up to the company\'s', !bad.length && Math.abs(all.reduce((a, p) => a + p.capital, 0) - capital) < 1,
@@ -213,8 +215,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   const pk = Sim.build(S, 'peaker', 50).plant, so = Sim.build(S, 'solar', 50).plant;
   for (const x of S.plants) { x.status = 'online'; x.buildLeft = 0; }
   const pkBands = () => Sim.step(S).supply.filter(b => b.ref === pk);
-  const peak = Sim.presetMW(S, pk, 50);
-  check('presets place their MW in the right band', pk.bands.prices[peak.findIndex(v => v > 0)] === Math.max(300, Math.round(Sim.vcOf(S, pk)) * 2.5) && Sim.presetMW(S, so, 30)[3] === 30);
+  pk.bid = 'peak'; const peak = Sim.presetMW(S, pk, 50);
+  check('presets place their MW in the right band', pk.bands.prices[peak.findIndex(v => v > 0)] === Math.max(300, Math.round(Sim.vcOf(S, pk)) * 2.5) && Sim.presetMW(S, so, 30)[so.bands.prices.indexOf(-Sim.CERT)] === 30);
   check('custom bands fill cheapest first up to what is available', Sim.fillBands([30, 0, 0, 0, 30, 0, 0, 0, 0, 0], 40).join() === '30,0,0,0,10,0,0,0,0,0' && Sim.fillBands([0, 20, 0, 0, 0, 0, 0, 0, 0, 30], 25, true).join() === '0,0,0,0,0,0,0,0,0,25');
   const top = peak.findIndex(v => v > 0);
   Sim.setBandMW(S, pk, 'g', 2, 20);
@@ -255,7 +257,36 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     return sum / n;
   };
   const base = evening(() => {}), withPeaker = evening(S => { Sim.build(S, 'peaker', 600, { site: 'gas-hub' }).plant.bid = 'cost'; });
-  check('your supply moves the price', base - withPeaker >= 15, `evening average $${base.toFixed(0)} without you, $${withPeaker.toFixed(0)} with a 600 MW peaker`);
+  check('your supply moves the price', base - withPeaker >= 10, `evening average $${base.toFixed(0)} without you, $${withPeaker.toFixed(0)} with a 600 MW peaker`);
+}
+
+// 17. Real plant costs: a start is charged once; a combined-cycle plant holds its stable load for its
+//     minimum run; certificates are paid on MWh sold; the default gas preset beats bidding at cost.
+{
+  const S = Sim.create(16, { cash: 1e9 }); Object.assign(S.unlocked, { ccgt: true });
+  const cc = Sim.build(S, 'ccgt', 200).plant, so = Sim.build(S, 'solar', 50).plant;
+  for (const x of S.plants) { x.status = 'online'; x.buildLeft = 0; }
+  let starts = 0, heldOK = true, certOK = true;
+  for (let k = 0; k < 6 * Sim.IPD; k++) {
+    const was = cc.onFor, s0 = cc.life.starts, c0 = so.life.certs;
+    const r = Sim.step(S);
+    if (was == null && cc.onFor === 0) { starts++; if (Math.abs(cc.life.starts - s0 - Sim.TECH.ccgt.startCost * 200) > 1e-6) heldOK = false; }
+    if (was != null && was < Sim.TECH.ccgt.minRun - 1 && cc.status === 'online' && (cc.onFor == null || !((cc.now || 0) > 0))) heldOK = false;   // never stops inside its minimum run
+    const sold = r.supply.filter(b => b.ref === so).reduce((a, b) => a + b.out, 0);
+    if (Math.abs(so.life.certs - c0 - sold * Sim.CERT * Sim.H) > 1e-6) certOK = false;
+  }
+  check('a gas start is charged once and the plant then holds its minimum run', starts > 0 && heldOK, `${starts} starts in 6 days`);
+  check('certificates are paid on every MWh of wind and solar sold', certOK && so.life.certs > 0);
+  // the default preset (running cost + a start-up margin) beats bidding exactly at running cost
+  const earn = custom => {
+    const T = Sim.create(3, { cash: 1e10 });
+    const pk = Sim.build(T, 'peaker', 150).plant; pk.status = 'online'; pk.buildLeft = 0;
+    if (custom) { pk.bid = 'custom'; pk.bands.mw = pk.bands.prices.map(v => v === Math.round(Sim.vcOf(T, pk)) ? 150 : 0); }
+    for (let k = 0; k < 40 * Sim.IPD; k++) Sim.step(T);
+    return Sim.plantProfit(pk);
+  };
+  const atCost = earn(true), preset = earn(false);
+  check('a peaker does better with a start-up margin than bidding at running cost', preset > atCost, `${Sim.fmtMoney(preset)} vs ${Sim.fmtMoney(atCost)} over 40 days`);
 }
 
 // 10. Speed: a big company's 7-day catch-up (what runs when the app opens after a week away).
