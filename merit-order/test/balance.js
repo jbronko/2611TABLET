@@ -82,9 +82,30 @@ const STRATS = {
   },
 };
 // Scenarios: play each one to its end with a strategy and report the stars.
-function runScenario(kind, id) {
+// Energy Transition players: build firm plant ahead of each closure and keep adding clean plant.
+STRATS.firm = {
+  day(S, d) {
+    for (const p of S.plants) { if (TECH[p.tech].kind === 'vre') p.bid = 'nonneg'; }
+    if (S.tender && !S.tender.accepted && !S.tender.declined) Sim.acceptTender(S);
+    const buffer = Math.max(100000, S.cash * 0.1);
+    const order = ['hydro', 'ldes', 'battery', 'peaker', 'wind', 'offshore', 'solar'];
+    for (let n = 0; n < 6; n++) {
+      let built = false;
+      for (const t of order) {
+        if (!S.unlocked[t]) continue;
+        for (const mw of [...TECH[t].sizes].reverse()) { if (S.cash - Sim.priceOf(S, t, mw) < buffer) continue; if (Sim.build(S, t, mw).ok) { built = true; break; } }
+        if (built) break;
+      }
+      if (!built) break;
+    }
+  },
+  offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
+};
+function runScenario(kind, id, report) {
   const S = Sim.createScenario(id), st = STRATS[kind];
-  for (let d = 0; d < 400 && !Sim.scenarioOver(S); d++) {
+  const maxDays = Sim.SCENARIOS.find(x => x.id === id).days + 5;
+  for (let d = 0; d < maxDays && !Sim.scenarioOver(S); d++) {
+    if (report && S.yearDays && d % S.yearDays === 0 && d) report(S, d);
     st.day(S, d);
     for (let k = 0; k < IPD && !Sim.scenarioOver(S); k++) { Sim.step(S); if (S.offer && S.offer !== S._seen) { S._seen = S.offer; st.offer(S); } }
   }
@@ -104,11 +125,25 @@ function run(kind, seed, difficulty, days) {
   return out;
 }
 module.exports = { run, runScenario, STRATS };
-if (require.main === module && process.argv[2] === '--scenarios') {
+if (require.main === module && process.argv[2] === '--transition') {
+  // node merit-order/test/balance.js --transition [strategies]
+  // Targets: idle 0 stars and the region runs short without the player; players who keep building
+  // firm and clean plant reach 3. Last run: idle 0 ($90M), steady 3 ($6.9B), firm 3 ($5.1B).
+  const kinds = (process.argv[3] || 'idle,steady,firm').split(',');
+  for (const kind of kinds) {
+    console.log(kind);
+    const r = runScenario(kind, 'energy-transition', (S, d) => {
+      const y = S.years[d / S.yearDays - 1];
+      if ((d / S.yearDays) % 2 === 0) console.log(`  year ${String(d / S.yearDays).padStart(2)} value ${Sim.fmtMoney(Sim.companyValue(S)).padStart(7)} plant ${String(Math.round(S.plants.reduce((a, p) => a + p.mw, 0))).padStart(6)} MW shortfall ${y.shedHours.toFixed(1).padStart(6)} h clean share ${(y.clean / Math.max(1, y.region) * 100).toFixed(0)}%`);
+    });
+    console.log(`  ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} value ${Sim.fmtMoney(r.value)} final-year shortfall ${r.finalShed.toFixed(0)} MWh, clean share ${(r.cleanShare * 100).toFixed(0)}%${r.bust ? ' BUST' : ''}`);
+  }
+} else if (require.main === module && process.argv[2] === '--scenarios') {
   // node merit-order/test/balance.js --scenarios [strategies]
   // Targets: idle at most 1 star, steady 1-2, savvy 2-3.
   const kinds = (process.argv[3] || 'idle,steady,savvy').split(',');
   for (const sc of Sim.SCENARIOS) {
+    if (sc.transition) continue;   // the 20-year scenario has its own mode: --transition
     console.log(`${sc.name} (${sc.days} days)`);
     for (const kind of kinds) {
       const r = runScenario(kind, sc.id);

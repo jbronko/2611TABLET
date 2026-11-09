@@ -82,6 +82,11 @@
   .starlist li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
   .starlist li::before { content: '☆'; color: var(--ink-3); font-family: system-ui, sans-serif; }
   .starlist li.ok::before { content: '★'; color: var(--amber); }
+  ol.timeline { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 2px; }
+  ol.timeline li { display: grid; grid-template-columns: 5.5em 1fr; gap: 10px; padding: 9px 10px; border-radius: 10px; font-size: 14px; }
+  ol.timeline li span { color: var(--ink-2); } ol.timeline li small { display: block; color: var(--ink-3); margin-top: 2px; }
+  ol.timeline li.done { opacity: 0.6; } ol.timeline li.now { background: rgba(242, 163, 58, 0.12); border: 1px solid rgba(242, 163, 58, 0.45); }
+  button.chip { cursor: pointer; min-height: 36px; } .chip.warn { border-color: rgba(242, 163, 58, 0.55); } .chip.warn svg { color: var(--amber); }
   .upgrade b { font-size: 15.5px; } .upgrade p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
   .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
 
@@ -422,6 +427,7 @@
     <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
     <button type="button" class="switch-row" id="m-tour"><span>Show me around<small>Restart the getting-started missions</small></span></button>
     <button type="button" class="switch-row" id="m-company"><span>Company report</span></button>
+    <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Transition timeline</span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
     <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
@@ -674,7 +680,8 @@
   function renderTop() {
     const dl = Sim.dateLabel(S);
     const sc = S.scenario && Sim.SCENARIOS.find(x => x.id === S.scenario.id);
-    $('clock').textContent = `${S.challenge ? `Challenge day ${dl.day} of 30` : sc ? `${sc.name} · day ${Math.min(dl.day, sc.days)} of ${sc.days}` : `Day ${dl.day}`} · ${dl.date} · ${dl.time}`;
+    $('clock').textContent = S.transition ? `Energy Transition · Year ${Math.min(dl.year, Sim.TRANSITION_YEARS)} of ${Sim.TRANSITION_YEARS} · ${dl.year > Sim.TRANSITION_YEARS ? 'Dec' : dl.month} · ${dl.time}`
+      : `${S.challenge ? `Challenge day ${dl.day} of 30` : sc ? `${sc.name} · day ${Math.min(dl.day, sc.days)} of ${sc.days}` : `Day ${dl.day}`} · ${dl.date} · ${dl.time}`;
     $('co-name').textContent = S.company || 'Your company';
     const t = S.today;
     const pl = t.revenue - t.costs + t.fcas + (t.contracts || 0) + (t.certs || 0) - (t.starts || 0) - t.penalties - (t.repairs || 0) - (t.interest || 0) + t.bonus;
@@ -688,13 +695,39 @@
     $('cash').textContent = fmtMoney(shownCash);
     $('cash').style.color = shownCash < 0 ? 'var(--bad)' : '';
   }
+  // The next milestone of the Energy Transition, and an open underwriting round.
+  function transitionChips() {
+    const y = Sim.yearOf(S) + 1, next = Sim.TRANSITION.find(e => e.year > y), out = [];
+    if (next) out.push(`<button type="button" class="chip soon" data-timeline><svg class="i"><use href="#i-flag"/></svg>Year ${next.year}: ${esc(next.text.split(/[.:](?:\s|$)/)[0])}</button>`);
+    const t = S.tender, open = t && Sim.dayIndex(S) <= t.until;
+    if (open && !t.accepted && !t.declined) out.push(`<button type="button" class="chip warn" data-tender><svg class="i"><use href="#i-info"/></svg>Underwriting round open: decide</button>`);
+    if (open && t.accepted && t.used < t.mw) out.push(`<span class="chip"><svg class="i"><use href="#i-good"/></svg>Underwriting: ${fmtMW(t.mw - t.used)} of new ${Sim.TENDER_KINDS[t.kind].name} left</span>`);
+    return out;
+  }
+  $('chips').addEventListener('click', e => {
+    if (e.target.closest('[data-timeline]')) openTimeline();
+    if (e.target.closest('[data-tender]')) tenderOpened(false);
+  });
+  // The year-by-year plan. From the scenario intro, st is a fresh scenario and back returns to the intro.
+  function openTimeline(st = S, back) {
+    const y = Sim.yearOf(st) + 1, years = [];
+    for (let k = 1; k <= Sim.TRANSITION_YEARS; k++) {
+      const ev = Sim.TRANSITION.filter(e => e.year === k), Y = st.years && st.years[k - 1];
+      const facts = Y && k < y ? `<small>${Y.shedHours > 0.05 ? `${Y.shedHours.toFixed(1)} hours short` : 'no shortfall'} · ${Math.round(Y.clean / Math.max(1, Y.region) * 100)}% of the region from your clean plant</small>` : '';
+      years.push(`<li class="${k < y ? 'done' : k === y && !back ? 'now' : ''}"><b>Year ${k}</b><span>${ev.length ? ev.map(e => esc(e.text)).join(' ') : 'Demand grows; rivals add some wind, solar and batteries.'}${facts}</span></li>`);
+    }
+    info('The Energy Transition', `<p>Each year is about 60 game days. Every year demand grows about 2%, rooftop solar spreads, rivals add a little wind, solar and storage, and the emissions target tightens${back ? '' : ` (now ${st.emisTarget} t per MWh)`}. The big steps:</p><ol class="timeline">${years.join('')}</ol>
+      ${back ? '<button type="button" class="btn btn-quiet" id="tl-back" style="width:100%;margin-top:12px">Back</button>' : ''}`);
+    if (back) $('tl-back').onclick = back;
+  }
   function renderChips() {
     const icon = { heatwave: 'i-heat', cold: 'i-info', still: 't-wind', windy: 't-wind', cloudy: 't-solar', linktrip: 'i-bad', gascrunch: 't-peaker' };
     const html = S.events.map(e => { const E = Sim.EVENTS[e.key]; return `<span class="chip ${E.tone}"><svg class="i"><use href="#${icon[e.key]}"/></svg>${E.name} · ${e.left} day${e.left > 1 ? 's' : ''} left</span>`; })
       .concat(S.upcoming.map(u => `<span class="chip soon"><svg class="i"><use href="#${icon[u.key]}"/></svg>Tomorrow: ${Sim.EVENTS[u.key].name}</span>`))
       .concat(S.obligation ? [`<span class="chip"><svg class="i"><use href="#i-flag"/></svg>Reserve promised: ${fmtMW(S.obligation.mw)}</span>`] : [])
       .concat(S.apc ? [`<span class="chip bad"><svg class="i"><use href="#i-info"/></svg>Prices capped at ${fmtPrice(Sim.APC)}</span>`] : [])
-      .concat(S.cash < 0 ? [`<span class="chip bad"><svg class="i"><use href="#i-bad"/></svg>Overdrawn · the bank sells plant past −${fmtMoney(Sim.overdraftLimit(S))}</span>`] : []);
+      .concat(S.cash < 0 ? [`<span class="chip bad"><svg class="i"><use href="#i-bad"/></svg>Overdrawn · the bank sells plant past −${fmtMoney(Sim.overdraftLimit(S))}</span>`] : [])
+      .concat(S.transition ? transitionChips() : []);
     $('chips').innerHTML = html.join('');
     $('chips').hidden = !html.length;
   }
@@ -729,7 +762,7 @@
     const icon = { good: 'i-good', bad: 'i-bad', info: 'i-info' };
     $('news').innerHTML = S.news.slice(0, 10).map(n => {
       const dl = Sim.dateLabel({ ...S, t: n.t });
-      return `<li class="${n.tone}"><svg class="i"><use href="#${icon[n.tone] || 'i-info'}"/></svg><span>${esc(n.text)}<time>Day ${dl.day} · ${dl.time}</time></span></li>`;
+      return `<li class="${n.tone}"><svg class="i"><use href="#${icon[n.tone] || 'i-info'}"/></svg><span>${esc(n.text)}<time>${S.transition ? `Year ${dl.year} · ${dl.month}` : `Day ${dl.day}`} · ${dl.time}</time></span></li>`;
     }).join('') || '<li class="info"><svg class="i"><use href="#i-info"/></svg><span>Quiet so far.</span></li>';
   }
   function plantStatus(p) {
@@ -842,6 +875,18 @@
   let resumeSpeed = 0;
   function autoPauseNow() { if (speed > 0) resumeSpeed = speed; speed = 0; syncSpeed(); acc = 0; }
   function resumePlay() { if (resumeSpeed > 0 && speed === 0 && S && !S.ended && !S.bust) { speed = resumeSpeed; syncSpeed(); } resumeSpeed = 0; }
+  function tenderOpened(paused) {
+    if (paused) autoPauseNow();
+    const t = S.tender, K = Sim.TENDER_KINDS[t.kind];
+    info('Capacity Investment Scheme', `<p>The government wants more ${K.name} built. Join, and any new ${K.techs.map(x => TECH[x].name.toLowerCase()).join(', ').replace(/, ([^,]*)$/, ' or $1')} you start within a year (up to ${fmtMW(t.mw)} in all) is underwritten for ${t.years} years:</p>
+      <ul class="news"><li class="good"><svg class="i"><use href="#i-good"/></svg><span>On any day a plant earns less than <b>${fmtMoney(t.floor)} per MW</b>, the scheme tops it up to that.</span></li>
+      <li class="info"><svg class="i"><use href="#i-info"/></svg><span>On any day it earns more than <b>${fmtMoney(t.ceiling)} per MW</b>, you pay half of the extra back.</span></li></ul>
+      <p class="note" style="margin-top:10px">Earnings here are energy sales, frequency control and certificates, less running and start-up costs. Underwriting protects you if prices fall, and costs you when they're high.</p>
+      <div class="field-row" style="margin-top:14px"><button type="button" class="btn btn-quiet" id="cis-no" style="flex:1">Not this round</button><button type="button" class="btn btn-primary" id="cis-yes" style="flex:1">Join the scheme</button></div>`);
+    if (paused) onSheetClose = resumePlay;
+    $('cis-yes').onclick = () => { Sim.acceptTender(S); save(); closeSheets(); toast('Joined: build this year to be underwritten.'); };
+    $('cis-no').onclick = () => { Sim.declineTender(S); save(); closeSheets(); };
+  }
   function contractsReleased() {
     autoPauseNow();
     const line = o => o.type === 'swap' ? `<b>Swap</b> · ${fmtMW(o.mw)} at ${fmtPrice(o.strike)}/MWh for ${o.days} days` : `<b>Cap</b> · ${fmtMW(o.mw)} above $300 · paid ${fmtMoney(o.premium)} a day for ${o.days} days`;
@@ -893,7 +938,7 @@
   const chosenSize = {};
   function openBuild() { renderBuild(); openSheet('build'); applyHints(); }
   function renderBuild() {
-    const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'];
+    const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'].concat(S.transition ? ['offshore', 'ldes'] : []);
     $('tech-grid').innerHTML = order.map(t => {
       const T = TECH[t], unlocked = !!S.unlocked[t];
       const size = chosenSize[t] || T.sizes[0], site = Sim.siteFor(S, t, size), st = site && Sim.siteOf(t, site);
@@ -913,7 +958,7 @@
           <dt>Upkeep</dt><dd>${fmtMoney(Sim.upkeepFor(S, t, size, mwh))}/day</dd><dt>Emissions</dt><dd>${T.emis ? `${T.emis} t/MWh` : 'None'}</dd></dl>
         <button type="button" class="btn btn-primary" data-build="${t}" ${why ? 'disabled' : ''}>${label}</button>
         <button type="button" class="btn btn-quiet" data-design="${t}">Custom size and site</button>`
-        : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>Unlock: ${goal ? goal.text.toLowerCase() : 'later'}</div>`}
+        : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>${T.transition ? `Arrives in year ${(Sim.TRANSITION.find(e => e.unlocks === t) || {}).year}` : `Unlock: ${goal ? goal.text.toLowerCase() : 'later'}`}</div>`}
       </div>`;
     }).join('');
   }
@@ -958,10 +1003,11 @@
   function renderDesign(all) {
     const t = design.tech, T = TECH[t];
     if (all) {
-      $('dz-sites').innerHTML = Sim.SITES[t].map(st => {
+      $('dz-sites').innerHTML = Sim.SITES[t].filter(st => st.opens == null || S.transition).map(st => {
         const room = Sim.siteRoom(S, t, st.id), full = t === 'hydro' ? !room : room < T.range[0];
+        const shut = st.opens != null && Sim.yearOf(S) + 1 < st.opens;
         const detail = t === 'hydro' ? `${st.reservoir.toLocaleString()} MWh reservoir · ${st.mw[0]}–${st.mw[1]} MW · ×${st.mlf.toFixed(2)}${full ? ' · already built' : ''}`
-          : `${resText(t, st)}loss factor ×${st.mlf.toFixed(2)} · ${full ? 'no room left' : `${fmtMW(room)} free`}`;
+          : `${resText(t, st)}loss factor ×${st.mlf.toFixed(2)} · ${shut ? `opens in year ${st.opens}` : full ? 'no room left' : `${fmtMW(room)} free`}`;
         return `<button type="button" class="site" data-site="${st.id}" aria-pressed="${st.id === design.site}" ${full ? 'disabled' : ''}><b>${st.name}</b><span>${st.blurb}</span><small>${detail}</small></button>`;
       }).join('');
       const L = designLimits();
@@ -1068,6 +1114,7 @@
         ${T.fcas ? row('Frequency control', L.fcas) : ''}
         ${row('Upkeep', -L.upkeep)}
         ${L.repairs ? row('Repairs', -L.repairs) : ''}
+        ${p.cis || L.cis ? row('Underwriting (Capacity Investment Scheme)', L.cis || 0) : ''}
         ${row('Operating profit', profit, true)}
       </tbody></table>
       <p class="note">${Math.round(L.energy).toLocaleString()} MWh sold${avg != null ? ` for an average of ${fmtPrice(avg)}/MWh` : ''}. Built at ${esc(Sim.siteOf(p.tech, p.site || 'legacy').name)}, loss factor ×${(p.mlf ?? 1).toFixed(2)}. Contracts, interest and fines are counted for the whole company.</p>`;
@@ -1193,7 +1240,7 @@
     $('m-goals-n').textContent = `${goalCount()} of ${Sim.GOALS.length}`;
     $('m-contracts-n').textContent = S.contracts.length ? `${S.contracts.length} active` : S.contractOffers.length ? `${S.contractOffers.length} on offer` : '';
     $('m-autopause').setAttribute('aria-checked', String(autoPause));
-    $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario;
+    $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario; $('m-timeline').hidden = !S.transition;
     $('m-scenarios-n').textContent = `${starTotal()} of ${Sim.SCENARIOS.length * 3} ★`;
     openSheet('menu');
   };
@@ -1241,7 +1288,7 @@
       ${days.length >= 2 ? `<h3>Company value by day</h3><canvas class="chart" id="c-value" data-h="150" aria-label="Company value at the end of each day"></canvas>
       <h3>Profit by day</h3><canvas class="chart" id="c-profit" data-h="130" aria-label="Profit or loss each day"></canvas>` : '<p class="note">Charts appear after two full days.</p>'}
       ${days.length ? `<h3>Accounts, last ${days.length} day${days.length > 1 ? 's' : ''}</h3><table class="res"><tbody>
-        ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control: raise', days.reduce((a, d) => a + (d.fcasRaise ?? d.fcas ?? 0), 0))}${line('Frequency control: lower', sum('fcasLower'))}${line('Renewable certificates', sum('certs'))}${line('Start-ups', -sum('starts'))}${line('Contracts', sum('contracts'))}
+        ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control: raise', days.reduce((a, d) => a + (d.fcasRaise ?? d.fcas ?? 0), 0))}${line('Frequency control: lower', sum('fcasLower'))}${line('Renewable certificates', sum('certs'))}${line('Start-ups', -sum('starts'))}${S.transition ? line('Underwriting', sum('cis')) : ''}${line('Contracts', sum('contracts'))}
         ${line('Upkeep', -sum('upkeep'))}${line('Repairs', -sum('repairs'))}${line('Interest', -sum('interest'))}${line('Fines', -sum('penalties'))}${line('Bonuses', sum('bonus'))}${line('Profit', sum('profit'), true)}
       </tbody></table><p class="note">Building costs, sales of plant and goal rewards aren't counted in profit.</p>` : ''}
       ${stationTable()}`);
@@ -1312,6 +1359,7 @@
     days.forEach((d, i) => { if ((days.length - 1 - i) % every === 0) ctx.fillText(`Day ${d.day + 1}`, X(i), bottom + 6); });
   }
   $('m-company').onclick = openCompany;
+  $('m-timeline').onclick = () => openTimeline();
   $('m-goals').onclick = () => info('Goals', Sim.GOALS.map(g => {
     const done = S.goalsDone[g.id] !== undefined;
     const reward = [g.reward ? `${fmtMoney(g.reward)} bonus` : '', g.unlock ? `unlocks ${TECH[g.unlock].name.toLowerCase()}s` : ''].filter(Boolean).join(' · ');
@@ -1342,6 +1390,7 @@
       <p><b style="color:var(--ink)">Price limits:</b> as in the real NEM for 2026-27, prices run from ${fmtPrice(FLOOR)} (the floor) to ${fmtPrice(CAP)}/MWh (the cap). If the last 7 days of prices add up past a threshold, the market operator holds prices at ${fmtPrice(Sim.APC)} until the week's total falls back. The real threshold is ${fmtMoney(Sim.REAL_CPT)}, about 8 hours at the cap; the game uses ${fmtMoney(Sim.CPT)}, about 3 hours, because its market is spikier.</p>
       <p><b style="color:var(--ink)">Money:</b> you can go overdrawn, but the bank charges interest every day, and if you owe more than your limit it sells your plant, most valuable first. Lose everything and the company is wound up.</p>
       <p><b style="color:var(--ink)">Scenarios</b> are short, hand-made situations (a heatwave week, a coal closure, a gas squeeze) with three stars to win. Challenges are 30-day races against friends with share codes.</p>
+      <p><b style="color:var(--ink)">Energy Transition</b> is a 20-year scenario (each year about 60 game days) that keeps trading while you're away: coal closes, demand grows, new technology arrives, and the government's Capacity Investment Scheme can underwrite what you build.</p>
       <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes.</p>`);
   }
   $('m-rename').onclick = () => {
@@ -1432,30 +1481,39 @@
   function openScenarios() {
     store.scenarios ||= {};
     const act = store.scenario, actSc = act && Sim.SCENARIOS.find(x => x.id === act.scenario.id);
-    info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Scenarios only run while the app is open.</p>
-      ${actSc ? `<h3>Your current scenario</h3><p>${actSc.name} · day ${Math.min(actSc.days, Sim.dayIndex(act) + 1)} of ${actSc.days}</p><button type="button" class="btn btn-primary" id="sc-resume" style="width:100%">Carry on</button>` : ''}
+    info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Scenarios only run while the app is open, except the 20-year Energy Transition, which keeps trading while you're away.</p>
+      ${actSc ? `<h3>Your current scenario</h3><p>${actSc.name} · ${actSc.transition ? `year ${Math.min(Sim.TRANSITION_YEARS, Sim.yearOf(act) + 1)} of ${Sim.TRANSITION_YEARS}` : `day ${Math.min(actSc.days, Sim.dayIndex(act) + 1)} of ${actSc.days}`}</p><button type="button" class="btn btn-primary" id="sc-resume" style="width:100%">Carry on</button>` : ''}
       <div class="sc-grid">${Sim.SCENARIOS.map(sc => { const b = store.scenarios[sc.id];
-        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.days} days${b ? ` · best ${fmtMoney(b.value)}` : ''}</small></button>`; }).join('')}</div>`);
+        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.transition ? `${Sim.TRANSITION_YEARS} years` : `${sc.days} days`}${b ? ` · best ${fmtMoney(b.value)}` : ''}</small></button>`; }).join('')}</div>`);
     if (actSc) $('sc-resume').onclick = () => startScenario(null);
     $('i-body').querySelectorAll('[data-scenario]').forEach(b => b.onclick = () => scenarioIntro(b.dataset.scenario));
   }
   function scenarioIntro(id) {
     const sc = Sim.SCENARIOS.find(x => x.id === id), b = (store.scenarios || {})[id];
     info(sc.name, `<p>${sc.blurb}</p><h3>Stars</h3><ul class="starlist">${sc.stars.map(([t]) => `<li>${t}</li>`).join('')}</ul>
-      <p class="note">${sc.days} game days${b ? ` · your best: ${b.stars} star${b.stars === 1 ? '' : 's'}, ${fmtMoney(b.value)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
+      ${sc.transition ? `<p>Coal closes unit by unit, demand grows with electric cars, data centres and electric heating, offshore wind and long-duration storage arrive, and the government underwrites new plant. <button type="button" class="btn btn-quiet small" id="sc-timeline">See the timeline</button></p>` : ''}
+      <p class="note">${sc.transition ? `${Sim.TRANSITION_YEARS} years of about ${sc.yearDays} game days each; keeps trading while you're away` : `${sc.days} game days`}${b ? ` · your best: ${b.stars} star${b.stars === 1 ? '' : 's'}, ${fmtMoney(b.value)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
       <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-back" style="flex:1">All scenarios</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Start</button></div>`);
     $('sc-back').onclick = openScenarios;
+    if ($('sc-timeline')) $('sc-timeline').onclick = () => openTimeline(Sim.createScenario(id), () => scenarioIntro(id));
     $('sc-go').onclick = () => startScenario(id);
   }
   function startScenario(id) {
     if (id == null && !store.scenario) { toast('That scenario has finished.'); return; }
     save();
     slot = 'scenario';
-    if (id == null) S = Sim.migrate(store.scenario);
-    else { S = Sim.createScenario(id); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); }
+    let rep = null;
+    if (id == null) {
+      S = Sim.migrate(store.scenario);
+      if (S.transition) {   // the 20-year scenario keeps trading while you're away
+        const away = Math.floor((Date.now() - (store.scenarioSeen || Date.now())) / MS_PER_INTERVAL);
+        if (away >= 12) rep = Sim.catchUp(S, Math.min(away, (S.scenario.days * Sim.IPD) - S.t + Sim.IPD));
+      }
+    } else { S = Sim.createScenario(id); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); }
     store.scenario = S;
     closeSheets(); enterApp(); save();
-    if (Sim.scenarioOver(S)) scenarioEnd();
+    if (Sim.scenarioOver(S)) { scenarioEnd(); return; }
+    if (rep) awayReport(rep);
   }
   function scenarioEnd() {
     const sc = Sim.SCENARIOS.find(x => x.id === S.scenario.id), r = Sim.scenarioResult(S);
@@ -1469,6 +1527,7 @@
       <ul class="starlist">${r.lines.map(l => `<li class="${l.ok ? 'ok' : ''}">${l.text}</li>`).join('')}</ul>
       ${r.bust ? '<p>The company collapsed before the end, so no stars this time.</p>' : ''}
       <div class="kv"><div><span>Company value</span><b>${fmtMoney(r.value)}</b></div><div><span>Profit</span><b class="${r.profit >= 0 ? 'up' : 'down'}">${fmtMoney(r.profit)}</b></div><div><span>Growth</span><b class="${r.gain >= 0 ? 'up' : 'down'}">${fmtMoney(r.gain)}</b></div></div>
+      ${S.transition && S.years ? `<h3>Year by year</h3><table class="res compact"><thead><tr><th>Year</th><th>Hours short</th><th>Clean from you</th><th>Profit</th></tr></thead><tbody>${S.years.map((Y, k) => `<tr><td>${k + 1}</td><td class="${Y.shedHours > 0.05 ? 'down' : 'up'}">${Y.shedHours.toFixed(1)}</td><td>${Math.round(Y.clean / Math.max(1, Y.region) * 100)}%</td><td>${fmtMoney(Y.profit)}</td></tr>`).join('')}</tbody></table>` : ''}
       ${better && best ? '<p class="note">A new best for this scenario.</p>' : ''}
       <div class="field-row" style="margin-top:14px"><button type="button" class="btn btn-quiet" id="se-share" style="flex:1"><svg class="i"><use href="#i-share"/></svg>Share</button><button type="button" class="btn btn-quiet" id="se-again" style="flex:1">Try again</button><button type="button" class="btn btn-primary" id="se-back" style="flex:1">Done</button></div>`);
     $('se-share').onclick = () => shareText(`Merit Order · ${sc.name} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} · company worth ${fmtMoney(r.value)}. Try to beat it: same weather for everyone.`);
@@ -1499,7 +1558,7 @@
   function syncSpeed() { document.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed))); }
   document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; syncSpeed(); store.speed = speed; persist(); });
 
-  let raf = 0, lastT = 0, acc = 0, lastSave = 0, meritAnimating = false, pausedFor = null, lastRec = -1, seenOffers = null;
+  let raf = 0, lastT = 0, acc = 0, lastSave = 0, meritAnimating = false, pausedFor = null, lastRec = -1, seenOffers = null, seenTender = null;
   function frame(t) {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.25, (t - (lastT || t)) / 1000); lastT = t;
@@ -1520,6 +1579,13 @@
           if (S.offer && S.offer !== pausedFor) {
             pausedFor = S.offer;
             if (autoPause) { autoPauseNow(); toast('Paused: a decision is waiting.'); break; }
+          }
+          if (S.tender && S.tender !== seenTender && !openId) {
+            seenTender = S.tender;
+            if (!S.tender.accepted && !S.tender.declined) {
+              if (autoPause) { tenderOpened(true); break; }
+              toast('An underwriting round is open: tap its chip to decide.');
+            }
           }
           if (S.contractOffers !== seenOffers && !openId) {   // wait until an open plant sheet is closed
             seenOffers = S.contractOffers;
@@ -1569,7 +1635,7 @@
   function enterApp() {
     scene = 'app'; $('title').hidden = true; $('app').hidden = false;
     meritAnim.clear(); shownCash = null; plantIds = null; newsKey = ''; fcast = null; missionKey = ''; missionCount = -1; syncSpeed(); renderAll(); resized = true;
-    pausedFor = S.offer; seenOffers = S.contractOffers; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
+    pausedFor = S.offer; seenOffers = S.contractOffers; seenTender = S.tender; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
   }
   function awayReport(rep) {
     const hours = rep.intervals * H, days = hours / 24;
@@ -1627,16 +1693,21 @@
   let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { hiddenAt = Date.now(); save(); return; }
-    if (!hiddenAt || !S || scene !== 'app' || slot !== 'career' || S.ended) { hiddenAt = 0; return; }
+    if (!hiddenAt || !S || scene !== 'app' || !(slot === 'career' || (slot === 'scenario' && S.transition)) || S.ended) { hiddenAt = 0; return; }
     const away = Math.floor((Date.now() - hiddenAt) / MS_PER_INTERVAL);
     hiddenAt = 0; lastT = 0; acc = 0;
-    if (away >= 12) { const rep = Sim.catchUp(S, away); pausedFor = S.offer; seenOffers = S.contractOffers; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1; renderAll(); awayReport(rep); save(); }
+    if (away >= 12) {
+      const rep = Sim.catchUp(S, S.transition ? Math.min(away, S.scenario.days * Sim.IPD - S.t + Sim.IPD) : away);
+      pausedFor = S.offer; seenOffers = S.contractOffers; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1; renderAll();
+      if (S.scenario && Sim.scenarioOver(S)) scenarioEnd(); else awayReport(rep);
+      save();
+    }
   });
   window.addEventListener('pagehide', save);
 
   // ---- test hook ----
   window.MeritOrder = { get state() { return S; }, Sim, startCareer, startChallenge, renderAll, resultCode, parseResult, challengeCode, parseChallenge,
-    setSpeed(v) { speed = v; syncSpeed(); }, scene: () => scene, drawMerit: () => drawMerit($('c-merit'), S, { instant: true }) };
+    setSpeed(v) { speed = v; syncSpeed(); }, save, scene: () => scene, drawMerit: () => drawMerit($('c-merit'), S, { instant: true }) };
 
   showTitle();
   raf = requestAnimationFrame(frame);

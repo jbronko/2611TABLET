@@ -10,7 +10,7 @@ screen and works offline. No app store, no APK, no build step.
 | --- | --- |
 | [Tide Pool](https://jbronko.github.io/2611TABLET/tide-pool/) | A 12-level channel puzzle: lay channels so the tide fills every rock pool. |
 | [Tide Digger](https://jbronko.github.io/2611TABLET/tide-digger/) | Dig channels in the sand with your finger; real-feeling water and sand physics carry the tide into rock pools. 8 beaches plus a sandbox. |
-| [Merit Order](https://jbronko.github.io/2611TABLET/merit-order/) | An electricity market tycoon: build plants, bid into a 5-minute NEM-style market, earn from frequency control, sell contracts, upgrade plants and keep trading while you're away. Real NEM price limits, ten-band bid stacks with rebids, custom-sized plants on sites with loss factors, Raise and Lower frequency control, three difficulty levels, a guided first week, six scenarios with stars, and challenges to share with friends. |
+| [Merit Order](https://jbronko.github.io/2611TABLET/merit-order/) | An electricity market tycoon: build plants, bid into a 5-minute NEM-style market, earn from frequency control, sell contracts, upgrade plants and keep trading while you're away. Real NEM price limits, ten-band bid stacks with rebids, custom-sized plants on sites with loss factors, Raise and Lower frequency control, three difficulty levels, a guided first week, seven scenarios with stars (including a 20-year Energy Transition that keeps trading while you're away), and challenges to share with friends. |
 | [Tablet Tasks](https://jbronko.github.io/2611TABLET/tablet-tasks/) | A small, touch-friendly to-do list. |
 
 ## Install an app on Android

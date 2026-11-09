@@ -258,7 +258,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const p = await page();
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
-    check('the scenarios list', (await p.$$('[data-scenario]')).length === 6);
+    check('the scenarios list', (await p.$$('[data-scenario]')).length === 7);
     await shot(p, 'scenarios');
     await p.click('[data-scenario="heatwave-week"]'); await p.waitForTimeout(150);
     check('a scenario shows its three stars before starting', (await p.$$('.starlist li')).length === 3);
@@ -278,6 +278,62 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await state(p, () => { const M = MeritOrder; M.state.cash = -5e7; let n = 0; while (!M.state.bust && n++ < 6 * 288) M.Sim.step(M.state); });
     await p.waitForTimeout(500);
     check('a collapse ends the scenario with no stars', (await p.textContent('#i-body')).includes('collapsed before the end'));
+    await p.context().close();
+  }
+
+  // 8b. Energy Transition: a timeline, the year on the clock, technology that arrives later, an
+  //     underwriting round that pauses the game, catch-up while away and a year-by-year report.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="energy-transition"]'); await p.waitForTimeout(150);
+    await p.click('#sc-timeline'); await p.waitForTimeout(150);
+    check('the Energy Transition shows its 20-year timeline before you start', (await p.$$('ol.timeline li')).length === 20);
+    await p.click('#tl-back'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    check('it starts in year 1 with the next milestone showing', /Year 1 of 20 · Jan/.test(await p.textContent('#clock')) && /Year 2:/.test(await p.textContent('#chips')));
+    await p.click('#add-plant'); await p.waitForTimeout(150);
+    check('offshore wind and long-duration storage wait for their year', (await p.$$eval('#sh-build .lock', xs => xs.map(x => x.textContent))).filter(t => /Arrives in year [46]/.test(t)).length === 2);
+    await p.click('#sh-build [data-close]');
+    await state(p, () => { const M = MeritOrder, S = M.state; S.cash = 5e7; while (S.t < 120 * 288 - 20) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); M.setSpeed(16); });
+    let title = '';
+    for (let k = 0; k < 8 && title !== 'Capacity Investment Scheme'; k++) {
+      await p.waitForTimeout(400); title = await p.textContent('#i-title');
+      if (title === 'New contracts on offer' && !(await p.$eval('#sh-info', x => x.hidden))) await p.click('#nc-play');
+    }
+    check('an underwriting round opens with the first coal closure and pauses the game', title === 'Capacity Investment Scheme' && /Year 3 of 20/.test(await p.textContent('#clock')) && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await shot(p, 'transition-tender');
+    await p.click('#cis-yes'); await p.waitForTimeout(150);
+    await state(p, () => MeritOrder.setSpeed(0));
+    if (!(await p.$eval('#sh-info', x => x.hidden))) await p.click('#sh-info [data-close]');   // new contracts released the same day
+    await p.click('#add-plant'); await p.click('[data-design="wind"]'); await p.waitForTimeout(150);
+    check('the Renewable Energy Zones are shown with their opening year', /opens in year 5/.test(await p.textContent('#dz-sites')));
+    await p.keyboard.press('Escape');
+    const w = await state(p, () => { const M = MeritOrder, r = M.Sim.build(M.state, 'wind', 300); M.renderAll(); return !!r.plant.cis; });
+    check('a wind farm built this year is underwritten', w && /Underwriting: 300 MW of new renewables left/.test(await p.textContent('#chips')));
+    await p.click('#open-menu'); await p.click('#m-timeline'); await p.waitForTimeout(150);
+    check('the timeline marks this year', /Year 3/.test(await p.textContent('ol.timeline li.now')) && (await p.$$('ol.timeline li.done')).length === 2);
+    await shot(p, 'transition-timeline');
+    await p.click('#sh-info [data-close]');
+    // away for a while: reload (which saves), edit the save while nothing is loaded, reload and carry on
+    const t0 = await state(p, () => MeritOrder.state.t);
+    await p.reload(); await p.waitForTimeout(300);
+    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.scenarioSeen = Date.now() - 2 * 288 * 1250; localStorage.setItem('merit-order', JSON.stringify(s)); });
+    await p.reload(); await p.waitForTimeout(300);
+    await p.click('#t-scenarios'); await p.waitForTimeout(150);
+    check('the scenario list shows the year', /Energy Transition · year 3 of 20/.test(await p.textContent('#i-body')));
+    await p.click('#sc-resume'); await p.waitForTimeout(400);
+    const dt = (await state(p, () => MeritOrder.state.t)) - t0;
+    check('it kept trading while you were away', (await p.textContent('#i-title')) === 'While you were away' && dt >= 2 * 288 - 2 && dt <= 2 * 288 + 2, `${dt} intervals`);
+    await p.click('#sh-info [data-close]');
+    await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 1200 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.tender && !S.tender.accepted && !S.tender.declined) M.Sim.declineTender(S); } M.setSpeed(16); });
+    for (let k = 0; k < 8 && (await p.textContent('#i-title')) !== 'Energy Transition'; k++) {
+      await p.waitForTimeout(400);
+      if ((await p.textContent('#i-title')) === 'New contracts on offer' && !(await p.$eval('#sh-info', x => x.hidden))) await p.click('#nc-play');
+    }
+    check('after year 20: stars and a year-by-year report', (await p.textContent('#i-title')) === 'Energy Transition' && !!(await p.$('.stars.big')) && (await p.$$('#i-body table.res tbody tr')).length === 20);
+    await shot(p, 'transition-end');
     await p.context().close();
   }
 

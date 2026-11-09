@@ -183,7 +183,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   while (!Sim.scenarioOver(a)) { const ra = Sim.step(a), rb = Sim.step(b); if (ra.c.demand !== rb.c.demand || ra.c.wind !== rb.c.wind) same = false; }
   const ev = d => d.days.map(r => r.day).join();
   check('scenario weather is the same for everyone', same && ev(a) === ev(b));
-  const scored = Sim.SCENARIOS.map(sc => { const S = Sim.createScenario(sc.id); let n = 0; while (!Sim.scenarioOver(S) && n++ < 400 * Sim.IPD) Sim.step(S); const r = Sim.scenarioResult(S); return { id: sc.id, ok: Sim.scenarioOver(S) && S.days.length === sc.days && r.lines.length === 3, stars: r.stars }; });
+  const scored = Sim.SCENARIOS.map(sc => { const S = Sim.createScenario(sc.id); let n = 0; while (!Sim.scenarioOver(S) && n++ < (sc.days + 2) * Sim.IPD) Sim.step(S); const r = Sim.scenarioResult(S); return { id: sc.id, ok: Sim.scenarioOver(S) && S.days[S.days.length - 1].day === sc.days - 1 && r.lines.length === 3, stars: r.stars }; });
   check('every scenario runs to its last day and is scored', scored.every(x => x.ok), scored.map(x => `${x.id} ${x.stars}★`).join(', '));
   check('doing nothing never earns more than one star', scored.every(x => x.stars <= 1));
 }
@@ -296,6 +296,64 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   for (let k = 0; k < 2 * Sim.IPD; k++) Sim.step(S);
   const t0 = Date.now(); Sim.catchUp(S, Sim.AWAY_CAP_DAYS * Sim.IPD); const ms = Date.now() - t0;
   check('150-plant company catches up a week quickly', ms < 2000, `${ms} ms here (a tablet is a few times slower)`);
+}
+
+// 11. Energy Transition: a compressed calendar, a timeline that fires once and is announced a year
+//     ahead, underwriting that settles into the ledger, stars on the final year, and nothing leaks
+//     into the career or the other scenarios.
+{
+  const sc = Sim.SCENARIOS.find(x => x.id === 'energy-transition');
+  const S = Sim.createScenario('energy-transition');
+  // run whole days; the step after midnight closes the day (and starts a new year), so end just past it
+  const run = days => { const end = S.t + days * Sim.IPD; while (S.t < end) { Sim.step(S); if (S.offer) Sim.declineOffer(S); } };
+  Sim.step(S);
+  const bh = () => S.rivals.find(r => /Black Hill 1/.test(r.name));
+  const months = [];
+  for (let d = 0; d < 60; d++) { months.push(Sim.dateLabel(S).month); run(1); }
+  check('a transition year is 60 game days and the seasons cycle within it', Sim.yearOf(S) === 1 && Sim.dateLabel(S).year === 2 && new Set(months).size === 12 && months[0] === 'Jan' && months[59] === 'Dec', [...new Set(months)].join(' '));
+  check('next year\'s milestones are announced a year ahead', S.news.some(n => /Next year/.test(n.text) && /Black Hill 1/.test(n.text)));
+  run(59);
+  const before = !bh().gone;
+  run(1);
+  check('Black Hill 1 closes on the first day of year 3, not before', before && bh().gone && Sim.yearOf(S) === 2);
+  check('a Capacity Investment Scheme round opens with the closure', !!S.tender && S.tender.kind === 'renewable' && !S.tender.accepted);
+  const target = S.emisTarget, demand = S.demandMult;
+  run(10);
+  check('a year\'s changes apply once', S.emisTarget === target && S.demandMult === demand);
+  // underwriting: join, build a wind farm, and the top-up or share lands in both ledgers
+  S.cash = 1e9; Sim.acceptTender(S);
+  const w = Sim.build(S, 'wind', 300).plant, pk = Sim.build(S, 'peaker', 150).plant;
+  check('a plant of the round\'s kind is underwritten, another kind is not', !!w.cis && !pk.cis && S.tender.used === 300);
+  while (w.status !== 'online') run(1);
+  const partial = () => { const t = S.today; return t.revenue - t.costs + t.fcas + t.contracts + t.certs - t.starts - t.penalties - t.repairs - t.interest + t.bonus; };
+  const cash0 = S.cash, part0 = partial(), cis0 = w.life.cis || 0; let profits = 0, cis = 0;
+  for (let k = 0; k < 20; k++) { run(1); const r = S.days[S.days.length - 1]; profits += r.profit; cis += r.cis; }
+  const gap = S.cash - cash0 - (profits - part0 + partial());
+  check('underwriting is paid into the day\'s profit and the plant\'s accounts', Math.abs(gap) < 1 && cis !== 0 && Math.abs(w.life.cis - cis0 - cis) < 1,
+    `${Sim.fmtMoney(cis)} over 20 days, ledger gap ${gap.toFixed(2)}`);
+  check('the year report records reliability, clean share and profit', S.years.length === 3 && S.years[0].region > 0 && S.years.every(Y => 'shedHours' in Y && 'clean' in Y));
+  // new technology and zones arrive on schedule, and never in the career
+  check('offshore wind arrives in year 4 and the first zones in year 5', !S.unlocked.offshore && Sim.siteRoom(S, 'solar', 'cw-rez') === 0);
+  run(60);
+  const off = S.unlocked.offshore;
+  run(60);
+  check('…and they do', off && Sim.siteRoom(S, 'solar', 'cw-rez') > 0 && Sim.siteRoom(S, 'wind', 'ne-rez') > 0);
+  const C = Sim.create(5);
+  check('the career keeps a normal calendar and has no zones or new technology', C.yearDays == null && Sim.siteRoom(C, 'solar', 'cw-rez') === 0 && Sim.siteRoom(C, 'battery', 'bh-yard') === 0 && !C.unlocked.offshore && Sim.dateLabel(C).year === 1);
+  // stars: reliability in the final year only
+  const T = Sim.createScenario('energy-transition');
+  T.t = (sc.days - 1) * Sim.IPD - 1; Sim.step(T);
+  const day = d => ({ day: d, shed: 0, clean: 300000, region: 1e6, profit: 0, share: 0 });
+  T.days = Array.from({ length: 60 }, (_, k) => day(sc.days - 60 + k));
+  T.cash = 3e9;
+  const ok = Sim.scenarioResult(T);
+  T.days[5].shed = 0.00003 * 60e6;
+  const short = Sim.scenarioResult(T);
+  check('stars: reliable, clean and big earns three; missing the reliability standard earns none', ok.stars === 3 && short.stars === 0, `${ok.stars} vs ${short.stars}`);
+  // the catch-up never runs past the end
+  const E = Sim.createScenario('energy-transition'); E.t = (sc.days - 1) * Sim.IPD;
+  Sim.catchUp(E, Math.min(7 * Sim.IPD, sc.days * Sim.IPD - E.t + Sim.IPD));
+  check('coming back after the last year ends the scenario', Sim.scenarioOver(E));
 }
 
 console.log(fails ? `\n${fails} check(s) failed` : '\nAll engine checks passed');
