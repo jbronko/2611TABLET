@@ -299,13 +299,19 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#add-plant'); await p.waitForTimeout(150);
     check('offshore wind and long-duration storage wait for their year', (await p.$$eval('#sh-build .lock', xs => xs.map(x => x.textContent))).filter(t => /Arrives in year [46]/.test(t)).length === 2);
     await p.click('#sh-build [data-close]');
-    await state(p, () => { const M = MeritOrder, S = M.state; S.cash = 5e7; while (S.t < 120 * 288 - 20) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); M.setSpeed(16); });
+    await state(p, () => { const M = MeritOrder, S = M.state; S.cash = 5e7; while (S.t < 120 * 288 - 20) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } S.yearReport.seen = true; M.renderAll(); M.setSpeed(16); });
     let title = '';
-    for (let k = 0; k < 8 && title !== 'Capacity Investment Scheme'; k++) {
+    for (let k = 0; k < 8 && title !== 'Year 2 in review'; k++) {
       await p.waitForTimeout(400); title = await p.textContent('#i-title');
       if (title === 'New contracts on offer' && !(await p.$eval('#sh-info', x => x.hidden))) await p.click('#nc-play');
     }
-    check('an underwriting round opens with the first coal closure and pauses the game', title === 'Capacity Investment Scheme' && /Year 3 of 20/.test(await p.textContent('#clock')) && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    const paused = async () => (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true';
+    check('a new year opens with a report on the last, paused', title === 'Year 2 in review' && /Year 3 of 20/.test(await p.textContent('#clock')) && await paused()
+      && /Black Hill 1 closes/.test(await p.textContent('#i-body')) && (await p.$$('#i-body .starlist li')).length === 3 && !!(await p.$('#yr-tender')));
+    await shot(p, 'transition-report');
+    await p.click('#yr-tender'); await p.waitForTimeout(150);
+    title = await p.textContent('#i-title');
+    check('its underwriting button opens the round, still paused', title === 'Capacity Investment Scheme' && await paused());
     await shot(p, 'transition-tender');
     await p.click('#cis-yes'); await p.waitForTimeout(150);
     await state(p, () => MeritOrder.setSpeed(0));
@@ -318,6 +324,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#open-menu'); await p.click('#m-timeline'); await p.waitForTimeout(150);
     check('the timeline marks this year', /Year 3/.test(await p.textContent('ol.timeline li.now')) && (await p.$$('ol.timeline li.done')).length === 2);
     await shot(p, 'transition-timeline');
+    await p.click('#tl-report'); await p.waitForTimeout(150);
+    check('the timeline reopens last year\'s report', (await p.textContent('#i-title')) === 'Year 2 in review');
     await p.click('#sh-info [data-close]');
     // away for a while: reload (which saves), edit the save while nothing is loaded, reload and carry on
     const t0 = await state(p, () => MeritOrder.state.t);
@@ -330,7 +338,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const dt = (await state(p, () => MeritOrder.state.t)) - t0;
     check('it kept trading while you were away', (await p.textContent('#i-title')) === 'While you were away' && dt >= 2 * 288 - 2 && dt <= 2 * 288 + 2, `${dt} intervals`);
     await p.click('#sh-info [data-close]');
-    await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 1200 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.tender && !S.tender.accepted && !S.tender.declined) M.Sim.declineTender(S); } M.setSpeed(16); });
+    await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 1200 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.tender && !S.tender.accepted && !S.tender.declined) M.Sim.declineTender(S); } S.yearReport.seen = true; M.setSpeed(16); });
     for (let k = 0; k < 8 && (await p.textContent('#i-title')) !== 'Energy Transition'; k++) {
       await p.waitForTimeout(400);
       if ((await p.textContent('#i-title')) === 'New contracts on offer' && !(await p.$eval('#sh-info', x => x.hidden))) await p.click('#nc-play');
@@ -348,7 +356,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('[data-scenario="energy-transition"]'); await p.waitForTimeout(150);
     await p.click('[data-len="long"]'); await p.waitForTimeout(100);
     await p.click('#sc-go'); await p.waitForTimeout(300);
-    const ff = days => state(p, d => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < d * 288 + 1) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); }, days);
+    const ff = days => state(p, d => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < d * 288 + 1) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } if (S.yearReport) S.yearReport.seen = true; M.renderAll(); }, days);
     await ff(89); const dec = await p.textContent('#clock');
     await ff(90);
     check('Long: a year is 90 game days', /Year 1 of 20 · Dec/.test(dec) && /Year 2 of 20 · Jan/.test(await p.textContent('#clock')), dec);

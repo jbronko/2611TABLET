@@ -312,11 +312,15 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   for (let d = 0; d < 60; d++) { months.push(Sim.dateLabel(S).month); run(1); }
   check('a transition year is 60 game days and the seasons cycle within it', Sim.yearOf(S) === 1 && Sim.dateLabel(S).year === 2 && new Set(months).size === 12 && months[0] === 'Jan' && months[59] === 'Dec', [...new Set(months)].join(' '));
   check('next year\'s milestones are announced a year ahead', S.news.some(n => /Next year/.test(n.text) && /Black Hill 1/.test(n.text)));
+  const R1 = S.yearReport;
+  check('a new year opens with a report on the last one', !!R1 && R1.year === 1 && R1.days === 60 && R1.region > 0 && R1.avgPrice > 0 && R1.peak > 4000 && !R1.seen
+    && R1.now.some(e => /Electric vehicles/.test(e.text)) && R1.next.some(t => /Black Hill 1/.test(t)) && !R1.tender, R1 && `average ${Sim.fmtPrice(R1.avgPrice)}, peak ${Sim.fmtMW(R1.peak)}`);
   run(59);
   const before = !bh().gone;
   run(1);
   check('Black Hill 1 closes on the first day of year 3, not before', before && bh().gone && Sim.yearOf(S) === 2);
   check('a Capacity Investment Scheme round opens with the closure', !!S.tender && S.tender.kind === 'renewable' && !S.tender.accepted);
+  check('…and year 2\'s report shows the closure and the round', S.yearReport.year === 2 && S.yearReport.tender && S.yearReport.now.some(e => e.close && /Black Hill 1/.test(e.text)));
   const target = S.emisTarget, demand = S.demandMult;
   run(10);
   check('a year\'s changes apply once', S.emisTarget === target && S.demandMult === demand);
@@ -369,7 +373,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   T.t = (sc.days - 1) * Sim.IPD - 1; Sim.step(T);
   const years = () => Array.from({ length: 20 }, () => ({ shed: 0, shedHours: 0, clean: 18e6, region: 60e6, profit: 0 }));
   T.years = years(); T.cash = 3e9;
-  const ok = Sim.scenarioResult(T);
+  const ok = Sim.scenarioResult(T), asIf = Sim.starsIf(T, T.years[19]);
+  check('the report\'s "if this were year 20" scores like the end', asIf.stars === ok.stars && asIf.lines.every((l, i) => l.text === ok.lines[i].text && l.ok === ok.lines[i].ok));
   T.years[19].shed = 0.00003 * 60e6;
   const short = Sim.scenarioResult(T);
   check('stars: reliable, clean and big earns three; missing the reliability standard earns none', ok.stars === 3 && short.stars === 0, `${ok.stars} vs ${short.stars}`);

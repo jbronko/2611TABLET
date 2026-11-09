@@ -820,6 +820,7 @@ const Sim = (() => {
     if (S.transition) {   // the year's report: reliability, clean share, profit
       const y = Math.floor(day / yearDaysOf(S)), Y = (S.years[y] ||= { shed: 0, shedHours: 0, clean: 0, region: 0, profit: 0 });
       Y.shed += d.shed || 0; Y.shedHours += d.shedN ? d.shedN / 12 : 0; Y.clean += d.clean; Y.region += d.regionEnergy; Y.profit += profit; Y.value = companyValue(S);
+      Y.priceSum = (Y.priceSum || 0) + avg; Y.days = (Y.days || 0) + 1; Y.peak = Math.max(Y.peak || 0, ...d.demand); Y.curtailed = (Y.curtailed || 0) + (d.curtailed || 0);
     }
     for (const p of S.plants) p.today = { energy: 0, money: 0 };
     S.today = freshDay();
@@ -1315,6 +1316,13 @@ const Sim = (() => {
     for (const e of TRANSITION.filter(e => e.year === y)) { addNews(S, e.close ? 'bad' : 'info', `Year ${y}: ${e.text}`); if (e.apply) e.apply(S); }
     const next = TRANSITION.filter(e => e.year === y + 1);
     if (next.length) addNews(S, 'info', `Next year: ${next.map(e => e.text).join(' ')}`);
+    // the year just ended, in review (shown as a pop-up), with what this year and next year bring
+    const P = S.years && S.years[y - 2];
+    if (y > 1 && y <= TRANSITION_YEARS && P) {
+      S.yearReport = { ...P, year: y - 1, avgPrice: P.priceSum / Math.max(1, P.days), valueBefore: y > 2 && S.years[y - 3] ? S.years[y - 3].value : S.scenario.v0,
+        now: TRANSITION.filter(e => e.year === y).map(e => ({ text: e.text, close: !!e.close })), next: next.map(e => e.text),
+        tender: !!S.tender && S.tender.offeredAt === dayIndex(S), seen: false };
+    }
   }
   // Capacity Investment Scheme: for a year, new plant of the right kind can be underwritten for 5
   // years: topped up to a floor if it earns less in a day, half of anything above a ceiling paid back.
@@ -1392,10 +1400,19 @@ const Sim = (() => {
       target: S.scenario.target ?? (lengthOf(sc, 'standard') || {}).target,
       finalShed: Y.shed, finalRegion: Y.region, cleanShare: Y.clean / Math.max(1, Y.region),
       maxShare: days.reduce((m, d) => Math.max(m, d.share), 0), reserveKept: !!(S.goalFlags && S.goalFlags.reserveKept), bust: !!S.bust };
+    return { ...r, ...scoreStars(S, sc, r) };
+  }
+  function scoreStars(S, sc, r) {
     let stars = 0;
     const texts = starText(sc, S.scenario.length);
     const lines = sc.stars.map(([, test], i) => { const ok = !r.bust && test(r); if (ok && stars === i) stars++; return { text: texts[i], ok }; });
-    return { ...r, stars, lines };
+    return { stars, lines };
+  }
+  // The Energy Transition's stars as they would be if year Y were the final year.
+  function starsIf(S, Y) {
+    const sc = SCENARIOS.find(x => x.id === S.scenario.id);
+    return scoreStars(S, sc, { value: companyValue(S), target: S.scenario.target ?? (lengthOf(sc, 'standard') || {}).target,
+      finalShed: Y.shed, finalRegion: Y.region, cleanShare: Y.clean / Math.max(1, Y.region), bust: false });
   }
   const scenarioOver = S => !!S.scenario && (S.bust || S.days.some(d => d.day >= S.scenario.days - 1));
 
@@ -1456,7 +1473,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };
