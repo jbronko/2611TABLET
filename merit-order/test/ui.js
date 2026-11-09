@@ -444,7 +444,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
       const r = S.rivals.find(x => x.tech === 'coal' && x.id !== 'bh1');
       S.offer = { type: 'coal', rival: r.id, price: 500000, expires: S.t + 288, text: '' }; M.Sim.acceptOffer(S);
       const c = S.plants.find(x => x.tech === 'coal'); c.bid = 'custom';
-      c.bands.prices = [-1000, 0, 32, 42, 300, 301, 600, 1000, 5000, 23200]; c.bands.mw = [0, 0, 260, 0, 103, 0, 0, 0, 0, 0]; c.last = 660;
+      c.bands.prices = [-1000, 0, 32, 42, 300, 301, 600, 1000, 5000, 23200]; c.bands.mw = [297, 0, 260, 0, 103, 0, 0, 0, 0, 0]; c.bands.minIn = true; c.last = 660;
       for (let k = 0; k < 2; k++) M.Sim.step(S);
       M.renderAll(); return c.id;
     });
@@ -455,7 +455,10 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('Right now explains the minimum load and the ramp', /Minimum load/.test(now) && /Ramping down/.test(now), now.replace(/\s+/g, ' ').slice(0, 160));
     const run = await state(p, i => Math.round(MeritOrder.state.plants.find(x => x.id === i).now), id);
     const shown = await p.$$eval('#p-bid td.now b', xs => xs.reduce((a, x) => a + parseFloat(x.textContent.replace(/[^0-9.]/g, '')) * (/GW/.test(x.textContent) ? 1000 : 1), 0));
-    check('the Min row and Now column add up to what it runs', Math.abs(shown - run) <= 2 && !!(await p.$('#sn-min')), `${shown} vs ${run} MW`);
+    check('the Now column adds up to what it runs', Math.abs(shown - run) <= 2, `${shown} vs ${run} MW`);
+    const band1 = await p.$eval('#p-bid table.stack tbody tr', r => r.textContent.replace(/\s+/g, ' '));
+    check('coal\'s minimum is band 1: fixed at −$1,000, its MW box no lower than 297', /fixed/.test(band1) && !(await p.$('[data-sprice="g:0"]')) && (await p.getAttribute('[data-smw="g:0"]', 'min')) === '297'
+      && /660 MW of 660 MW/.test(await p.textContent('#st-g')) && !(await p.$('.minrow')), band1.slice(0, 80));
     check('the card says what it\'s doing', /ramping down/.test(await p.textContent(`[data-plant="${id}"]`)));
     await shot(p, 'coal-now');
     await p.context().close();

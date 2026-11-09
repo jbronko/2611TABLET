@@ -249,8 +249,9 @@
   table.stack td { vertical-align: middle; padding: 5px 4px; } table.stack td:first-child { color: var(--ink-3); width: 2.5em; }
   table.stack .bidbox { min-height: 44px; } table.stack .bidbox input { min-height: 42px; width: 7.5ch; }
   table.stack td.mwc .bidbox input { width: 5.5ch; }
-  table.stack td.now { color: var(--ink-2); white-space: nowrap; font-size: 13.5px; } table.stack td.now b { color: var(--ink); }
-  table.stack tr.out td.now { color: var(--ink-3); } table.stack tr.minrow td { color: var(--ink-2); font-size: 14px; padding: 10px 4px; }
+  table.stack td.now { color: var(--ink-2); font-size: 13.5px; max-width: 9em; } table.stack td.now b { color: var(--ink); white-space: nowrap; }
+  table.stack tr.out td.now { color: var(--ink-3); } table.stack .fixed { display: block; font-weight: 650; color: var(--ink); white-space: nowrap; padding: 4px 0; } table.stack .fixed small { display: block; font-weight: 500; font-size: 12px; color: var(--ink-2); white-space: normal; }
+  table.stack td.now small { display: block; color: var(--ink-3); font-size: 11.5px; }
   .nowlist { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
   .nowlist li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; font-size: 14px; color: var(--ink-2); }
   .nowlist li svg { width: 18px; height: 18px; margin-top: 1px; color: var(--info); } .nowlist li.bad svg { color: var(--bad); } .nowlist li.good svg { color: var(--good); }
@@ -339,7 +340,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 22</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 23</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -805,7 +806,7 @@
     const now = p.now || 0;
     if (T.kind === 'storage') return now > 0.5 ? `Selling ${fmtMW(now)}` : now < -0.5 ? `Charging ${fmtMW(-now)}` : `Holding · ${Math.round(p.soc / Sim.storeCap(p) * 100)}% full`;
     let tag = '';
-    if (p.tech === 'coal' && S.last) { const target = Sim.stackTarget(S, p, S.last.res.price); tag = now > target + 1 ? ' · ramping down' : now < target - 1 ? ' · ramping up' : now <= Sim.baseMW(p) + 0.5 ? ' · at minimum' : ''; }
+    if (p.tech === 'coal' && S.last) { const target = Sim.stackTarget(S, p, S.last.res.price); tag = now > target + 1 ? ' · ramping down' : now < target - 1 ? ' · ramping up' : now <= Sim.minMW(p) + 0.5 ? ' · at minimum' : ''; }
     else if (T.startCost && p.onFor != null && p.onFor < T.minRun) tag = ` · min run ${fmtMins(T.minRun - p.onFor)}`;
     return now > 0.5 ? `Running ${fmtMW(now)}${tag}` : 'Not running';
   }
@@ -1182,7 +1183,7 @@
       const sm = T.startMargin || 0;
       bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['cost', sm ? 'Cover costs and start-ups' : 'Cover running costs', fmtPrice(vc + sm)], ['peak', 'Peaks only', fmtPrice(Math.max(300, vc * 2.5))], ['ladder', 'Ladder', 'cost, $300, $1k'], ['custom', 'Custom', 'your bands']])}
         ${T.startCost ? `<p class="note">Each start costs ${fmtMoney(T.startCost * p.mw)} (wear and fuel to warm up), and once started it runs at least ${T.minRun * 5 >= 60 ? `${T.minRun * 5 / 60} hours` : `${T.minRun * 5} minutes`} at ${Math.round(T.stableLoad * 100)}% or more, whatever the price. ${(p.today && p.today.starts) || 0} start${(p.today && p.today.starts) === 1 ? '' : 's'} today. "Peaks only" starts least but runs least.</p>` : ''}
-        ${p.tech === 'coal' ? `<p class="note">Coal must keep ${p.upg ? 30 : 45}% (${fmtMW(Sim.baseMW(p))}) running at all times, offered at −$1,000, and can change output by only ${fmtMW(p.mw * (p.upg ? 0.1 : 0.05))} each 5 minutes. Your bands are for the ${fmtMW(Sim.flexMW(p))} above that minimum; it climbs through them as the price passes each one, and ramps back down when it falls below.</p>` : ''}
+        ${p.tech === 'coal' ? `<p class="note">Band 1 is fixed at −$1,000 with at least ${fmtMW(Sim.minMW(p))}: coal must keep ${p.upg ? 30 : 45}% running at all times. It can change output by only ${fmtMW(p.mw * (p.upg ? 0.1 : 0.05))} each 5 minutes, climbing through your other bands as the price passes each one and ramping back down when it falls below.</p>` : ''}
         <h3>Bid stack</h3>${stackBlock(p, 'g')}${stackNote}`;
     } else {
       bid = `<h3>Charge level</h3><div class="soc"><i style="width:${Math.round(p.soc / Sim.storeCap(p) * 100)}%"></i></div>
@@ -1259,22 +1260,26 @@
   // --- bid stacks: ten bands of price and MW (g = a generator's offer, d/c = storage sell/charge) ---
   const stackOf = (p, key) => key === 'g' ? p.bands : p.sbands[key];
   // MW shown per band: a preset's placement at full output, or your own bands.
-  const stackMW = (p, key) => key === 'g' && p.bid !== 'custom' ? Sim.presetMW(S, p, Sim.flexMW(p)) : stackOf(p, key).mw;
+  const stackMW = (p, key) => {
+    if (key !== 'g') return stackOf(p, key).mw;
+    if (p.bid === 'custom') { const m = p.bands.mw.slice(); if (Sim.minMW(p)) m[0] = Math.max(m[0], Sim.minMW(p)); return m; }
+    const m = Sim.presetMW(S, p, p.mw - Sim.minMW(p)); m[0] += Sim.minMW(p); return m;
+  };
   function stackBlock(p, key) {
     const B = stackOf(p, key), mw = stackMW(p, key), pend = B.next;
+    const fixedMin = key === 'g' ? Sim.minMW(p) : 0;
     const rows = B.prices.map((price, i) => `<tr><td class="num">${i + 1}</td>
-      <td><span class="bidbox"><button type="button" class="pm" data-sflip="${key}:${i}" aria-label="Band ${i + 1}: switch between a positive and a negative price">±</button><span>$</span><input type="number" step="1" min="${FLOOR}" max="${CAP}" data-sprice="${key}:${i}" value="${pend ? pend[i] : price}" enterkeyhint="done" aria-label="Band ${i + 1} price"></span>
-        <small class="pending" id="sp-${key}-${i}">${pend && pend[i] !== price ? `now ${fmtDollars(price)}, new price from tomorrow` : ''}</small></td>
-      <td class="mwc"><span class="bidbox"><input type="number" step="1" min="0" max="${key === 'g' ? Math.round(Sim.flexMW(p)) : p.mw}" data-smw="${key}:${i}" value="${Math.round(mw[i] * 10) / 10}" enterkeyhint="done" aria-label="Band ${i + 1} MW"><span>MW</span></span></td>${key === 'g' ? `<td class="num now" id="sn-${i}"></td>` : ''}</tr>`).join('');
+      ${i === 0 && fixedMin ? `<td><span class="fixed">${fmtDollars(FLOOR)} · fixed<small>minimum load, always runs</small></span></td>` : `<td><span class="bidbox"><button type="button" class="pm" data-sflip="${key}:${i}" aria-label="Band ${i + 1}: switch between a positive and a negative price">±</button><span>$</span><input type="number" step="1" min="${FLOOR}" max="${CAP}" data-sprice="${key}:${i}" value="${pend ? pend[i] : price}" enterkeyhint="done" aria-label="Band ${i + 1} price"></span>
+        <small class="pending" id="sp-${key}-${i}">${pend && pend[i] !== price ? `now ${fmtDollars(price)}, new price from tomorrow` : ''}</small></td>`}
+      <td class="mwc"><span class="bidbox"><input type="number" step="1" min="${i === 0 && fixedMin ? Math.round(fixedMin) : 0}" max="${p.mw}" data-smw="${key}:${i}" value="${Math.round(mw[i] * 10) / 10}" enterkeyhint="done" aria-label="Band ${i + 1} MW"><span>MW</span></span></td>${key === 'g' ? `<td class="num now" id="sn-${i}"></td>` : ''}</tr>`).join('');
     return `<canvas class="chart" id="stk-${key}" data-h="110" aria-label="This plant's bid stack: MW offered at each price"></canvas>
       <table class="res stack"><thead><tr><th>Band</th><th>Price $/MWh</th><th>MW</th>${key === 'g' ? '<th>Now</th>' : ''}</tr></thead><tbody>
-      ${key === 'g' && Sim.baseMW(p) ? `<tr class="minrow"><td class="num">Min</td><td>${fmtDollars(FLOOR)} · always runs</td><td class="num">${fmtMW(Sim.baseMW(p))}</td><td class="num now" id="sn-min"></td></tr>` : ''}${rows}</tbody></table>
+      ${rows}</tbody></table>
       <p class="note num" id="st-${key}"></p>`;
   }
   function stackTotals(p, key) {
     const total = stackMW(p, key).reduce((a, b) => a + b, 0), el = $(`st-${key}`);
-    const cap = key === 'g' ? Sim.flexMW(p) : p.mw;
-    if (el) el.textContent = `${key === 'c' ? 'Will charge up to' : 'Offered'} ${fmtMW(total)} of ${fmtMW(cap)}${key === 'g' && Sim.baseMW(p) ? ` above its ${fmtMW(Sim.baseMW(p))} minimum` : ''}${key === 'g' && TECH[p.tech].kind === 'vre' ? ', capped by the sun or wind on the day, cheapest bands first' : ''}.`;
+    if (el) el.textContent = `${key === 'c' ? 'Will charge up to' : 'Offered'} ${fmtMW(total)} of ${fmtMW(p.mw)}${key === 'g' && Sim.minMW(p) ? `, including its ${fmtMW(Sim.minMW(p))} minimum in band 1` : ''}${key === 'g' && TECH[p.tech].kind === 'vre' ? ', capped by the sun or wind on the day, cheapest bands first' : ''}.`;
   }
   // A small staircase of the plant's offer, on the same price scale as the other charts.
   const stackGeom = {};
@@ -1289,16 +1294,10 @@
       const color = key === 'c' ? '#8fb8c7' : techColor(p.tech), geo = [], y0 = Y(0);
       // what's running now in each band (generation stack only)
       const sup = key === 'g' && S.last ? S.last.supply.filter(b => b.ref === p) : [];
-      const runBand = i => sup.filter(b => b.band === i).reduce((a, b) => a + (b.out || 0), 0);
+      // the stack runs from the bottom up to the plant's output
+      const ranTo = Math.max(0, p.now || 0), starts = []; { let l = 0; for (let i = 0; i < mw.length; i++) { starts.push(l); l += mw[i]; } }
+      const runBand = i => Math.max(0, Math.min(mw[i], ranTo - starts[i]));
       let cum = 0;
-      const base = key === 'g' ? Sim.baseMW(p) : 0;
-      if (base) {   // coal's minimum load, always offered at the floor
-        const x1 = X(base), y = Y(FLOOR);
-        ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(left + 1, Math.min(y, y0), Math.max(2, x1 - left - 2), Math.max(2, Math.abs(y0 - y)), 3); ctx.fill();
-        ctx.fillStyle = INK2; ctx.font = '600 11px Archivo, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        if (x1 - left > 60) ctx.fillText('minimum', (left + x1) / 2, (Math.min(y, y0) + Math.max(y, y0)) / 2);
-        cum = base;
-      }
       B.prices.forEach((price, i) => {
         if (mw[i] < 0.05) return;
         const x0 = X(cum), x1 = X(Math.min(p.mw, cum + mw[i])), y = Y(price);
@@ -1309,6 +1308,7 @@
         if (key === 'g' && ran > 0.001) { ctx.globalAlpha = 1; ctx.beginPath(); ctx.roundRect(x0 + 1, yt, Math.max(2, bw * ran), hh, 3); ctx.fill(); }
         ctx.globalAlpha = 1;
         if (B.next && B.next[i] !== price) { ctx.setLineDash([3, 3]); ctx.strokeStyle = '#ffd59b'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x0 + 1, Y(B.next[i])); ctx.lineTo(x1 - 1, Y(B.next[i])); ctx.stroke(); ctx.setLineDash([]); }
+        if (key === 'g' && i === 0 && Sim.minMW(p) && x1 - x0 > 60) { ctx.fillStyle = '#ffffff'; ctx.font = '600 11px Archivo, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('minimum', (x0 + x1) / 2, yt + hh / 2); }
         geo.push({ x0, x1, i, price, mw: mw[i] });
         cum += mw[i];
       });
@@ -1819,7 +1819,7 @@
     if (p.status === 'retiring') add('info', `Closing in ${p.retireLeft} day${p.retireLeft > 1 ? 's' : ''}.`);
     if (p.status === 'online' || p.status === 'retiring') {
       if (p.tech === 'coal') {
-        const min = Sim.baseMW(p), step = p.mw * (p.upg ? 0.1 : 0.05), target = Sim.stackTarget(S, p, price);
+        const min = Sim.minMW(p), step = p.mw * (p.upg ? 0.1 : 0.05), target = Sim.stackTarget(S, p, price);
         add('info', `<b>Minimum load</b>: ${fmtMW(min)} must run whatever the price, offered at −$1,000.`);
         if (o > target + 1) add('info', `<b>Ramping down</b> ${fmtMW(step)} each 5 minutes: ${fmtMW(o)} now, heading for ${fmtMW(target)} at ${fmtPrice(price)}.`);
         else if (o < target - 1) add('info', `<b>Ramping up</b> ${fmtMW(step)} each 5 minutes: ${fmtMW(o)} now, heading for ${fmtMW(target)} at ${fmtPrice(price)}.`);
@@ -1851,13 +1851,19 @@
     if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
     // the bid table's Now column: what each band is running this interval
     const sup = S.last ? S.last.supply.filter(b => b.ref === p) : [];
+    const mw = stackMW(p, 'g'), o = Math.max(0, p.now || 0), price = S.last ? S.last.res.price : 0, T = TECH[p.tech];
+    const inMinRun = T.startCost && p.onFor != null && p.onFor < T.minRun;
+    let level = 0;
     for (let i = 0; i < NBANDS; i++) {
-      const cell = $(`sn-${i}`); if (!cell) continue;
-      const b = sup.find(x => x.band === i), row = cell.parentElement;
-      cell.innerHTML = b ? `<b>${fmtMW(b.out || 0)}</b> of ${fmtMW(b.mw)}` : stackMW(p, 'g')[i] > 0.05 ? 'out of reach' : '';
-      row.classList.toggle('out', !b && stackMW(p, 'g')[i] > 0.05);
+      const cell = $(`sn-${i}`); if (!cell) { level += mw[i] || 0; continue; }
+      const run = Math.max(0, Math.min(mw[i], o - level)), offered = sup.some(x => x.band === i), row = cell.parentElement;
+      let why = '';
+      if (run > 0.05 && i === 0 && Sim.minMW(p)) why = 'minimum load';
+      else if (run > 0.05 && p.bands.prices[i] > price) why = inMinRun ? 'held by its minimum run' : p.tech === 'coal' ? 'above today’s price: still ramping down' : '';
+      cell.innerHTML = mw[i] < 0.05 ? '' : run > 0.05 ? `<b>${fmtMW(run)}</b>${run < mw[i] - 0.05 ? ` of ${fmtMW(mw[i])}` : ''}${why ? `<small>${why}</small>` : ''}` : offered ? 'ready' : 'out of reach';
+      row.classList.toggle('out', mw[i] >= 0.05 && run <= 0.05 && !offered);
+      level += mw[i];
     }
-    const m = $('sn-min'); if (m) { const f = sup.find(x => x.mustRun), base = Sim.baseMW(p), held = f ? (f.out || 0) - base : 0; m.innerHTML = f ? `<b>${fmtMW(f.out || 0)}</b>${held > 0.5 ? `<br><small>${fmtMW(base)} minimum + ${fmtMW(held)} still ramping down</small>` : ''}` : ''; }
   }
   let resized = false;
   window.addEventListener('resize', () => { resized = true; if (S && scene === 'app') renderAll(); });

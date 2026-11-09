@@ -450,9 +450,17 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   const c = Sim.conditions(S); p.last = 557;
   const spike = Sim.stackTarget(S, p, 400), calm = Sim.stackTarget(S, p, 100);
   check('…and would climb into it above $300', spike === 660 && calm === 557, `${calm} MW at $100, ${spike} MW at $400`);
-  // coal custom bands cover the MW above the minimum
+  // coal's band 1 is its minimum: fixed at -$1,000 and never below 297 MW
+  const price1 = Sim.setBandPrice(S, p, 'g', 0, 50), low1 = Sim.setBandMW(S, p, 'g', 0, 100);
   Sim.setBandMW(S, p, 'g', 4, 1000);
-  check('coal bands cover only the MW above its minimum', Math.abs(p.bands.mw.reduce((a, v) => a + v, 0) - Sim.flexMW(p)) < 1e-6 && Math.round(Sim.flexMW(p)) === 363);
+  check('coal\'s band 1 is fixed at -$1,000 and holds its 297 MW minimum', price1 === Sim.FLOOR && p.bands.prices[0] === Sim.FLOOR && low1 === 297 && p.bands.mw[0] === 297
+    && Math.abs(p.bands.mw.reduce((a, v) => a + v, 0) - 660) < 1e-6, p.bands.mw.join(','));
+  // an older save, with the minimum outside the bands, gets it put into band 1
+  const O = Sim.create(7, { cash: 3e6 }); for (let k = 0; k < Sim.IPD; k++) Sim.step(O);
+  O.offer = { type: 'coal', rival: O.rivals.find(x => x.tech === 'coal' && x.id !== 'bh1').id, price: 500000, expires: O.t + Sim.IPD, text: '' }; Sim.acceptOffer(O);
+  const oc = O.plants.find(x => x.tech === 'coal'); oc.bid = 'custom'; oc.bands.mw = [0, 0, 260, 0, 400, 0, 0, 0, 0, 0]; delete oc.bands.minIn;
+  Sim.migrate(O);
+  check('an older coal stack gets its minimum in band 1, trimmed from the dearest band', oc.bands.mw.map(Math.round).join(',') === '297,0,260,0,103,0,0,0,0,0', oc.bands.mw.map(Math.round).join(','));
   // gas in its minimum run: stable load at the floor, then the bands above it at their own prices
   const G = Sim.create(8, { cash: 1e8 }); G.unlocked.ccgt = true;
   const cc = Sim.build(G, 'ccgt', 200).plant; cc.status = 'online'; cc.buildLeft = 0; cc.bid = 'custom';
