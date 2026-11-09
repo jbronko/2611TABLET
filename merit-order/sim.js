@@ -105,10 +105,10 @@ const Sim = (() => {
       coal(1, 'Black Hill 1'), coal(2, 'Black Hill 2'), coal(3, 'Black Hill 3'), coal(4, 'Black Hill 4'),
       { id: 'tal', name: 'Tallawang CCGT', tech: 'ccgt', cap: 600, bands: [[0.5, 84], [0.5, 120]], out: 0 },
       { id: 'wol', name: 'Wollemi CCGT', tech: 'ccgt', cap: 450, bands: [[0.6, 98], [0.4, 150]], out: 0 },
-      { id: 'ash', name: 'Ash Hill peaker', tech: 'peaker', cap: 300, bands: [[1, 260]], out: 0 },
+      { id: 'ash', name: 'Ash Hill peaker', tech: 'peaker', cap: 300, bands: [[0.5, 245], [0.5, 290]], out: 0 },
       { id: 'cst', name: 'Coastal peakers', tech: 'peaker', cap: 600, bands: [[0.5, 330], [0.5, 640]], out: 0 },
-      { id: 'mul', name: 'Mulga Creek peaker', tech: 'peaker', cap: 400, bands: [[1, 215]], out: 0 },
-      { id: 'kur', name: 'Kurri gas turbines', tech: 'peaker', cap: 350, bands: [[0.5, 185], [0.5, 240]], out: 0 },
+      { id: 'mul', name: 'Mulga Creek peaker', tech: 'peaker', cap: 400, bands: [[0.5, 195], [0.5, 235]], out: 0 },
+      { id: 'kur', name: 'Kurri gas turbines', tech: 'peaker', cap: 350, bands: [[0.5, 170], [0.5, 220]], out: 0 },
       { id: 'red', name: 'Redbank peaker', tech: 'peaker', cap: 400, bands: [[0.5, 1100], [0.5, 3000]], out: 0 },
       { id: 'qry', name: 'Quarry Road peaker', tech: 'peaker', cap: 300, bands: [[1, 12500]], out: 0 },
       { id: 'snw', name: 'Snowgum hydro', tech: 'hydro', cap: 450, bands: [[0.6, 165], [0.4, 280]], budget: 3200, used: 0 },
@@ -277,6 +277,8 @@ const Sim = (() => {
   const running = p => p.status === 'online' || p.status === 'retiring';
   const hoursOf = p => p.mwh ? p.mwh / p.mw : p.hours ?? TECH[p.tech].hours;
 
+  const LINK_STEPS = [0, 15, 35, 70, 130];   // interconnector: price premium (imports) / discount (exports) per 140 MW step
+
   // ---- bids ----
   // Supply bands: {mw, price, tech, owner, ref}. Elastic demand bands: {mw, price, ref}.
   function offerBands(S, p, avail, supply) {
@@ -423,8 +425,12 @@ const Sim = (() => {
         if (ch > 1) demandBids.push({ mw: ch, price: 35, ref: r });
       } else if (r.id === 'imp') {
         if (c.linkOut) continue;
-        supply.push({ mw: r.cap, price: Math.max(10, c.nbPrice), tech: 'other', owner: 'rival', ref: r });
-        demandBids.push({ mw: r.cap, price: Math.max(-50, c.nbPrice - 12), ref: r, exp: true });
+        // the neighbouring region has a supply curve too: the more you import the dearer it gets,
+        // the more you export the cheaper it has to be, so the link can't soak up everything
+        for (const [k, step] of LINK_STEPS.entries()) {
+          supply.push({ mw: r.cap / LINK_STEPS.length, price: Math.max(10, c.nbPrice + step), tech: 'other', owner: 'rival', ref: r, band: k });
+          demandBids.push({ mw: r.cap / LINK_STEPS.length, price: Math.max(-200, c.nbPrice - 12 - step), ref: r, exp: true, band: k });
+        }
       } else if (r.tech === 'hydro') {
         if (r.used >= r.budget) continue;
         for (const [f, pr] of r.bands) supply.push({ mw: r.cap * f, price: pr, tech: 'hydro', owner: 'rival', ref: r });
@@ -1132,11 +1138,11 @@ const Sim = (() => {
   const SCENARIOS = [
     { id: 'first-light', name: 'First Light', days: 14, startDoy: 273, seed: 1101, cash: 600000, calm: true,
       blurb: 'Spring, a quiet market and $600k. Build your first plants and grow the company in two weeks.',
-      stars: [['Grow the company to $650k', r => r.value >= 650000], ['Grow it to $690k', r => r.value >= 690000], ['Grow it to $712k', r => r.value >= 712000]] },
+      stars: [['Grow the company to $650k', r => r.value >= 650000], ['Grow it to $720k', r => r.value >= 720000], ['Grow it to $745k', r => r.value >= 745000]] },
     { id: 'heatwave-week', name: 'Heatwave Week', days: 10, startDoy: 14, seed: 2202, cash: 300000,
       blurb: 'Two heatwaves are on the way. You own a 150 MW gas peaker and a 50 MW battery. Ride the spikes, and keep any reserve you promise.',
       plants: [['peaker', 150], ['battery', 50]], script: [{ day: 2, key: 'heatwave', len: 3 }, { day: 7, key: 'heatwave', len: 2 }],
-      stars: [['Make $450k profit', r => r.profit >= 450000], ['Make $750k profit', r => r.profit >= 750000], ['…and keep a reserve promise', r => r.reserveKept]] },
+      stars: [['Make $500k profit', r => r.profit >= 500000], ['Make $850k profit', r => r.profit >= 850000], ['…and keep a reserve promise', r => r.reserveKept]] },
     { id: 'black-hill', name: 'Black Hill Closes', days: 21, startDoy: 31, seed: 3303, cash: 2000000,
       blurb: 'Two units of the Black Hill coal plant close this month, taking 1.3 GW out of the evening peak. You have $2M to fill the gap.',
       unlock: ['wind', 'ccgt'], closures: { bh1: 4, bh2: 12 },
@@ -1145,15 +1151,15 @@ const Sim = (() => {
       blurb: 'Midwinter. You own a 120 MW wind farm and have $1.5M. Gas is about to get very expensive, twice, and then the wind drops. Get ready.',
       plants: [['wind', 120]], unlock: ['wind', 'ccgt'],
       script: [{ day: 3, key: 'gascrunch', len: 5 }, { day: 5, key: 'cold', len: 3 }, { day: 10, key: 'gascrunch', len: 5 }, { day: 11, key: 'still', len: 4 }],
-      stars: [['Grow the company by $1.5M', r => r.gain >= 1500000], ['Grow it by $1.85M', r => r.gain >= 1850000], ['Grow it by $2.1M', r => r.gain >= 2100000]] },
+      stars: [['Grow the company by $1.7M', r => r.gain >= 1700000], ['Grow it by $2.2M', r => r.gain >= 2200000], ['Grow it by $2.55M', r => r.gain >= 2550000]] },
     { id: 'too-much-sun', name: 'Too Much Sun', days: 14, startDoy: 282, seed: 5505, cash: 300000, rooftop: 5200,
       blurb: 'Rooftop solar is everywhere and middays go deeply negative. You own 200 MW of solar, set to run whatever the price. Turn it into a business.',
       plants: [['solar', 200, { bid: 'always' }]],
-      stars: [['Make a profit', r => r.profit > 0], ['Grow the company by $300k', r => r.gain >= 300000], ['Grow it by $650k', r => r.gain >= 650000]] },
+      stars: [['Make a profit', r => r.profit > 0], ['Grow the company by $280k', r => r.gain >= 280000], ['Grow it by $600k', r => r.gain >= 600000]] },
     { id: 'big-build', name: 'The Big Build', days: 45, startDoy: 304, seed: 6606, cash: 3000000,
       blurb: '$3M, every technology but coal, and six weeks over summer. Build an empire.',
       unlock: ['wind', 'ccgt', 'hydro'],
-      stars: [['Grow the company to $5.5M', r => r.value >= 5500000], ['Grow it to $6.8M', r => r.value >= 6800000], ['Grow it to $8M', r => r.value >= 8000000]] },
+      stars: [['Grow the company to $5.5M', r => r.value >= 5500000], ['Grow it to $7M', r => r.value >= 7000000], ['Grow it to $8.5M', r => r.value >= 8500000]] },
   ];
   function givePlant(S, tech, mw, extra) {
     S.cash += priceOf(S, tech, mw);

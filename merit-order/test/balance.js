@@ -9,7 +9,7 @@
 // Strategies: idle (starter plants only), steady (reinvests in a mix, swaps on wind/solar),
 // peaker (gas peakers only), capseller (sells caps only against firm thermal plant),
 // capgambler (sells every cap), reckless (builds big on no cash, signs everything).
-// Targets after the last rebalance (Standard, day 120): steady about $15-25M, idle about $4M,
+// Targets after the last rebalance (Standard, day 120): steady about $15-25M (about $20M now), idle about $4M,
 // capseller about steady, capgambler and reckless usually bust.
 const Sim = require(require('path').join(__dirname, '..', 'sim.js'));
 const { IPD, TECH } = Sim;

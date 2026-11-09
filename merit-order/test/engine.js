@@ -245,6 +245,19 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('a battery can earn in both, and its switches are respected', both > 0 && offLower && Math.abs(d.fcas - d.fcasRaise - d.fcasLower) < 1e-6, `raise ${Sim.fmtMoney(d.fcasRaise)}, lower ${Sim.fmtMoney(d.fcasLower)} on day ${d.day + 1}`);
 }
 
+// 16. Your supply moves the price: the interconnector has its own supply curve, so it can't soak up
+//     everything you add. A 600 MW peaker bidding its running cost lowers the evening average clearly.
+{
+  const evening = build => {
+    const S = Sim.create(5, { cash: 1e10 }); build(S); for (const p of S.plants) { p.status = 'online'; p.buildLeft = 0; }
+    let sum = 0, n = 0;
+    for (let k = 0; k < 20 * Sim.IPD; k++) { const h = (S.t % Sim.IPD) * Sim.H, r = Sim.step(S); if (h >= 17 && h < 20) { sum += r.res.price; n++; } }
+    return sum / n;
+  };
+  const base = evening(() => {}), withPeaker = evening(S => { Sim.build(S, 'peaker', 600, { site: 'gas-hub' }).plant.bid = 'cost'; });
+  check('your supply moves the price', base - withPeaker >= 15, `evening average $${base.toFixed(0)} without you, $${withPeaker.toFixed(0)} with a 600 MW peaker`);
+}
+
 // 10. Speed: a big company's 7-day catch-up (what runs when the app opens after a week away).
 {
   const S = Sim.create(1, { cash: 1e9 });
