@@ -24,8 +24,10 @@ tools/check-pwa.js  verify an app: manifest, service worker, installable, works 
 1. `node tools/new-app.js <slug> "<App Name>" --color "#hex" --description "One sentence."`
    (slug: lowercase-with-hyphens).
 2. Build the app inside `<slug>/index.html`. Keep the template's head block, theme tokens (light on
-   `:root`, dark in the two dark blocks), safe-area gutters, `[hidden]` rule and service-worker
-   registration. Keep it one file: inline CSS and JS. Exception: a game engine with no DOM code may
+   `:root`, dark in the two dark blocks), safe-area gutters, `[hidden]` rule and the app-updates
+   block at the end of `<body>` (it registers the service worker, offers Restart when a new version
+   has downloaded, and any button with `data-check-updates` checks straight away: give the app one).
+   Keep it one file: inline CSS and JS. Exception: a game engine with no DOM code may
    live in a second file (as `merit-order/sim.js` does) so it can be tested directly in Node; list it
    in the app's `sw.js` PRECACHE. Make it touch-first (targets ≥ 48px, pointer
    events for drag) and work in landscape and portrait.
@@ -42,7 +44,8 @@ tools/check-pwa.js  verify an app: manifest, service worker, installable, works 
   `localStorage` is shared. Use the slug as the key or prefix.
 - **Service worker cache names are per app** (`<slug>-v<N>`) and an app only deletes its own old
   caches. If you add files that must work offline, list them in that app's `sw.js` PRECACHE and bump
-  `VERSION`. Updates reach installed apps on the next launch after the user opens it online.
+  `VERSION`. Installed apps get updates on the next launch after an online one, or straight away
+  with "Check for updates" and Restart (`check-pwa.js` tests that flow for each app).
 - **Use relative paths** (`icons/icon-192.png`, `sw.js`), never `/...`: the site lives under `/2611TABLET/`.
 - **External resources:** only Google Fonts is cached for offline use; always give fonts a system
   fallback. Don't depend on other CDNs: installed apps must work offline.

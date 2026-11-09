@@ -1,7 +1,7 @@
 // Tide Pool service worker: makes the installed app work offline.
 // Every request is answered from the cache straight away when possible and refreshed
 // from the network in the background, so updates appear on the next launch.
-const CACHE = 'tide-pool-v2';
+const CACHE = 'tide-pool-v3';
 const PRECACHE = [
   './',
   './index.html',

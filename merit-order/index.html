@@ -104,7 +104,8 @@
   .continue span:first-child { display: grid; }
   .continue small { font-weight: 600; font-size: 13.5px; opacity: 0.75; }
   .title-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .title-version { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; margin-top: -14px; }
+  .title-version { font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; margin-top: -24px; }
+  .title-version button { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; min-height: 44px; font-weight: 600; }
   @media (orientation: portrait) {
     .title-screen { align-items: end; }
     .title-screen::after { background: linear-gradient(0deg, rgba(11, 26, 33, 0.97) 0%, rgba(11, 26, 33, 0.8) 45%, rgba(11, 26, 33, 0.1) 80%); }
@@ -329,7 +330,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version" id="t-version">Version 15</div>
+    <div class="title-version"><span id="t-version">Version 16</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -431,6 +432,7 @@
     <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
     <button type="button" class="switch-row" id="m-tour"><span>Show me around<small>Restart the getting-started missions</small></span></button>
     <button type="button" class="switch-row" id="m-company"><span>Company report</span></button>
+    <button type="button" class="switch-row" id="m-updates" data-check-updates><span>Check for updates</span></button>
     <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Transition timeline</span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
     <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive</small></span><span class="switch"></span></button>
@@ -1405,6 +1407,7 @@
     days.forEach((d, i) => { if ((days.length - 1 - i) % every === 0) ctx.fillText(`Day ${d.day + 1}`, X(i), bottom + 6); });
   }
   $('m-company').onclick = openCompany;
+  $('m-updates').onclick = closeSheets;   // the check itself is the shared app-updates block's
   $('m-timeline').onclick = () => openTimeline();
   $('m-goals').onclick = () => info('Goals', Sim.GOALS.map(g => {
     const done = S.goalsDone[g.id] !== undefined;
@@ -1765,15 +1768,82 @@
   window.addEventListener('pagehide', save);
 
   // ---- test hook ----
+  window.appUpdates = { beforeRestart: () => save() };   // save the game before restarting into a new version
   window.MeritOrder = { get state() { return S; }, Sim, startCareer, startChallenge, renderAll, resultCode, parseResult, challengeCode, parseChallenge,
     setSpeed(v) { speed = v; syncSpeed(); }, save, scene: () => scene, drawMerit: () => drawMerit($('c-merit'), S, { instant: true }) };
 
   showTitle();
   raf = requestAnimationFrame(frame);
 
-  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
-  }
+})();
+</script>
+<!-- App updates: the same block in every app (copy it from _template/index.html). It registers the
+     service worker, shows a bar with Restart when a new version has downloaded, re-checks when the
+     app comes back to the front, and any button with data-check-updates checks straight away.
+     To save before a restart, set window.appUpdates = { beforeRestart: () => save() } before this. -->
+<div class="app-update" id="app-update" role="status" aria-live="polite" hidden>
+  <span id="app-update-text"></span>
+  <button type="button" id="app-update-go" hidden>Restart</button>
+  <button type="button" id="app-update-x" aria-label="Close">✕</button>
+</div>
+<style>
+  .app-update { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 1000;
+    display: flex; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); padding: 6px 6px 6px 18px; border-radius: 999px;
+    background: rgba(18, 24, 30, 0.95); color: #fff; font: 600 15px/1.3 system-ui, sans-serif; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35); }
+  .app-update[hidden] { display: none; }
+  .app-update button { min-height: 44px; margin: 0; border: 0; border-radius: 999px; font: inherit; cursor: pointer; }
+  #app-update-go { padding: 0 20px; background: #fff; color: #12181e; }
+  #app-update-x { width: 44px; padding: 0; background: transparent; color: rgba(255, 255, 255, 0.7); font-size: 17px; }
+</style>
+<script>
+(() => {
+  const bar = document.getElementById('app-update'), text = document.getElementById('app-update-text'), go = document.getElementById('app-update-go');
+  let ready = false, timer = 0, lastCheck = Date.now();
+  const show = (msg, restart) => {
+    text.textContent = msg; go.hidden = !restart; bar.hidden = false;
+    clearTimeout(timer); if (!restart) timer = setTimeout(() => { bar.hidden = true; }, 4000);
+  };
+  const api = window.appUpdates = Object.assign(window.appUpdates || {}, {
+    check: async () => { show('Updates need the app to be opened from the web.'); return 'none'; },
+    restart() { try { if (api.beforeRestart) api.beforeRestart(); } catch {} location.reload(); },
+  });
+  go.onclick = () => api.restart();
+  document.getElementById('app-update-x').onclick = () => { bar.hidden = true; };
+  document.addEventListener('click', e => { if (e.target.closest('[data-check-updates]')) api.check(); });
+  const sw = 'serviceWorker' in navigator && /^https?:$/.test(location.protocol) ? navigator.serviceWorker : null;
+  if (!sw) return;
+  window.addEventListener('load', () => { sw.register('sw.js').catch(() => { /* The app still works online without it. */ }); });
+  // A new version has downloaded and taken over: offer a restart. (The very first install doesn't count.)
+  let controlled = !!sw.controller;
+  sw.addEventListener('controllerchange', () => {
+    if (!controlled) { controlled = true; return; }
+    if (!ready) { ready = true; show('A new version is ready.', true); }
+  });
+  // This app's installed version, from its cache name (<slug>-v<N>).
+  const version = async () => {
+    const slug = location.pathname.split('/').filter(x => x && !x.includes('.')).pop();
+    const ns = (await caches.keys()).map(k => (k.match(new RegExp(`^${slug}-v(\\d+)$`)) || [])[1]).filter(Boolean).map(Number);
+    return ns.length ? Math.max(...ns) : null;
+  };
+  // Look again when the app comes back to the front, at most every 30 minutes.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || Date.now() - lastCheck < 30 * 60 * 1000) return;
+    lastCheck = Date.now();
+    sw.getRegistration().then(r => r && r.update()).catch(() => {});
+  });
+  api.check = async () => {
+    if (ready) { show('A new version is ready.', true); return 'ready'; }
+    show('Checking for updates…');
+    try {
+      const reg = await sw.getRegistration();
+      if (!reg) { show('Updates start once the app has loaded online.'); return 'none'; }
+      await reg.update(); lastCheck = Date.now();
+      if (ready) return 'ready';
+      if (reg.installing || reg.waiting) { show('Downloading the new version…'); return 'downloading'; }
+      const v = await version().catch(() => null);
+      show(`You have the latest version${v ? ` (version ${v})` : ''}.`); return 'latest';
+    } catch { show('Couldn’t check for updates. Are you online?'); return 'offline'; }
+  };
 })();
 </script>
 </body>

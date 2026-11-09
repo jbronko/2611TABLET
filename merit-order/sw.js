@@ -3,7 +3,7 @@
 // from the network in the background, so updates appear on the next launch.
 // Bump VERSION whenever you change the list of files below.
 const APP = 'merit-order';
-const VERSION = 15;
+const VERSION = 16;
 const CACHE = `${APP}-v${VERSION}`;
 const PRECACHE = [
   './',

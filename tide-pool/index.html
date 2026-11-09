@@ -71,6 +71,7 @@
   button:disabled { cursor: default; opacity: 0.45; }
   .primary { background: var(--water); color: var(--on-water); border-color: transparent; font-weight: 700; }
   .ghost-btn { background: transparent; }
+  .updates { margin: 20px 0 0; text-align: center; }
 
   /* Level select */
   .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
@@ -175,6 +176,7 @@
 
   <section id="select" aria-label="Levels">
     <div class="levels" id="levels"></div>
+    <p class="updates"><button type="button" class="ghost-btn" data-check-updates>Check for updates</button></p>
   </section>
 
   <section id="play" class="play" hidden>
@@ -617,12 +619,75 @@
 
   showSelect();
 
-  // Offline support when installed to the home screen (served over http/https only).
-  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* The game still works online without it. */ });
-    });
-  }
+})();
+</script>
+<!-- App updates: the same block in every app (copy it from _template/index.html). It registers the
+     service worker, shows a bar with Restart when a new version has downloaded, re-checks when the
+     app comes back to the front, and any button with data-check-updates checks straight away.
+     To save before a restart, set window.appUpdates = { beforeRestart: () => save() } before this. -->
+<div class="app-update" id="app-update" role="status" aria-live="polite" hidden>
+  <span id="app-update-text"></span>
+  <button type="button" id="app-update-go" hidden>Restart</button>
+  <button type="button" id="app-update-x" aria-label="Close">✕</button>
+</div>
+<style>
+  .app-update { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 1000;
+    display: flex; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); padding: 6px 6px 6px 18px; border-radius: 999px;
+    background: rgba(18, 24, 30, 0.95); color: #fff; font: 600 15px/1.3 system-ui, sans-serif; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35); }
+  .app-update[hidden] { display: none; }
+  .app-update button { min-height: 44px; margin: 0; border: 0; border-radius: 999px; font: inherit; cursor: pointer; }
+  #app-update-go { padding: 0 20px; background: #fff; color: #12181e; }
+  #app-update-x { width: 44px; padding: 0; background: transparent; color: rgba(255, 255, 255, 0.7); font-size: 17px; }
+</style>
+<script>
+(() => {
+  const bar = document.getElementById('app-update'), text = document.getElementById('app-update-text'), go = document.getElementById('app-update-go');
+  let ready = false, timer = 0, lastCheck = Date.now();
+  const show = (msg, restart) => {
+    text.textContent = msg; go.hidden = !restart; bar.hidden = false;
+    clearTimeout(timer); if (!restart) timer = setTimeout(() => { bar.hidden = true; }, 4000);
+  };
+  const api = window.appUpdates = Object.assign(window.appUpdates || {}, {
+    check: async () => { show('Updates need the app to be opened from the web.'); return 'none'; },
+    restart() { try { if (api.beforeRestart) api.beforeRestart(); } catch {} location.reload(); },
+  });
+  go.onclick = () => api.restart();
+  document.getElementById('app-update-x').onclick = () => { bar.hidden = true; };
+  document.addEventListener('click', e => { if (e.target.closest('[data-check-updates]')) api.check(); });
+  const sw = 'serviceWorker' in navigator && /^https?:$/.test(location.protocol) ? navigator.serviceWorker : null;
+  if (!sw) return;
+  window.addEventListener('load', () => { sw.register('sw.js').catch(() => { /* The app still works online without it. */ }); });
+  // A new version has downloaded and taken over: offer a restart. (The very first install doesn't count.)
+  let controlled = !!sw.controller;
+  sw.addEventListener('controllerchange', () => {
+    if (!controlled) { controlled = true; return; }
+    if (!ready) { ready = true; show('A new version is ready.', true); }
+  });
+  // This app's installed version, from its cache name (<slug>-v<N>).
+  const version = async () => {
+    const slug = location.pathname.split('/').filter(x => x && !x.includes('.')).pop();
+    const ns = (await caches.keys()).map(k => (k.match(new RegExp(`^${slug}-v(\\d+)$`)) || [])[1]).filter(Boolean).map(Number);
+    return ns.length ? Math.max(...ns) : null;
+  };
+  // Look again when the app comes back to the front, at most every 30 minutes.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || Date.now() - lastCheck < 30 * 60 * 1000) return;
+    lastCheck = Date.now();
+    sw.getRegistration().then(r => r && r.update()).catch(() => {});
+  });
+  api.check = async () => {
+    if (ready) { show('A new version is ready.', true); return 'ready'; }
+    show('Checking for updates…');
+    try {
+      const reg = await sw.getRegistration();
+      if (!reg) { show('Updates start once the app has loaded online.'); return 'none'; }
+      await reg.update(); lastCheck = Date.now();
+      if (ready) return 'ready';
+      if (reg.installing || reg.waiting) { show('Downloading the new version…'); return 'downloading'; }
+      const v = await version().catch(() => null);
+      show(`You have the latest version${v ? ` (version ${v})` : ''}.`); return 'latest';
+    } catch { show('Couldn’t check for updates. Are you online?'); return 'offline'; }
+  };
 })();
 </script>
 </body>

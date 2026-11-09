@@ -57,6 +57,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const p = await page();
     const swVersion = fs.readFileSync(path.join(ROOT, 'merit-order', 'sw.js'), 'utf8').match(/const VERSION = (\d+);/)[1];
     check('the title screen shows the version from sw.js', (await p.textContent('#t-version')).trim() === `Version ${swVersion}`, `sw.js says ${swVersion}`);
+    await p.click('#title [data-check-updates]'); await p.waitForTimeout(800);
+    check('"Check for updates" says you have the latest version', /latest version/.test(await p.textContent('#app-update-text')) && !(await p.$eval('#app-update', x => x.hidden)));
     await shot(p, 'title');
     await p.click('#t-continue'); await p.waitForTimeout(200);
     check('a new company asks for a difficulty', (await p.textContent('#i-title')) === 'New company');

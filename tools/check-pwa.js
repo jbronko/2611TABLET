@@ -6,7 +6,8 @@
 // Serves the repo at http://localhost:<port>/2611TABLET/ (matching
 // https://jbronko.github.io/2611TABLET/), then in headless Chromium checks that the manifest
 // parses, the service worker takes control, Chrome reports no installability problems, the page
-// reloads with the network off, and nothing logs an error. Exits 1 if any check fails.
+// reloads with the network off, "Check for updates" finds a new version and restarts into it, and
+// nothing logs an error. Exits 1 if any check fails.
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -21,6 +22,7 @@ const BASE = '/2611TABLET/';
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
   '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
 
+let newerSw = false;   // when true, sw.js is served changed, as if a new version had been published
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   if (!url.startsWith(BASE)) { res.writeHead(404).end(); return; }
@@ -32,6 +34,7 @@ const server = http.createServer((req, res) => {
   }
   if (!fs.existsSync(file)) { res.writeHead(404).end(); return; }
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
+  if (newerSw && path.basename(file) === 'sw.js') { res.end(fs.readFileSync(file, 'utf8') + '\n// a newer version\n'); return; }
   fs.createReadStream(file).pipe(res);
 });
 
@@ -73,6 +76,16 @@ const server = http.createServer((req, res) => {
     });
     const missing = icons.filter(([, s]) => s !== 200).map(([src]) => src);
     check('All manifest icons load', icons.length > 0 && missing.length === 0, missing.join(', '));
+
+    // Updates: nothing new at first; then a new version is published, found, and restarted into.
+    const first = await page.evaluate(() => window.appUpdates && window.appUpdates.check());
+    newerSw = true;
+    await page.evaluate(() => window.appUpdates.check());
+    const offered = await page.waitForSelector('#app-update-go:not([hidden])', { timeout: 10000 }).then(() => true, () => false);
+    if (offered) await Promise.all([page.waitForNavigation(), page.click('#app-update-go')]);
+    const after = offered && await page.evaluate(() => !!navigator.serviceWorker.controller && document.getElementById('app-update').hidden);
+    check('"Check for updates" finds a new version and restarts into it', first === 'latest' && offered && after,
+      first !== 'latest' ? `first check said ${first}` : !offered ? 'no Restart offered' : !after ? 'not back in control after the restart' : '');
 
     await ctx.setOffline(true);
     const before = errors.length;
