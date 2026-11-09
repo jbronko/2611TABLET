@@ -276,6 +276,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('the best result is saved', await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); return !!s.scenarios['heatwave-week'] && !s.scenario; }));
     await p.click('#se-again'); await p.waitForTimeout(300);
     await p.click('#open-menu'); await p.click('#m-title'); await p.waitForTimeout(200);
+    check('the menu\'s "Title screen" button goes back to the title', await state(p, () => MeritOrder.scene()) === 'title' && !(await p.$eval('#title', x => x.hidden)));
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('#sc-resume'); await p.waitForTimeout(300);
     check('try again, leave, and carry on later', /Heatwave Week · day 1 of 10/.test(await p.textContent('#clock')));

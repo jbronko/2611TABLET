@@ -97,6 +97,9 @@ const server = http.createServer((req, res) => {
     errors.splice(before, errors.length - before, ...offlineErrors);
     await ctx.setOffline(false);
 
+    // Two elements with one id: $('x') finds only the first, so the other's button silently does nothing.
+    const dupIds = await page.evaluate(() => { const n = {}; document.querySelectorAll('[id]').forEach(e => { n[e.id] = (n[e.id] || 0) + 1; }); return Object.keys(n).filter(k => n[k] > 1); });
+    check('No duplicate element ids', dupIds.length === 0, dupIds.join(', '));
     check('No errors in the console', errors.length === 0, errors.join(' | '));
   } catch (err) {
     check('Checks ran to completion', false, err.message);
