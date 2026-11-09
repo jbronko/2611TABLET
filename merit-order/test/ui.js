@@ -288,8 +288,11 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="energy-transition"]'); await p.waitForTimeout(150);
+    await p.click('[data-len="long"]'); await p.waitForTimeout(100);
+    check('the Energy Transition offers Standard or Long years, and the value star follows', /\$3B/.test(await p.textContent('.starlist')) && (await p.$eval('[data-len="long"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await p.click('[data-len="standard"]'); await p.waitForTimeout(100);
     await p.click('#sc-timeline'); await p.waitForTimeout(150);
-    check('the Energy Transition shows its 20-year timeline before you start', (await p.$$('ol.timeline li')).length === 20);
+    check('the Energy Transition shows its 20-year timeline before you start', (await p.$$('ol.timeline li')).length === 20 && /Each year is 60 game days/.test(await p.textContent('#i-body')));
     await p.click('#tl-back'); await p.waitForTimeout(150);
     await p.click('#sc-go'); await p.waitForTimeout(300);
     check('it starts in year 1 with the next milestone showing', /Year 1 of 20 · Jan/.test(await p.textContent('#clock')) && /Year 2:/.test(await p.textContent('#chips')));
@@ -308,7 +311,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await state(p, () => MeritOrder.setSpeed(0));
     if (!(await p.$eval('#sh-info', x => x.hidden))) await p.click('#sh-info [data-close]');   // new contracts released the same day
     await p.click('#add-plant'); await p.click('[data-design="wind"]'); await p.waitForTimeout(150);
-    check('the Renewable Energy Zones are shown with their opening year', /opens in year 5/.test(await p.textContent('#dz-sites')));
+    check('the Renewable Energy Zones are shown with their opening year and line', /opens in year 5 · line carries 1.5 GW/.test(await p.textContent('#dz-sites')));
     await p.keyboard.press('Escape');
     const w = await state(p, () => { const M = MeritOrder, r = M.Sim.build(M.state, 'wind', 300); M.renderAll(); return !!r.plant.cis; });
     check('a wind farm built this year is underwritten', w && /Underwriting: 300 MW of new renewables left/.test(await p.textContent('#chips')));
@@ -334,6 +337,27 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     }
     check('after year 20: stars and a year-by-year report', (await p.textContent('#i-title')) === 'Energy Transition' && !!(await p.$('.stars.big')) && (await p.$$('#i-body table.res tbody tr')).length === 20);
     await shot(p, 'transition-end');
+    await p.context().close();
+  }
+
+  // 8c. The Long version, and refurbishing a worn battery.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="energy-transition"]'); await p.waitForTimeout(150);
+    await p.click('[data-len="long"]'); await p.waitForTimeout(100);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    const ff = days => state(p, d => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < d * 288 + 1) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); }, days);
+    await ff(89); const dec = await p.textContent('#clock');
+    await ff(90);
+    check('Long: a year is 90 game days', /Year 1 of 20 · Dec/.test(dec) && /Year 2 of 20 · Jan/.test(await p.textContent('#clock')), dec);
+    const id = await state(p, () => { const M = MeritOrder, S = M.state; S.cash = 1e8; const b = M.Sim.build(S, 'battery', 100).plant; b.status = 'online'; b.buildLeft = 0; b.health = 0.7; M.renderAll(); return b.id; });
+    await p.click(`[data-plant="${id}"]`); await p.waitForTimeout(200);
+    check('a worn battery shows its health and offers new cells', /cells at 70% of new/.test(await p.textContent('#p-bid')) && !!(await p.$('[data-refurbish]:not([disabled])')));
+    await shot(p, 'transition-refurbish');
+    await p.click('[data-refurbish]'); await p.waitForTimeout(150);
+    check('refurbishing restores it', (await state(p, i => MeritOrder.state.plants.find(x => x.id === i).health, id)) === 1 && !(await p.$('[data-refurbish]')));
     await p.context().close();
   }
 

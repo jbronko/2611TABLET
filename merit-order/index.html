@@ -716,7 +716,7 @@
       const facts = Y && k < y ? `<small>${Y.shedHours > 0.05 ? `${Y.shedHours.toFixed(1)} hours short` : 'no shortfall'} · ${Math.round(Y.clean / Math.max(1, Y.region) * 100)}% of the region from your clean plant</small>` : '';
       years.push(`<li class="${k < y ? 'done' : k === y && !back ? 'now' : ''}"><b>Year ${k}</b><span>${ev.length ? ev.map(e => esc(e.text)).join(' ') : 'Demand grows; rivals add some wind, solar and batteries.'}${facts}</span></li>`);
     }
-    info('The Energy Transition', `<p>Each year is about 60 game days. Every year demand grows about 2%, rooftop solar spreads, rivals add a little wind, solar and storage, and the emissions target tightens${back ? '' : ` (now ${st.emisTarget} t per MWh)`}. The big steps:</p><ol class="timeline">${years.join('')}</ol>
+    info('The Energy Transition', `<p>Each year is ${st.yearDays} game days. Every year demand grows about 2%, rooftop solar spreads, rivals add a little wind, solar and storage, and the emissions target tightens${back ? '' : ` (now ${st.emisTarget} t per MWh)`}. The big steps:</p><ol class="timeline">${years.join('')}</ol>
       ${back ? '<button type="button" class="btn btn-quiet" id="tl-back" style="width:100%;margin-top:12px">Back</button>' : ''}`);
     if (back) $('tl-back').onclick = back;
   }
@@ -772,7 +772,7 @@
     if (p.status === 'retiring') return `Closing in ${p.retireLeft} day${p.retireLeft > 1 ? 's' : ''}`;
     if (p.status === 'upgrading') return `Upgrading · ${Math.max(0.1, p.upgLeft).toFixed(1)} days left`;
     const now = p.now || 0;
-    if (T.kind === 'storage') return now > 0.5 ? `Selling ${fmtMW(now)}` : now < -0.5 ? `Charging ${fmtMW(-now)}` : `Holding · ${Math.round(p.soc / (p.mw * hoursOf(p)) * 100)}% full`;
+    if (T.kind === 'storage') return now > 0.5 ? `Selling ${fmtMW(now)}` : now < -0.5 ? `Charging ${fmtMW(-now)}` : `Holding · ${Math.round(p.soc / Sim.storeCap(p) * 100)}% full`;
     return now > 0.5 ? `Running ${fmtMW(now)}` : 'Not running';
   }
   // Plant cards are updated in place; they're only rebuilt when plants are added or removed,
@@ -781,7 +781,7 @@
   function plantFrac(p) {
     const T = TECH[p.tech];
     if (p.status === 'upgrading') return 1 - p.upgLeft / Sim.UPGRADES[p.tech].days;
-    return running(p) ? (T.kind === 'storage' ? p.soc / (p.mw * hoursOf(p)) : Math.max(0, p.now || 0) / p.mw) : p.status === 'building' ? 1 - p.buildLeft / T.build : 0;
+    return running(p) ? (T.kind === 'storage' ? p.soc / Sim.storeCap(p) : Math.max(0, p.now || 0) / p.mw) : p.status === 'building' ? 1 - p.buildLeft / T.build : 0;
   }
   function renderPlants() {
     const ids = S.plants.map(p => p.id).join(',');
@@ -1007,7 +1007,7 @@
         const room = Sim.siteRoom(S, t, st.id), full = t === 'hydro' ? !room : room < T.range[0];
         const shut = st.opens != null && Sim.yearOf(S) + 1 < st.opens;
         const detail = t === 'hydro' ? `${st.reservoir.toLocaleString()} MWh reservoir · ${st.mw[0]}–${st.mw[1]} MW · ×${st.mlf.toFixed(2)}${full ? ' · already built' : ''}`
-          : `${resText(t, st)}loss factor ×${st.mlf.toFixed(2)} · ${shut ? `opens in year ${st.opens}` : full ? 'no room left' : `${fmtMW(room)} free`}`;
+          : `${resText(t, st)}loss factor ×${st.mlf.toFixed(2)} · ${shut ? `opens in year ${st.opens}` : full ? 'no room left' : `${fmtMW(room)} free`}${lineText(t, st)}`;
         return `<button type="button" class="site" data-site="${st.id}" aria-pressed="${st.id === design.site}" ${full ? 'disabled' : ''}><b>${st.name}</b><span>${st.blurb}</span><small>${detail}</small></button>`;
       }).join('');
       const L = designLimits();
@@ -1079,8 +1079,8 @@
         ${p.tech === 'coal' ? `<p class="note">Coal must keep ${p.upg ? 30 : 45}% running at all times (offered at −$1,000) and changes output slowly. The bands below are for the rest.</p>` : ''}
         <h3>Bid stack</h3>${stackBlock(p, 'g')}${stackNote}`;
     } else {
-      bid = `<h3>Charge level</h3><div class="soc"><i style="width:${Math.round(p.soc / (p.mw * hoursOf(p)) * 100)}%"></i></div>
-        <p class="note num">${Math.round(p.soc)} of ${Math.round(p.mw * hoursOf(p)).toLocaleString()} MWh</p>
+      bid = `<h3>Charge level</h3><div class="soc"><i style="width:${Math.round(p.soc / Sim.storeCap(p) * 100)}%"></i></div>
+        <p class="note num">${Math.round(p.soc)} of ${Math.round(Sim.storeCap(p)).toLocaleString()} MWh${(p.health ?? 1) < 0.995 ? ` · cells at ${Math.round(p.health * 100)}% of new` : ''}</p>
         <h3>Strategy</h3>${seg('strategy', p.strategy, [['arb', 'Trade the spread', 'cheap in, dear out'], ['evening', 'Evening peak', 'fill by day'], ['fcas', 'Frequency only', 'stay ready'], ['custom', 'Custom', 'your bands']])}
         ${p.strategy === 'custom' && p.sbands ? `<h3>Sell stack</h3>${stackBlock(p, 'd')}<h3>Charge stack</h3><p class="note">Charges in a band while the price is at or below it, highest band first.</p>${stackBlock(p, 'c')}${stackNote}` : '<p class="note">The strategies are auto-bidders: they set the day\'s prices and move MW between them as the battery fills and empties. Choose Custom to set your own bands.</p>'}`;
     }
@@ -1092,7 +1092,7 @@
     const sell = p.tech === 'coal' ? (p.status === 'retiring' ? '' : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Give notice to close (5 days)</button>`)
       : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Sell for ${fmtMoney(Math.round(p.value * 0.4))}</button>`;
     $('p-life').innerHTML = lifeBlock(p);
-    $('p-actions').innerHTML = p.status === 'building' ? '' : upgradeCard(p) + sell;
+    $('p-actions').innerHTML = p.status === 'building' ? '' : upgradeCard(p) + refurbishCard(p) + sell;
     sheetAfford = S.cash >= Sim.upgradeCost(S, p);
   }
   let sheetAfford = null;
@@ -1117,7 +1117,22 @@
         ${p.cis || L.cis ? row('Underwriting (Capacity Investment Scheme)', L.cis || 0) : ''}
         ${row('Operating profit', profit, true)}
       </tbody></table>
-      <p class="note">${Math.round(L.energy).toLocaleString()} MWh sold${avg != null ? ` for an average of ${fmtPrice(avg)}/MWh` : ''}. Built at ${esc(Sim.siteOf(p.tech, p.site || 'legacy').name)}, loss factor ×${(p.mlf ?? 1).toFixed(2)}. Contracts, interest and fines are counted for the whole company.</p>`;
+      <p class="note">${Math.round(L.energy).toLocaleString()} MWh sold${avg != null ? ` for an average of ${fmtPrice(avg)}/MWh` : ''}. Built at ${esc(Sim.siteOf(p.tech, p.site || 'legacy').name)}, loss factor ×${(p.mlf ?? 1).toFixed(2)}.${L.curtailed > 1 ? ` ${Math.round(L.curtailed).toLocaleString()} MWh were cut because the zone’s line was full.` : ''} Contracts, interest and fines are counted for the whole company.</p>`;
+  }
+  // A zone's line limit, and how much you've built behind it.
+  function lineText(t, st) {
+    const line = S.transition ? Sim.lineOf(S, st) : null;
+    if (line == null) return '';
+    const have = S.plants.reduce((a, p) => a + (p.site === st.id && Sim.SITES[p.tech] === Sim.SITES[t] ? p.mw : 0), 0);
+    return ` · line carries ${fmtMW(line)}${have ? `, you have ${fmtMW(have)} here` : ''}`;
+  }
+  // Worn storage: new cells bring it back to full.
+  function refurbishCard(p) {
+    if (!TECH[p.tech].fade || p.health == null || p.health > 0.95 || p.status === 'building' || p.status === 'retiring') return '';
+    const cost = Sim.refurbishCost(S, p), can = S.cash >= cost && p.status === 'online';
+    return `<div class="upgrade"><b>Refurbish: new cells</b><p>Its cells have worn: it holds ${Math.round(p.health * 100)}% of what it did when new. New cells bring it back to full.</p>
+      <p class="num">${fmtMoney(cost)}</p>
+      <button type="button" class="btn btn-primary" data-refurbish ${can ? '' : 'disabled'}>${p.status !== 'online' ? 'Available once it’s running' : S.cash < cost ? `Need ${fmtMoney(cost - S.cash)} more` : `Refurbish for ${fmtMoney(cost)}`}</button></div>`;
   }
   function upgradeCard(p) {
     const U = Sim.UPGRADES[p.tech];
@@ -1202,6 +1217,11 @@
     if (fsw) { const k = fsw.dataset.fcas; p[k] = p[k] === false; renderPlantSheet(); save(); return; }
     const flip = e.target.closest('[data-sflip]');
     if (flip) { const [key, i] = flip.dataset.sflip.split(':'), box = $('p-bid').querySelector(`[data-sprice="${key}:${i}"]`); applyBand(p, key, +i, 'price', -Number(box.value || 0)); return; }
+    if (e.target.closest('[data-refurbish]')) {
+      const r = Sim.refurbish(S, p);
+      if (r.ok) { toast(`${p.name} has new cells.`); renderPlantSheet(); renderAll(); save(); }
+      return;
+    }
     if (e.target.closest('[data-upgrade]')) {
       const r = Sim.upgrade(S, p);
       if (r.ok) { toast(`${p.name} is being upgraded.`); renderPlantSheet(); renderAll(); save(); }
@@ -1390,7 +1410,7 @@
       <p><b style="color:var(--ink)">Price limits:</b> as in the real NEM for 2026-27, prices run from ${fmtPrice(FLOOR)} (the floor) to ${fmtPrice(CAP)}/MWh (the cap). If the last 7 days of prices add up past a threshold, the market operator holds prices at ${fmtPrice(Sim.APC)} until the week's total falls back. The real threshold is ${fmtMoney(Sim.REAL_CPT)}, about 8 hours at the cap; the game uses ${fmtMoney(Sim.CPT)}, about 3 hours, because its market is spikier.</p>
       <p><b style="color:var(--ink)">Money:</b> you can go overdrawn, but the bank charges interest every day, and if you owe more than your limit it sells your plant, most valuable first. Lose everything and the company is wound up.</p>
       <p><b style="color:var(--ink)">Scenarios</b> are short, hand-made situations (a heatwave week, a coal closure, a gas squeeze) with three stars to win. Challenges are 30-day races against friends with share codes.</p>
-      <p><b style="color:var(--ink)">Energy Transition</b> is a 20-year scenario (each year about 60 game days) that keeps trading while you're away: coal closes, demand grows, new technology arrives, and the government's Capacity Investment Scheme can underwrite what you build.</p>
+      <p><b style="color:var(--ink)">Energy Transition</b> is a 20-year scenario (60- or 90-day years, your choice) that keeps trading while you're away: coal closes, demand grows, new technology arrives, and the government's Capacity Investment Scheme can underwrite what you build.</p>
       <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes.</p>`);
   }
   $('m-rename').onclick = () => {
@@ -1484,21 +1504,28 @@
     info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Scenarios only run while the app is open, except the 20-year Energy Transition, which keeps trading while you're away.</p>
       ${actSc ? `<h3>Your current scenario</h3><p>${actSc.name} · ${actSc.transition ? `year ${Math.min(Sim.TRANSITION_YEARS, Sim.yearOf(act) + 1)} of ${Sim.TRANSITION_YEARS}` : `day ${Math.min(actSc.days, Sim.dayIndex(act) + 1)} of ${actSc.days}`}</p><button type="button" class="btn btn-primary" id="sc-resume" style="width:100%">Carry on</button>` : ''}
       <div class="sc-grid">${Sim.SCENARIOS.map(sc => { const b = store.scenarios[sc.id];
-        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.transition ? `${Sim.TRANSITION_YEARS} years` : `${sc.days} days`}${b ? ` · best ${fmtMoney(b.value)}` : ''}</small></button>`; }).join('')}</div>`);
+        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.transition ? `${Sim.TRANSITION_YEARS} years` : `${sc.days} days`}${b ? ` · best ${fmtMoney(b.value)}${b.length && sc.lengths ? ` (${sc.lengths[b.length].name})` : ''}` : ''}</small></button>`; }).join('')}</div>`);
     if (actSc) $('sc-resume').onclick = () => startScenario(null);
     $('i-body').querySelectorAll('[data-scenario]').forEach(b => b.onclick = () => scenarioIntro(b.dataset.scenario));
   }
-  function scenarioIntro(id) {
+  let scLen = 'standard';
+  const LEN_BLURB = { standard: 'Seasons pass quickly, with something new most years.', long: 'Slower seasons and more time to build between milestones.' };
+  const bestText = (sc, b) => `${b.stars} star${b.stars === 1 ? '' : 's'}, ${fmtMoney(b.value)}${b.length && sc.lengths ? ` (${sc.lengths[b.length].name})` : ''}`;
+  function scenarioIntro(id, len) {
     const sc = Sim.SCENARIOS.find(x => x.id === id), b = (store.scenarios || {})[id];
-    info(sc.name, `<p>${sc.blurb}</p><h3>Stars</h3><ul class="starlist">${sc.stars.map(([t]) => `<li>${t}</li>`).join('')}</ul>
+    if (len) scLen = len;
+    const L = sc.lengths && (sc.lengths[scLen] || sc.lengths.standard);
+    const picker = sc.lengths ? `<h3>Length</h3><div class="diff-grid" role="radiogroup">${Object.entries(sc.lengths).map(([k, v]) => `<button type="button" class="diff" data-len="${k}" aria-pressed="${v === L}"><b>${v.name}: ${v.yearDays}-day years</b><span>${(Sim.TRANSITION_YEARS * v.yearDays).toLocaleString()} game days. ${LEN_BLURB[k] || ''}</span></button>`).join('')}</div>` : '';
+    info(sc.name, `<p>${sc.blurb}</p>${picker}<h3>Stars</h3><ul class="starlist">${Sim.starText(sc, scLen).map(t => `<li>${t}</li>`).join('')}</ul>
       ${sc.transition ? `<p>Coal closes unit by unit, demand grows with electric cars, data centres and electric heating, offshore wind and long-duration storage arrive, and the government underwrites new plant. <button type="button" class="btn btn-quiet small" id="sc-timeline">See the timeline</button></p>` : ''}
-      <p class="note">${sc.transition ? `${Sim.TRANSITION_YEARS} years of about ${sc.yearDays} game days each; keeps trading while you're away` : `${sc.days} game days`}${b ? ` · your best: ${b.stars} star${b.stars === 1 ? '' : 's'}, ${fmtMoney(b.value)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
+      <p class="note">${sc.transition ? `${Sim.TRANSITION_YEARS} years; keeps trading while you're away` : `${sc.days} game days`}${b ? ` · your best: ${bestText(sc, b)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
       <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-back" style="flex:1">All scenarios</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Start</button></div>`);
     $('sc-back').onclick = openScenarios;
-    if ($('sc-timeline')) $('sc-timeline').onclick = () => openTimeline(Sim.createScenario(id), () => scenarioIntro(id));
-    $('sc-go').onclick = () => startScenario(id);
+    if ($('sc-timeline')) $('sc-timeline').onclick = () => openTimeline(Sim.createScenario(id, { length: scLen }), () => scenarioIntro(id));
+    $('i-body').querySelectorAll('[data-len]').forEach(x => x.onclick = () => scenarioIntro(id, x.dataset.len));
+    $('sc-go').onclick = () => startScenario(id, scLen);
   }
-  function startScenario(id) {
+  function startScenario(id, length) {
     if (id == null && !store.scenario) { toast('That scenario has finished.'); return; }
     save();
     slot = 'scenario';
@@ -1509,7 +1536,7 @@
         const away = Math.floor((Date.now() - (store.scenarioSeen || Date.now())) / MS_PER_INTERVAL);
         if (away >= 12) rep = Sim.catchUp(S, Math.min(away, (S.scenario.days * Sim.IPD) - S.t + Sim.IPD));
       }
-    } else { S = Sim.createScenario(id); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); }
+    } else { S = Sim.createScenario(id, { length }); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); }
     store.scenario = S;
     closeSheets(); enterApp(); save();
     if (Sim.scenarioOver(S)) { scenarioEnd(); return; }
@@ -1520,7 +1547,7 @@
     store.scenarios ||= {};
     const best = store.scenarios[sc.id];
     const better = !best || r.stars > best.stars || (r.stars === best.stars && r.value > best.value);
-    if (better) store.scenarios[sc.id] = { stars: r.stars, value: Math.round(r.value) };
+    if (better) store.scenarios[sc.id] = { stars: r.stars, value: Math.round(r.value), length: S.scenario.length };
     delete store.scenario; S.ended = true; persist();
     speed = 0; syncSpeed(); acc = 0;
     info(sc.name, `<div class="stars big" aria-label="${r.stars} of 3 stars">${starStr(r.stars)}</div>
@@ -1613,7 +1640,7 @@
     const kv = $('p-kv').querySelectorAll('b');
     if (kv[0]) { kv[0].textContent = fmtMoney(today.money); kv[0].className = today.money >= 0 ? 'up' : 'down'; }
     if (kv[1]) kv[1].textContent = `${Math.round(today.energy).toLocaleString()} MWh`;
-    const soc = $('p-bid').querySelector('.soc i'); if (soc) soc.style.width = `${Math.round(p.soc / (p.mw * hoursOf(p)) * 100)}%`;
+    const soc = $('p-bid').querySelector('.soc i'); if (soc) soc.style.width = `${Math.round(p.soc / Sim.storeCap(p) * 100)}%`;
     const sub = $('p-top').querySelector('.sub'); if (sub) sub.textContent = `${T.name} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${Math.round(p.mwh ?? p.mw * hoursOf(p)).toLocaleString()} MWh, ${fmtHours(p)} hours` : ''} · ${plantStatus(p)}`;
     if (S.t % 6 === 0) $('p-life').innerHTML = lifeBlock(p);
   }

@@ -338,18 +338,50 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   const off = S.unlocked.offshore;
   run(60);
   check('…and they do', off && Sim.siteRoom(S, 'solar', 'cw-rez') > 0 && Sim.siteRoom(S, 'wind', 'ne-rez') > 0);
+  // a zone's line: build 2,000 MW of solar behind a 1,500 MW line and its output is capped there
+  S.cash = 1e10;
+  const farms = [];
+  for (let k = 0; k < 5; k++) farms.push(Sim.build(S, 'solar', 400, { site: 'cw-rez' }).plant);
+  const bat = Sim.build(S, 'battery', 100).plant;
+  while (farms.some(f => f.status !== 'online') || bat.status !== 'online') run(1);
+  const peakAt = () => { let peak = 0; for (let k = 0; k < Sim.IPD; k++) { const r = Sim.step(S); peak = Math.max(peak, r.supply.filter(b => farms.includes(b.ref)).reduce((a, b) => a + b.mw, 0)); } return peak; };   // what they can offer
+  let peak = 0; for (let d = 0; d < 5; d++) peak = Math.max(peak, peakAt());
+  const cut = farms.reduce((a, f) => a + (f.life.curtailed || 0), 0);
+  check('a zone\'s line caps your output there, and the cut is counted', farms.every(f => !!f) && peak <= 1500 + 1e-6 && peak > 1400 && cut > 0, `peak ${Math.round(peak)} MW, ${Math.round(cut)} MWh cut`);
+  Sim.TRANSITION.find(e => e.year === 14 && /Central-West/.test(e.text)).apply(S);
+  let peak2 = 0; for (let d = 0; d < 5; d++) peak2 = Math.max(peak2, peakAt());
+  check('…and upgrading the line lifts the cap', Sim.lineOf(S, Sim.siteOf('solar', 'cw-rez')) === 2500 && peak2 > 1500, `peak ${Math.round(peak2)} MW`);
+  // ageing storage: a year takes 2.5% off a battery; refurbishing restores it as capital spending
+  const h0 = bat.health ?? 1;
+  while (Sim.dayIndex(S) % S.yearDays !== 0) run(1);
+  Sim.step(S);
+  let socOK = true;
+  for (let k = 0; k < 2 * Sim.IPD; k++) { Sim.step(S); if (bat.soc > Sim.storeCap(bat) + 1e-6) socOK = false; }
+  check('storage wears out once a year and never holds more than it can', Math.abs(bat.health - (h0 - 0.025)) < 1e-9 && socOK && Sim.storeCap(bat) < 200, `health ${bat.health}`);
+  const early = Sim.refurbish(S, bat);
+  bat.health = 0.7;
+  const cash1 = S.cash, cap1 = bat.capital, cost = Sim.refurbishCost(S, bat), ref = Sim.refurbish(S, bat);
+  check('refurbishing waits until it has worn, then restores it as capital spending', !early.ok && ref.ok && bat.health === 1 && Math.abs(cash1 - S.cash - cost) < 1e-6 && Math.abs(bat.capital - cap1 - cost) < 1e-6, Sim.fmtMoney(cost));
   const C = Sim.create(5);
-  check('the career keeps a normal calendar and has no zones or new technology', C.yearDays == null && Sim.siteRoom(C, 'solar', 'cw-rez') === 0 && Sim.siteRoom(C, 'battery', 'bh-yard') === 0 && !C.unlocked.offshore && Sim.dateLabel(C).year === 1);
+  check('the career keeps a normal calendar and has no zones or new technology', C.yearDays == null && Sim.siteRoom(C, 'solar', 'cw-rez') === 0 && Sim.siteRoom(C, 'battery', 'bh-yard') === 0 && Sim.siteRoom(C, 'battery', 'wollemi') === 0 && Sim.siteRoom(C, 'wind', 'ne-rez-2') === 0 && Sim.siteRoom(C, 'peaker', 'kurri') === 0 && !C.unlocked.offshore && Sim.dateLabel(C).year === 1);
   // stars: reliability in the final year only
   const T = Sim.createScenario('energy-transition');
   T.t = (sc.days - 1) * Sim.IPD - 1; Sim.step(T);
-  const day = d => ({ day: d, shed: 0, clean: 300000, region: 1e6, profit: 0, share: 0 });
-  T.days = Array.from({ length: 60 }, (_, k) => day(sc.days - 60 + k));
-  T.cash = 3e9;
+  const years = () => Array.from({ length: 20 }, () => ({ shed: 0, shedHours: 0, clean: 18e6, region: 60e6, profit: 0 }));
+  T.years = years(); T.cash = 3e9;
   const ok = Sim.scenarioResult(T);
-  T.days[5].shed = 0.00003 * 60e6;
+  T.years[19].shed = 0.00003 * 60e6;
   const short = Sim.scenarioResult(T);
   check('stars: reliable, clean and big earns three; missing the reliability standard earns none', ok.stars === 3 && short.stars === 0, `${ok.stars} vs ${short.stars}`);
+  // the Long version: 90-day years, 1,800 days, a 90-day underwriting window and a bigger value star
+  const Lg = Sim.createScenario('energy-transition', { length: 'long' });
+  const sc2 = Sim.createScenario('energy-transition', { length: 'long' });
+  sc2.t = (1800 - 1) * Sim.IPD - 1; Sim.step(sc2); sc2.years = years(); sc2.cash = 2.5e9;
+  const long = Sim.scenarioResult(sc2), std = (() => { T.years = years(); T.cash = 2.5e9; return Sim.scenarioResult(T); })();
+  while (Sim.dayIndex(Lg) < 2 * 90) { Sim.step(Lg); if (Lg.offer) Sim.declineOffer(Lg); }
+  Sim.step(Lg);
+  check('Long: 90-day years, 1,800 days, a year-long underwriting window', Lg.yearDays === 90 && Lg.scenario.days === 1800 && Sim.yearOf(Lg) === 2 && !!Lg.tender && Lg.tender.until - Lg.tender.offeredAt === 90);
+  check('Long needs $3B for the third star, Standard $2B', long.stars === 2 && std.stars === 3 && /\$3B/.test(long.lines[2].text) && /\$2B/.test(std.lines[2].text), `${long.stars} vs ${std.stars}`);
   // the catch-up never runs past the end
   const E = Sim.createScenario('energy-transition'); E.t = (sc.days - 1) * Sim.IPD;
   Sim.catchUp(E, Math.min(7 * Sim.IPD, sc.days * Sim.IPD - E.t + Sim.IPD));

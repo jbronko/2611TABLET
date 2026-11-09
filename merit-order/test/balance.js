@@ -87,6 +87,7 @@ STRATS.firm = {
   day(S, d) {
     for (const p of S.plants) { if (TECH[p.tech].kind === 'vre') p.bid = 'nonneg'; }
     if (S.tender && !S.tender.accepted && !S.tender.declined) Sim.acceptTender(S);
+    for (const p of S.plants) if ((p.health ?? 1) < 0.8 && S.cash > Sim.refurbishCost(S, p) * 2) Sim.refurbish(S, p);
     const buffer = Math.max(100000, S.cash * 0.1);
     const order = ['hydro', 'ldes', 'battery', 'peaker', 'wind', 'offshore', 'solar'];
     for (let n = 0; n < 6; n++) {
@@ -101,9 +102,9 @@ STRATS.firm = {
   },
   offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
 };
-function runScenario(kind, id, report) {
-  const S = Sim.createScenario(id), st = STRATS[kind];
-  const maxDays = Sim.SCENARIOS.find(x => x.id === id).days + 5;
+function runScenario(kind, id, report, opts) {
+  const S = Sim.createScenario(id, opts), st = STRATS[kind];
+  const maxDays = S.scenario.days + 5;
   for (let d = 0; d < maxDays && !Sim.scenarioOver(S); d++) {
     if (report && S.yearDays && d % S.yearDays === 0 && d) report(S, d);
     st.day(S, d);
@@ -126,16 +127,20 @@ function run(kind, seed, difficulty, days) {
 }
 module.exports = { run, runScenario, STRATS };
 if (require.main === module && process.argv[2] === '--transition') {
-  // node merit-order/test/balance.js --transition [strategies]
+  // node merit-order/test/balance.js --transition [strategies] [--long]
   // Targets: idle 0 stars and the region runs short without the player; players who keep building
-  // firm and clean plant reach 3. Last run: idle 0 ($90M), steady 3 ($6.9B), firm 3 ($5.1B).
-  const kinds = (process.argv[3] || 'idle,steady,firm').split(',');
+  // firm and clean plant reach 3, and still have places to build after year 10.
+  // Last run: Standard steady 3 ($5.6B), firm 3 ($3.4B); Long steady 3 ($8.7B), firm 3 ($5.2B), idle 0.
+  const long = process.argv.includes('--long');
+  const kinds = (process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : 'idle,steady,firm').split(',');
   for (const kind of kinds) {
-    console.log(kind);
+    console.log(`${kind}${long ? ' (Long: 90-day years)' : ''}`);
+    let curtailed = 0;
     const r = runScenario(kind, 'energy-transition', (S, d) => {
+      curtailed = S.plants.reduce((a, p) => a + ((p.life && p.life.curtailed) || 0), 0);
       const y = S.years[d / S.yearDays - 1];
-      if ((d / S.yearDays) % 2 === 0) console.log(`  year ${String(d / S.yearDays).padStart(2)} value ${Sim.fmtMoney(Sim.companyValue(S)).padStart(7)} plant ${String(Math.round(S.plants.reduce((a, p) => a + p.mw, 0))).padStart(6)} MW shortfall ${y.shedHours.toFixed(1).padStart(6)} h clean share ${(y.clean / Math.max(1, y.region) * 100).toFixed(0)}%`);
-    });
+      if ((d / S.yearDays) % 2 === 0) console.log(`  year ${String(d / S.yearDays).padStart(2)} value ${Sim.fmtMoney(Sim.companyValue(S)).padStart(7)} plant ${String(Math.round(S.plants.reduce((a, p) => a + p.mw, 0))).padStart(6)} MW shortfall ${y.shedHours.toFixed(1).padStart(6)} h clean share ${(y.clean / Math.max(1, y.region) * 100).toFixed(0)}% curtailed ${Math.round(curtailed / 1000)} GWh`);
+    }, { length: long ? 'long' : 'standard' });
     console.log(`  ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} value ${Sim.fmtMoney(r.value)} final-year shortfall ${r.finalShed.toFixed(0)} MWh, clean share ${(r.cleanShare * 100).toFixed(0)}%${r.bust ? ' BUST' : ''}`);
   }
 } else if (require.main === module && process.argv[2] === '--scenarios') {
