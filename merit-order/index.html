@@ -404,7 +404,7 @@
   <div class="eyebrow" id="offer-kind">Offer</div>
   <p id="offer-text"></p>
   <p class="note" id="offer-note" hidden></p>
-  <div class="actions"><button type="button" class="btn btn-quiet" id="offer-no">No thanks</button><button type="button" class="btn btn-quiet" id="offer-loan" hidden></button><button type="button" class="btn btn-primary" id="offer-yes">Accept</button></div>
+  <div class="actions"><button type="button" class="btn btn-quiet" id="offer-no">No thanks</button><button type="button" class="btn btn-primary" id="offer-loan" hidden></button><button type="button" class="btn btn-primary" id="offer-yes">Accept</button></div>
 </div>
 <div class="tooltip" id="tip" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -525,11 +525,19 @@
   // --- merit order: bars animate from their last positions ---
   const meritAnim = new Map();
   let meritBands = [], meritGeom = null;
-  function bandKey(b) { return `${b.owner}:${b.ref.id || b.ref.name}:${b.price.toFixed(2)}`; }
+  // A bar's identity is its owner and band number, not its price: a re-priced band (imports move
+  // every interval) glides to its new place instead of being treated as a new bar.
+  let meritNew = 0;
+  function bandKeys(supply) {
+    const n = new Map(), keys = new Map();
+    for (const b of supply) { const r = `${b.owner}:${b.ref.id || b.ref.name}`, i = n.get(r) || 0; n.set(r, i + 1); keys.set(b, `${r}:${i}`); }
+    return keys;
+  }
   function drawMerit(canvas, state, opts = {}) {
     const last = state.last; if (!last) return false;
     const { ctx, w, h } = setup(canvas);
     const left = opts.bare ? 0 : 52, right = w - (opts.bare ? 0 : 8), top = 18, bottom = h - (opts.bare ? 0 : 24);
+    const keys = bandKeys(last.supply);
     const bands = last.supply.filter(b => b.mw > 0.5).sort((a, b) => a.key - b.key);
     const total = bands.reduce((a, b) => a + b.mw, 0);
     const xMax = Math.max(total, last.res.traded) * 1.02;
@@ -543,9 +551,9 @@
     let cum = 0, animating = false;
     const geo = [];
     for (const b of bands) {
-      const k = bandKey(b), tx0 = X(cum), tx1 = X(cum + b.mw), ty = Y(b.price);
+      const k = keys.get(b), tx0 = X(cum), tx1 = X(cum + b.mw), ty = Y(b.price);
       let a = meritAnim.get(k);
-      if (!a) { a = { x0: tx0, x1: tx1, y: y0 }; meritAnim.set(k, a); }
+      if (!a) { a = { x0: tx0, x1: tx0, y: ty }; meritAnim.set(k, a); if (!opts.bare) meritNew++; }   // a new bar widens in place
       const ease = opts.instant ? 1 : 0.22;
       a.x0 += (tx0 - a.x0) * ease; a.x1 += (tx1 - a.x1) * ease; a.y += (ty - a.y) * ease; a.seen = true;
       if (Math.abs(a.x0 - tx0) + Math.abs(a.x1 - tx1) + Math.abs(a.y - ty) > 0.5) animating = true;
@@ -1850,7 +1858,7 @@
   // ---- test hook ----
   window.appUpdates = { beforeRestart: () => save() };   // save the game before restarting into a new version
   window.MeritOrder = { get state() { return S; }, Sim, startCareer, startChallenge, renderAll, resultCode, parseResult, challengeCode, parseChallenge,
-    setSpeed(v) { speed = v; syncSpeed(); }, save, scene: () => scene, drawMerit: () => drawMerit($('c-merit'), S, { instant: true }) };
+    setSpeed(v) { speed = v; syncSpeed(); }, save, meritNew: () => { const n = meritNew; meritNew = 0; return n; }, scene: () => scene, drawMerit: () => drawMerit($('c-merit'), S, { instant: true }) };
 
   showTitle();
   raf = requestAnimationFrame(frame);

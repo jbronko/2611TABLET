@@ -77,6 +77,12 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const shot2 = await p.evaluate(() => [MeritOrder.state.t, document.getElementById('c-merit').toDataURL()]);
     await state(p, () => MeritOrder.setSpeed(0));
     check('the merit order chart updates live', shot2[0] > shot1[0] && shot2[1] !== shot1[1], `${shot2[0] - shot1[0]} intervals apart`);
+    // ...without bars vanishing and regrowing each interval (a re-priced band is the same bar)
+    await state(p, () => MeritOrder.meritNew());
+    const tA = await state(p, () => MeritOrder.state.t);
+    await state(p, () => MeritOrder.setSpeed(16)); await p.waitForTimeout(2000); await state(p, () => MeritOrder.setSpeed(0));
+    const born = await state(p, () => MeritOrder.meritNew()), steps = (await state(p, () => MeritOrder.state.t)) - tA;
+    check('chart bars keep their identity from one interval to the next', steps >= 10 && born / steps < 1, `${born} new bars over ${steps} intervals`);
     await p.click('#add-plant'); await p.waitForTimeout(200); await shot(p, 'build');
     await p.click('[data-build="solar"]'); await p.waitForTimeout(200);
     check('building a plant', (await state(p, () => MeritOrder.state.plants.length)) === 1);
