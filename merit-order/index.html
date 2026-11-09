@@ -104,6 +104,7 @@
   .continue span:first-child { display: grid; }
   .continue small { font-weight: 600; font-size: 13.5px; opacity: 0.75; }
   .title-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .title-version { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; margin-top: -14px; }
   @media (orientation: portrait) {
     .title-screen { align-items: end; }
     .title-screen::after { background: linear-gradient(0deg, rgba(11, 26, 33, 0.97) 0%, rgba(11, 26, 33, 0.8) 45%, rgba(11, 26, 33, 0.1) 80%); }
@@ -327,6 +328,8 @@
         <button type="button" class="btn btn-quiet" id="t-help"><svg class="i"><use href="#i-help"/></svg>How it works</button>
       </div>
     </div>
+    <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
+    <div class="title-version" id="t-version">Version 15</div>
   </div>
 </section>
 

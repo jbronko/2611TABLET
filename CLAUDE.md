@@ -58,7 +58,8 @@ Merit Order (`merit-order/`) has its own checks in `merit-order/test/` (not prec
 - After changing prices, costs or rules, run `node merit-order/test/balance.js` and compare with the
   targets in its header comment.
 - Bump `VERSION` in `merit-order/sw.js` with every published change, so `index.html` and `sim.js`
-  always update together.
+  always update together, and set the same number in the title screen's `#t-version` line in
+  `merit-order/index.html` (`ui.js` checks they match).
 
 ## Optional: also publish to claude.ai
 

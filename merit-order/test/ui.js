@@ -55,6 +55,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   // 1. A new company: difficulty, building, the plant sheet, the price forecast.
   {
     const p = await page();
+    const swVersion = fs.readFileSync(path.join(ROOT, 'merit-order', 'sw.js'), 'utf8').match(/const VERSION = (\d+);/)[1];
+    check('the title screen shows the version from sw.js', (await p.textContent('#t-version')).trim() === `Version ${swVersion}`, `sw.js says ${swVersion}`);
     await shot(p, 'title');
     await p.click('#t-continue'); await p.waitForTimeout(200);
     check('a new company asks for a difficulty', (await p.textContent('#i-title')) === 'New company');
