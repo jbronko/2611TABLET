@@ -128,6 +128,9 @@
   .speed { display: flex; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 3px; gap: 2px; margin-left: auto; }
   .speed button { min-width: 46px; height: 44px; border-radius: 9px; font-weight: 750; font-size: 14px; color: var(--ink-2); display: grid; place-items: center; }
   .speed button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink); }
+  .speed.waiting [data-speed="1"] { color: var(--ink); box-shadow: inset 0 0 0 2px var(--amber); }
+  @media (prefers-reduced-motion: no-preference) { .speed.waiting [data-speed="1"] { animation: play-nudge 1.6s ease-in-out infinite; } }
+  @keyframes play-nudge { 50% { box-shadow: inset 0 0 0 2px var(--amber), 0 0 0 5px rgba(242, 163, 58, 0.3); } }
   .cash { display: grid; justify-items: end; line-height: 1.1; }
   .cash b { font-size: 24px; font-weight: 800; font-stretch: 85%; }
   .cash span { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
@@ -330,7 +333,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 18</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 19</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -436,6 +439,7 @@
     <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Transition timeline</span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
     <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive</small></span><span class="switch"></span></button>
+    <button type="button" class="switch-row" id="m-idle" role="switch" aria-checked="true"><span>Keep trading while I’m away<small>Up to 7 game days each time you leave: your company and the Energy Transition</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
     <button type="button" class="switch-row" id="m-title"><span>Title screen</span></button>
     <button type="button" class="switch-row danger" id="m-reset"><span>Start a new company</span></button>
@@ -477,6 +481,7 @@
     return copy;
   }
   let S = null, slot = 'career', speed = [0, 1, 4, 16].includes(store.speed) ? store.speed : 1;
+  let waitingToStart = false;   // a new game starts paused, with 1x pulsing until you start the clock
   function save() {
     if (!S || S.ended) return;
     store[slot] = pack(S); store[`${slot}Seen`] = Date.now(); store.slot = slot; store.speed = speed;
@@ -1288,12 +1293,19 @@
     $('m-goals-n').textContent = `${goalCount()} of ${Sim.GOALS.length}`;
     $('m-contracts-n').textContent = S.contracts.length ? `${S.contracts.length} active` : S.contractOffers.length ? `${S.contractOffers.length} on offer` : '';
     $('m-autopause').setAttribute('aria-checked', String(autoPause));
+    $('m-idle').setAttribute('aria-checked', String(idle));
     $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario; $('m-timeline').hidden = !S.transition;
     $('m-scenarios-n').textContent = `${starTotal()} of ${Sim.SCENARIOS.length * 3} ★`;
     openSheet('menu');
   };
   let autoPause = store.autoPause !== false;
   $('m-autopause').onclick = () => { autoPause = !autoPause; store.autoPause = autoPause; persist(); $('m-autopause').setAttribute('aria-checked', String(autoPause)); };
+  // Keep trading while you're away (your company and the Energy Transition), or wait for you.
+  let idle = store.idle !== false;
+  $('m-idle').onclick = () => {
+    idle = !idle; store.idle = idle; persist(); $('m-idle').setAttribute('aria-checked', String(idle));
+    toast(idle ? 'The market keeps trading while you’re away.' : 'The game now waits for you while you’re away.');
+  };
 
   // --- contracts ---
   const recent = (k, n) => { const d = S.days.slice(-n); return d.length ? d.reduce((a, r) => a + (r[k] || 0), 0) / d.length : null; };
@@ -1440,7 +1452,8 @@
       <p><b style="color:var(--ink)">Money:</b> you can go overdrawn, but the bank charges interest every day, and if you owe more than your limit it sells your plant, most valuable first. Lose everything and the company is wound up.</p>
       <p><b style="color:var(--ink)">Scenarios</b> are short, hand-made situations (a heatwave week, a coal closure, a gas squeeze) with three stars to win. Challenges are 30-day races against friends with share codes.</p>
       <p><b style="color:var(--ink)">Energy Transition</b> is a 20-year scenario (60- or 90-day years, your choice) that keeps trading while you're away: coal closes, demand grows, new technology arrives, and the government's Capacity Investment Scheme can underwrite what you build. Each new year opens with a report on the last one.</p>
-      <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes.</p>`);
+      <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes. To have the game wait for you instead, turn off <b style="color:var(--ink)">Keep trading while I’m away</b> in the menu.</p>
+      <p><b style="color:var(--ink)">New games start paused.</b> Tap 1× (or faster) when you’re ready.</p>`);
   }
   $('m-rename').onclick = () => {
     info('Rename company', `<div class="field-row"><input type="text" id="rename-in" maxlength="28" value="${esc(S.company || 'Your company')}" aria-label="Company name"><button type="button" class="btn btn-primary" id="rename-ok">Save</button></div>`);
@@ -1547,7 +1560,7 @@
     const picker = sc.lengths ? `<h3>Length</h3><div class="diff-grid" role="radiogroup">${Object.entries(sc.lengths).map(([k, v]) => `<button type="button" class="diff" data-len="${k}" aria-pressed="${v === L}"><b>${v.name}: ${v.yearDays}-day years</b><span>${(Sim.TRANSITION_YEARS * v.yearDays).toLocaleString()} game days. ${LEN_BLURB[k] || ''}</span></button>`).join('')}</div>` : '';
     info(sc.name, `<p>${sc.blurb}</p>${picker}<h3>Stars</h3><ul class="starlist">${Sim.starText(sc, scLen).map(t => `<li>${t}</li>`).join('')}</ul>
       ${sc.transition ? `<p>Coal closes unit by unit, demand grows with electric cars, data centres and electric heating, offshore wind and long-duration storage arrive, and the government underwrites new plant. <button type="button" class="btn btn-quiet small" id="sc-timeline">See the timeline</button></p>` : ''}
-      <p class="note">${sc.transition ? `${Sim.TRANSITION_YEARS} years; keeps trading while you're away` : `${sc.days} game days`}${b ? ` · your best: ${bestText(sc, b)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
+      <p class="note">${sc.transition ? `${Sim.TRANSITION_YEARS} years; ${idle ? 'keeps trading while you’re away (you can turn that off in the menu)' : 'waits for you while you’re away'}` : `${sc.days} game days`}${b ? ` · your best: ${bestText(sc, b)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
       <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-back" style="flex:1">All scenarios</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Start</button></div>`);
     $('sc-back').onclick = openScenarios;
     if ($('sc-timeline')) $('sc-timeline').onclick = () => openTimeline(Sim.createScenario(id, { length: scLen }), () => scenarioIntro(id));
@@ -1561,15 +1574,16 @@
     let rep = null;
     if (id == null) {
       S = Sim.migrate(store.scenario);
-      if (S.transition) {   // the 20-year scenario keeps trading while you're away
+      if (S.transition && idle) {   // the 20-year scenario keeps trading while you're away
         const away = Math.floor((Date.now() - (store.scenarioSeen || Date.now())) / MS_PER_INTERVAL);
         if (away >= 12) rep = Sim.catchUp(S, Math.min(away, (S.scenario.days * Sim.IPD) - S.t + Sim.IPD));
       }
-    } else { S = Sim.createScenario(id, { length }); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); }
+    } else { S = Sim.createScenario(id, { length }); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); startPaused(); }
     store.scenario = S;
     closeSheets(); enterApp(); save();
     if (Sim.scenarioOver(S)) { scenarioEnd(); return; }
     if (rep) awayReport(rep);
+    else if (id != null) toast('Paused: tap 1× when you’re ready.');
   }
   function scenarioEnd() {
     const sc = Sim.SCENARIOS.find(x => x.id === S.scenario.id), r = Sim.scenarioResult(S);
@@ -1611,7 +1625,12 @@
   // ---------------------------------------------------------------------------------
   // Game loop
   // ---------------------------------------------------------------------------------
-  function syncSpeed() { document.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed))); }
+  function syncSpeed() {
+    if (speed > 0) waitingToStart = false;
+    document.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === speed)));
+    document.querySelector('.speed').classList.toggle('waiting', waitingToStart);
+  }
+  function startPaused() { speed = 0; store.speed = 0; waitingToStart = true; }
   document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => { speed = +b.dataset.speed; syncSpeed(); store.speed = speed; persist(); });
 
   let raf = 0, lastT = 0, acc = 0, lastSave = 0, meritAnimating = false, pausedFor = null, lastRec = -1, seenOffers = null, seenTender = null;
@@ -1713,13 +1732,14 @@
       S = Sim.migrate(store.career);
       const away = Math.floor((Date.now() - (store.careerSeen || Date.now())) / MS_PER_INTERVAL);
       enterApp();
-      if (away >= 12) { const rep = Sim.catchUp(S, away); pausedFor = S.offer; seenOffers = S.contractOffers; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1; renderAll(); awayReport(rep); }
+      if (idle && away >= 12) { const rep = Sim.catchUp(S, away); pausedFor = S.offer; seenOffers = S.contractOffers; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1; renderAll(); awayReport(rep); }
     } else {
       S = Sim.create((Math.random() * 2 ** 31) >>> 0, { difficulty, tour: true }); S.company = 'Your company';
       Sim.step(S);
-      enterApp();
+      startPaused(); enterApp();
       info('Welcome to the market', `<p>You have ${fmtMoney(S.cash)} and an empty site in a region of about 6 GW. Every five minutes, generators bid to supply power and the cheapest win. The last bid needed sets the price everyone is paid.</p>
         <p>A good start: a solar farm for cheap midday energy, then a small battery to sell into the evening peak. Tap <b style="color:var(--ink)">Build a plant</b>, or follow <b style="color:var(--ink)">Getting started</b> above your plants for a quick tour.</p>
+        <p>The clock starts paused: tap <b style="color:var(--ink)">1×</b> at the top when you’re ready.</p>
         <button type="button" class="btn btn-primary" data-close style="width:100%" id="welcome-ok">Let’s go</button>`);
       $('welcome-ok').onclick = closeSheets;
     }
@@ -1742,12 +1762,12 @@
     save();
     slot = 'challenge';
     if (seed == null) S = Sim.migrate(store.challenge);
-    else { S = Sim.create(seed, { challenge: { seed } }); S.company = (store.career && store.career.company) || 'You'; Sim.step(S); }
+    else { S = Sim.create(seed, { challenge: { seed } }); S.company = (store.career && store.career.company) || 'You'; Sim.step(S); startPaused(); }
     store.challenge = S;
     closeSheets(); enterApp(); save();
     if (seed == null && Sim.dayIndex(S) >= CH_DAYS) { challengeEnd(); return; }   // closed right at the finish
     if (seed != null) info(`Challenge ${challengeCode(seed)}`, `<p>30 days. ${fmtMoney(Sim.DIFFICULTY.standard.cash)} to start. Solar, wind, batteries and gas peakers are unlocked. Whoever ends with the highest company value wins.</p><div class="code">${challengeCode(seed)}</div><p class="note">Send this code to friends so they can play the same 30 days.</p><div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="cs-share" style="flex:1"><svg class="i"><use href="#i-share"/></svg>Send code</button><button type="button" class="btn btn-primary" id="cs-go" style="flex:1">Start</button></div>`);
-    if (seed != null) { $('cs-share').onclick = () => shareText(`Try my Merit Order challenge: ${challengeCode(seed)}. Same 30 days for everyone. Highest company value wins.`); $('cs-go').onclick = closeSheets; }
+    if (seed != null) { $('cs-share').onclick = () => shareText(`Try my Merit Order challenge: ${challengeCode(seed)}. Same 30 days for everyone. Highest company value wins.`); $('cs-go').onclick = () => { closeSheets(); toast('Paused: tap 1× when you’re ready.'); }; }
   }
   $('t-continue').onclick = () => store.career ? startCareer(false) : chooseDifficulty(d => { closeSheets(); startCareer(true, d); });
 
@@ -1755,7 +1775,7 @@
   let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { hiddenAt = Date.now(); save(); return; }
-    if (!hiddenAt || !S || scene !== 'app' || !(slot === 'career' || (slot === 'scenario' && S.transition)) || S.ended) { hiddenAt = 0; return; }
+    if (!hiddenAt || !idle || !S || scene !== 'app' || !(slot === 'career' || (slot === 'scenario' && S.transition)) || S.ended) { hiddenAt = 0; return; }
     const away = Math.floor((Date.now() - hiddenAt) / MS_PER_INTERVAL);
     hiddenAt = 0; lastT = 0; acc = 0;
     if (away >= 12) {

@@ -65,7 +65,11 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('a new company asks for a difficulty', (await p.textContent('#i-title')) === 'New company');
     await p.click('[data-diff="tough"]'); await p.click('#diff-go'); await p.waitForTimeout(200);
     check('tough difficulty starts with its own cash', (await state(p, () => [MeritOrder.state.difficulty, MeritOrder.state.cash].join())) === 'tough,450000');
+    check('a new company starts paused, with 1× pulsing', (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true' && await p.$eval('.speed', x => x.classList.contains('waiting'))
+      && /starts paused/.test(await p.textContent('#i-body')));
     await p.click('#welcome-ok');
+    await p.click('[data-speed="1"]');
+    check('…and the pulse stops once the clock runs', !(await p.$eval('.speed', x => x.classList.contains('waiting'))));
     await p.click('#add-plant'); await p.waitForTimeout(200); await shot(p, 'build');
     await p.click('[data-build="solar"]'); await p.waitForTimeout(200);
     check('building a plant', (await state(p, () => MeritOrder.state.plants.length)) === 1);
@@ -178,9 +182,21 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('coming back after 3 hours: a week of catch-up and a report', (await p.textContent('#i-title')) === 'While you were away' && ((await state(p, () => MeritOrder.state.t)) - t0) === 7 * 288);
     await shot(p, 'away');
     await p.click('#sh-info [data-close]');
+    // with "Keep trading while I'm away" off, the same 3 hours away changes nothing
+    await state(p, () => MeritOrder.setSpeed(0));
+    await p.click('#open-menu'); await p.click('#m-idle'); await p.waitForTimeout(100);
+    const idleOff = (await p.getAttribute('#m-idle', 'aria-checked')) === 'false';
+    await p.click('#sh-menu [data-close]');
+    const t1 = await state(p, () => MeritOrder.state.t);
+    await p.reload(); await p.waitForTimeout(300);
+    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.careerSeen = Date.now() - 3 * 3600 * 1000; localStorage.setItem('merit-order', JSON.stringify(s)); });
+    await p.reload(); await p.waitForTimeout(300);
+    await p.click('#t-continue'); await p.waitForTimeout(400);
+    check('with "Keep trading while I\'m away" off, the game waits for you', idleOff && (await state(p, () => MeritOrder.state.t)) === t1 && await p.$eval('#sh-info', x => x.hidden));
     await p.click('#open-menu'); await p.click('#m-challenge'); await p.click('#ch-new'); await p.waitForTimeout(200);
     const code = await p.textContent('#sh-info .code');
     await p.click('#cs-go');
+    check('a new challenge starts paused', (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
     await state(p, () => { const M = MeritOrder; M.Sim.build(M.state, 'solar', 50); while (M.state.t < 30 * 288 - 2) M.Sim.step(M.state); M.setSpeed(16); });
     await p.waitForTimeout(1200);
     if ((await p.textContent('#i-title')) === 'New contracts on offer') { await p.click('#nc-play'); await p.waitForTimeout(1200); }
@@ -269,6 +285,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('a scenario shows its three stars before starting', (await p.$$('.starlist li')).length === 3);
     await p.click('#sc-go'); await p.waitForTimeout(300);
     check('it starts with its own plants and date', /Heatwave Week · day 1 of 10 · 15 Jan/.test(await p.textContent('#clock')) && (await p.$$('[data-plant]')).length === 2 && await p.$eval('#mission', x => x.hidden));
+    check('a new scenario starts paused', (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
     await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 10 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.setSpeed(16); });
     await p.waitForTimeout(1500);
     if ((await p.textContent('#i-title')) === 'New contracts on offer') { await p.click('#nc-play'); await p.waitForTimeout(1500); }

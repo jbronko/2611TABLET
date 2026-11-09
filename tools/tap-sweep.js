@@ -133,7 +133,7 @@ const PAGE_HELPERS = () => {
         const r = hitArea(el).getBoundingClientRect();
         const on = el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-selected') === 'true' || (el.type === 'radio' && el.checked);
         out.push({ sel: selectorOf(el), label: labelOf(el), w: Math.round(r.width), h: Math.round(r.height), on,
-          state: [el.getAttribute('aria-pressed'), el.getAttribute('aria-expanded'), el.checked, el.tagName === 'SELECT' ? el.value : ''].join('|') });
+          state: [el.getAttribute('aria-pressed'), el.getAttribute('aria-checked'), el.getAttribute('aria-expanded'), el.checked, el.tagName === 'SELECT' ? el.value : ''].join('|') });
       }
       return out;
     },
