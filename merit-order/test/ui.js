@@ -399,6 +399,35 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8d. Bank loans: borrow and repay in the menu, borrow-and-build, and buy an offered plant on a loan.
+  {
+    const p = await page();
+    await newCompany(p, 'standard');
+    await state(p, () => MeritOrder.setSpeed(0));
+    await p.click('#open-menu'); await p.click('#m-loans'); await p.waitForTimeout(150);
+    check('the bank loans sheet shows what you can borrow', (await p.textContent('#i-title')) === 'Bank loans' && /a year, fixed/.test(await p.textContent('#ln-quote')));
+    await p.click('[data-lterm="30"]'); await p.click('#ln-go'); await p.waitForTimeout(150);
+    const owed = await state(p, () => MeritOrder.Sim.debt(MeritOrder.state));
+    check('borrowing adds a loan and a chip', owed > 0 && /Loans \$/.test(await p.textContent('#chips')) && (await p.$$('[data-repay]')).length === 2);
+    await p.click('[data-repay$=":all"]'); await p.waitForTimeout(150);
+    check('repaying it in full', (await state(p, () => MeritOrder.Sim.debt(MeritOrder.state))) === 0);
+    await p.click('#sh-info [data-close]');
+    // too little cash to build: borrow the difference
+    await state(p, () => { const M = MeritOrder, S = M.state; S.cash = M.Sim.priceOf(S, 'solar', M.Sim.TECH.solar.sizes[0]) - 20000; M.renderAll(); });   // $20k short
+    await p.click('#add-plant'); await p.waitForTimeout(150);
+    const btn = await p.textContent('[data-build="solar"]');
+    await p.click('[data-build="solar"]'); await p.waitForTimeout(150);
+    check('"Borrow and build" when short of cash', /^Borrow \$.* and build$/.test(btn) && (await state(p, () => MeritOrder.state.plants.length)) === 1 && (await state(p, () => MeritOrder.Sim.debt(MeritOrder.state))) > 0, btn);
+    // an offered plant you can't afford in cash
+    await state(p, () => { const M = MeritOrder, S = M.state, r = S.rivals.find(x => x.tech === 'coal' && x.id !== 'bh1'); S.cash = 400000; S.offer = { type: 'coal', rival: r.id, price: 900000, expires: S.t + 288, text: `${r.name} is for sale.` }; M.renderAll(); });
+    await p.waitForTimeout(150);
+    check('a plant offer you can\'t afford offers a loan', !(await p.$eval('#offer-loan', x => x.hidden)) && /loan/.test(await p.textContent('#offer-loan')) && /a year/.test(await p.textContent('#offer-note')));
+    await shot(p, 'loan-offer');
+    await p.click('#offer-loan'); await p.waitForTimeout(150);
+    check('…and buying with it works', (await state(p, () => MeritOrder.state.plants.some(x => x.tech === 'coal'))) && await p.$eval('#offer', x => x.hidden));
+    await p.context().close();
+  }
+
   // 9. Design a plant: a custom battery at a chosen site; a hydro valley can only be used once.
   {
     const p = await page();

@@ -393,5 +393,43 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('coming back after the last year ends the scenario', Sim.scenarioOver(E));
 }
 
+// 12. Bank loans: a limit from net worth that borrowing can't raise, a rate that rises with gearing,
+//     repayments that clear the loan on its last day, early repayment, value net of debt, books
+//     that add up, and buying an offered plant on a loan secured against it.
+{
+  const S = Sim.create(21);
+  const v0 = Sim.companyValue(S), room0 = Sim.loanRoom(S);
+  const q1 = Sim.loanQuote(S, 50000, 90), q2 = Sim.loanQuote(S, room0, 90);
+  const r = Sim.takeLoan(S, room0, 30);
+  check('the bank lends a share of net worth, and borrowing can\'t raise the limit', room0 === Math.floor(Sim.LOAN_LTV * v0 / 1000) * 1000 && r.ok && Sim.loanRoom(S) === 0
+    && Math.abs(Sim.companyValue(S) - v0) < 1 && !Sim.takeLoan(S, 5000, 30).ok, `${Sim.fmtMoney(room0)} on ${Sim.fmtMoney(v0)}`);
+  check('the rate rises the more you owe', q2.rate > q1.rate && q1.rate >= 0.07 && q2.rate < 0.15, `${(q1.rate * 100).toFixed(1)}% to ${(q2.rate * 100).toFixed(1)}%`);
+  const cash0 = S.cash; let interest = 0, profits = 0;
+  for (let d = 0; d < 31; d++) { for (let k = 0; k < Sim.IPD; k++) { Sim.step(S); if (S.offer) Sim.declineOffer(S); } }   // a day's books close on the next day's first step
+  for (const rec of S.days.slice(-30)) { interest += rec.loanInterest; profits += rec.profit; }
+  check('repayments clear a loan on its last day, interest counted as a cost', S.loans.length === 0 && Sim.debt(S) === 0 && interest > 0
+    && Math.abs(r.quote.interest - interest) < 30 * 2, `${Sim.fmtMoney(interest)} interest vs ${Sim.fmtMoney(r.quote.interest)} quoted`);
+  const T = Sim.create(22);
+  const l = Sim.takeLoan(T, 60000, 180).loan, c0 = T.cash;
+  const half = Sim.repayLoan(T, l.id, 30000), all = Sim.repayLoan(T, l.id);
+  check('repay early, in part or in full', half.ok && all.ok && T.loans.length === 0 && Math.abs(c0 - T.cash - 60000) < 1);
+  // the money ledger, with a loan running
+  const L = Sim.create(23, { cash: 3e6 }); const start = L.cash;
+  Sim.build(L, 'solar', 50); Sim.build(L, 'battery', 25);
+  const capital = L.plants.reduce((a, p) => a + p.value, 0);
+  Sim.takeLoan(L, 200000, 30);
+  for (let d = 0; d < 40; d++) for (let k = 0; k < Sim.IPD; k++) { Sim.step(L); if (L.offer) Sim.declineOffer(L); }
+  const t = L.today, goals = Sim.GOALS.filter(g => L.goalsDone[g.id] !== undefined).reduce((a, g) => a + g.reward, 0);
+  const ledger = L.days.reduce((a, rr) => a + rr.profit, 0) + t.revenue - t.costs + t.fcas + t.contracts + t.certs - t.starts - t.penalties - t.repairs - t.interest - t.loanInterest + t.bonus;
+  check('the money adds up with a loan (borrowed and repaid principal aren\'t profit)', L.days.length >= 39 && Math.abs(L.cash - (start - capital + ledger + goals)) < 1, `gap ${(L.cash - (start - capital + ledger + goals)).toFixed(2)}`);
+  // buying an offered plant on a loan
+  const B = Sim.create(24);
+  const coal = B.rivals.find(x => x.tech === 'coal' && x.id !== 'bh1');
+  B.offer = { type: 'coal', rival: coal.id, price: 1500000, expires: B.t + Sim.IPD, text: '' };
+  const short = B.cash < 1500000, plain = Sim.acceptOffer(B), withLoan = Sim.acceptOffer(B, { loan: true });
+  check('buy an offered plant on a loan secured against it', short && !plain && withLoan && B.plants.some(p => p.tech === 'coal') && B.cash >= 0 && Sim.debt(B) > 0
+    && Sim.debt(B) <= Sim.LOAN_LTV * 600000 + Sim.LOAN_SECURED * 1500000, `${Sim.fmtMoney(Sim.debt(B))} borrowed`);
+}
+
 console.log(fails ? `\n${fails} check(s) failed` : '\nAll engine checks passed');
 process.exit(fails ? 1 : 0);

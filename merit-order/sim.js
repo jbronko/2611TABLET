@@ -195,7 +195,7 @@ const Sim = (() => {
       t: 0,                          // intervals since the start
       difficulty,
       cash: opts.cash ?? DIFFICULTY[difficulty].cash,
-      contracts: [], contractOffers: [],
+      contracts: [], contractOffers: [], loans: [],
       plants: [], retired: [], rivals: rivalFleet(), nameUse: {},
       wx: { wind: 0.33, cloud: 0.85, temp: 0, noise: 0, nb: 0 },
       events: [], upcoming: [], news: [], offer: null, obligation: null,
@@ -217,13 +217,14 @@ const Sim = (() => {
   }
   function freshDay() {
     return { price: [], demand: [], mine: [], revenue: 0, costs: 0, fcas: 0, energy: 0, regionEnergy: 0, emis: 0, maxP: null, minP: null,
-      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0, certs: 0, starts: 0, clean: 0, cis: 0 };
+      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0, certs: 0, starts: 0, clean: 0, cis: 0, loanInterest: 0 };
   }
   // Older saves: fill in fields added since they were made.
   function migrate(S) {
     S.contracts ||= []; S.difficulty ||= 'standard';
     if (!S.contractOffers) makeContractOffers(S);
-    for (const k of ['contracts', 'repairs', 'interest', 'capPay', 'fcasRaise', 'fcasLower', 'certs', 'starts', 'clean', 'cis']) S.today[k] ??= 0;
+    for (const k of ['contracts', 'repairs', 'interest', 'capPay', 'fcasRaise', 'fcasLower', 'certs', 'starts', 'clean', 'cis', 'loanInterest']) S.today[k] ??= 0;
+    S.loans ||= [];
     for (const p of S.plants) {
       p.life ||= freshLife(); p.capital ??= p.value || 0; p.life.certs ??= 0; p.life.starts ??= 0;
       if (!p.site) { p.site = 'legacy'; p.mlf = 1; p.res = 1; }
@@ -804,13 +805,14 @@ const Sim = (() => {
     let upkeep = 0;
     for (const p of S.plants) if (p.status !== 'building') { const u = upkeepOf(S, p); upkeep += u; p.life.upkeep += u; }
     S.cash -= upkeep; d.upkeep = upkeep;
+    payLoans(S, d);
     // an overdraft costs interest every day
     if (S.cash < 0) { const i = Math.round(-S.cash * OVERDRAFT_RATE * diff(S).penalty); S.cash -= i; d.interest += i; }
     settleUnderwriting(S, d);
-    const profit = d.revenue - d.costs + d.fcas + d.contracts + d.certs - d.starts + d.cis - upkeep - d.penalties - d.repairs - d.interest + d.bonus;
+    const profit = d.revenue - d.costs + d.fcas + d.contracts + d.certs - d.starts + d.cis - upkeep - d.penalties - d.repairs - d.interest - (d.loanInterest || 0) + d.bonus;
     const priceSorted = [...d.price].sort((a, b) => a - b);
     const avg = d.price.reduce((a, b) => a + b, 0) / Math.max(1, d.price.length);
-    const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, fcasRaise: d.fcasRaise, fcasLower: d.fcasLower, certs: d.certs, starts: d.starts, clean: d.clean, cis: d.cis, region: d.regionEnergy, contracts: d.contracts, repairs: d.repairs, interest: d.interest, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
+    const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, fcasRaise: d.fcasRaise, fcasLower: d.fcasLower, certs: d.certs, starts: d.starts, clean: d.clean, cis: d.cis, region: d.regionEnergy, contracts: d.contracts, repairs: d.repairs, interest: d.interest, loanInterest: d.loanInterest || 0, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
       avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus };
     S.days.push(rec);
     if (S.days.length > 3) { const old = S.days[S.days.length - 4]; delete old.price; delete old.demand; delete old.mine; }
@@ -871,7 +873,7 @@ const Sim = (() => {
         addNews(S, 'bad', `You owed ${fmtMoney(got - S.cash)}, past your overdraft limit, so the bank sold ${p.name} for ${fmtMoney(got)}.`);
       }
       S.plants = S.plants.filter(p => p.status !== 'closed'); S.overLimit = 0;
-      if (!S.plants.length && S.cash < 0) { S.bust = true; addNews(S, 'bad', 'With nothing left to sell, the bank has put your company into administration.'); }
+      if (!S.plants.length && (S.cash < 0 || S.cash < debt(S))) { S.bust = true; addNews(S, 'bad', 'With nothing left to sell, the bank has put your company into administration.'); }
     }
     if (S.cash < 0 && !S.inDebt) addNews(S, 'bad', `You're overdrawn. The bank charges interest every day and will sell plant if you owe more than ${fmtMoney(overdraftLimit(S))}.`);
     S.inDebt = S.cash < 0;
@@ -1106,8 +1108,12 @@ const Sim = (() => {
     }
   }
 
-  function acceptOffer(S) {
+  function acceptOffer(S, opts = {}) {
     const o = S.offer; if (!o) return false;
+    if (o.type === 'coal' && opts.loan && S.cash < o.price) {
+      const need = Math.ceil((o.price - S.cash) / 1000) * 1000;   // an overdraft is cleared too
+      if (!takeLoan(S, need, 90, o.price).ok) return false;
+    }
     if (o.type === 'reserve') {
       S.cash += o.payment; S.today.bonus += o.payment;
       S.obligation = { mw: o.mw, payment: o.payment, from: o.from, to: o.to, worst: null };
@@ -1426,7 +1432,58 @@ const Sim = (() => {
     }
   }
   function companyValue(S) {
-    return S.cash + S.plants.reduce((a, p) => a + (p.value || 0) * (p.status === 'building' ? 1 : 0.8), 0);
+    return S.cash - debt(S) + S.plants.reduce((a, p) => a + (p.value || 0) * (p.status === 'building' ? 1 : 0.8), 0);
+  }
+
+  // ---- bank loans ----
+  // You can borrow up to LOAN_LTV of your company's net worth (value after debts, so borrowing can't
+  // raise its own limit). Buying a plant you're offered, the plant itself secures more: up to
+  // LOAN_SECURED of its price on top. (Plants here pay for themselves in weeks, so borrowed money
+  // compounds fast: simulations put an always-borrow-the-maximum player at about 1.5x a careful one.)
+  // The rate is set when you sign: a base rate, more the more geared you'd be, and a little more or
+  // less by difficulty. Repaid in equal daily amounts plus the day's interest.
+  const LOAN_LTV = 0.2, LOAN_SECURED = 0.6, LOAN_BASE = 0.07, LOAN_GEARING = 0.15, LOAN_TERMS = [30, 90, 180];
+  const debt = S => (S.loans || []).reduce((a, l) => a + l.balance, 0);
+  const loanRoom = (S, price = 0) => Math.max(0, Math.floor((LOAN_LTV * companyValue(S) - debt(S) + LOAN_SECURED * price) / 1000) * 1000);
+  function loanQuote(S, amount, days = 90) {
+    const assets = companyValue(S) + debt(S) + amount;
+    const gearing = (debt(S) + amount) / Math.max(1, assets);
+    const rate = Math.round((LOAN_BASE + LOAN_GEARING * gearing + ({ tough: 0.03, relaxed: -0.01 }[S.difficulty] || 0)) * 1000) / 1000;
+    const daily = rate / yearDaysOf(S);
+    let bal = amount, interest = 0;
+    for (let k = 0; k < days; k++) { interest += bal * daily; bal -= amount / days; }
+    return { amount, days, rate, first: Math.round(amount / days + amount * daily), interest: Math.round(interest), room: loanRoom(S) };
+  }
+  // price: the plant this loan buys, if it's secured on one
+  function takeLoan(S, amount, days = 90, price = 0) {
+    amount = Math.round(amount);
+    if (!LOAN_TERMS.includes(days)) return { ok: false, why: 'term' };
+    if (!(amount >= 1000)) return { ok: false, why: 'small' };
+    if (amount > loanRoom(S, price)) return { ok: false, why: 'room' };
+    const q = loanQuote(S, amount, days);
+    const loan = { id: `l${S.t}_${(S.loans || []).length}`, principal: amount, balance: amount, rate: q.rate, days, left: days, taken: dayIndex(S) };
+    (S.loans ||= []).push(loan);
+    S.cash += amount;
+    addNews(S, 'info', `You borrowed ${fmtMoney(amount)} at ${(q.rate * 100).toFixed(1)}% a year, repaid over ${days} days.`);
+    return { ok: true, loan, quote: q };
+  }
+  function repayLoan(S, id, amount) {
+    const l = (S.loans || []).find(x => x.id === id); if (!l) return { ok: false, why: 'none' };
+    amount = Math.min(l.balance, amount ?? l.balance);
+    if (!(amount > 0) || S.cash < amount) return { ok: false, why: 'cash' };
+    S.cash -= amount; l.balance -= amount;
+    if (l.balance < 1) { S.loans = S.loans.filter(x => x !== l); addNews(S, 'good', `Loan of ${fmtMoney(l.principal)} repaid.`); }
+    return { ok: true, amount };
+  }
+  function payLoans(S, d) {
+    for (const l of S.loans || []) {
+      const interest = Math.round(l.balance * l.rate / yearDaysOf(S));
+      const principal = l.left <= 1 ? l.balance : Math.min(l.balance, l.principal / l.days);
+      S.cash -= interest + principal; d.loanInterest = (d.loanInterest || 0) + interest;
+      l.balance -= principal; l.left--;
+      if (l.balance < 1) addNews(S, 'good', `Loan of ${fmtMoney(l.principal)} repaid.`);
+    }
+    S.loans = (S.loans || []).filter(l => l.balance >= 1);
   }
 
   // ---- news ----
@@ -1473,7 +1530,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

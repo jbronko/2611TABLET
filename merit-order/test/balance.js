@@ -6,7 +6,8 @@
 //   node merit-order/test/balance.js [strategies] [difficulties] [days] [seeds]
 //   node merit-order/test/balance.js steady,reckless standard 120 1,2,3
 //
-// Strategies: idle (starter plants only), steady (reinvests in a mix, swaps on wind/solar),
+// Strategies: idle (starter plants only), steady (reinvests in a mix, swaps on wind/solar), borrower
+// (steady plus every loan the bank allows),
 // peaker (gas peakers only), capseller (sells caps only against firm thermal plant),
 // capgambler (sells every cap), reckless (builds big on no cash, signs everything).
 // Targets after the last rebalance (Standard, day 120): steady about $20-30M (about $26M now), idle about $4.5M,
@@ -48,6 +49,13 @@ const STRATS = {
   peaker: {
     day(S) { while (tryBuild(S, 'peaker', 50000)); },
     offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
+  },
+  borrower: {   // steady, but borrows all the bank allows (180 days) and buys offered plant on loans
+    day(S, d) {
+      if (Sim.loanRoom(S) >= 100000) Sim.takeLoan(S, Sim.loanRoom(S), 180);
+      STRATS.steady.day(S, d);
+    },
+    offer(S) { const o = S.offer; if (o.type === 'coal' && S.cash + Sim.loanRoom(S, o.price) >= o.price) Sim.acceptOffer(S, { loan: true }); else STRATS.steady.offer(S); },
   },
   capseller: {   // sells caps only against firm plant that can run in a spike
     day(S, d) {

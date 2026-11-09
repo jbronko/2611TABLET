@@ -333,7 +333,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 20</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 21</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -403,7 +403,8 @@
 <div class="offer" id="offer" hidden role="alertdialog" aria-labelledby="offer-text">
   <div class="eyebrow" id="offer-kind">Offer</div>
   <p id="offer-text"></p>
-  <div class="actions"><button type="button" class="btn btn-quiet" id="offer-no">No thanks</button><button type="button" class="btn btn-primary" id="offer-yes">Accept</button></div>
+  <p class="note" id="offer-note" hidden></p>
+  <div class="actions"><button type="button" class="btn btn-quiet" id="offer-no">No thanks</button><button type="button" class="btn btn-quiet" id="offer-loan" hidden></button><button type="button" class="btn btn-primary" id="offer-yes">Accept</button></div>
 </div>
 <div class="tooltip" id="tip" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -438,6 +439,7 @@
     <button type="button" class="switch-row" id="m-updates" data-check-updates><span>Check for updates</span></button>
     <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Transition timeline</span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
+    <button type="button" class="switch-row" id="m-loans"><span>Bank loans</span><span class="num" id="m-loans-n"></span></button>
     <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-idle" role="switch" aria-checked="true"><span>Keep trading while I’m away<small>Up to 7 game days each time you leave: your company and the Energy Transition</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
@@ -718,6 +720,7 @@
   $('chips').addEventListener('click', e => {
     if (e.target.closest('[data-timeline]')) openTimeline();
     if (e.target.closest('[data-tender]')) tenderOpened(false);
+    if (e.target.closest('[data-loans]')) openLoans();
   });
   // The year-by-year plan. From the scenario intro, st is a fresh scenario and back returns to the intro.
   function openTimeline(st = S, back) {
@@ -739,7 +742,8 @@
       .concat(S.obligation ? [`<span class="chip"><svg class="i"><use href="#i-flag"/></svg>Reserve promised: ${fmtMW(S.obligation.mw)}</span>`] : [])
       .concat(S.apc ? [`<span class="chip bad"><svg class="i"><use href="#i-info"/></svg>Prices capped at ${fmtPrice(Sim.APC)}</span>`] : [])
       .concat(S.cash < 0 ? [`<span class="chip bad"><svg class="i"><use href="#i-bad"/></svg>Overdrawn · the bank sells plant past −${fmtMoney(Sim.overdraftLimit(S))}</span>`] : [])
-      .concat(S.transition ? transitionChips() : []);
+      .concat(S.transition ? transitionChips() : [])
+      .concat(S.loans.length ? [`<button type="button" class="chip" data-loans><svg class="i"><use href="#i-info"/></svg>Loans ${fmtMoney(Sim.debt(S))}</button>`] : []);
     $('chips').innerHTML = html.join('');
     $('chips').hidden = !html.length;
   }
@@ -874,8 +878,22 @@
     $('offer-kind').textContent = o.type === 'reserve' ? 'Request from the market operator' : 'Offer';
     $('offer-text').textContent = o.text;
     $('offer-yes').textContent = o.type === 'reserve' ? `Promise ${fmtMW(o.mw)}` : `Buy for ${fmtMoney(o.price)}`;
+    // short of cash for a plant? the bank lends against the plant itself
+    const need = o.type === 'coal' && S.cash < o.price ? Math.ceil((o.price - S.cash) / 1000) * 1000 : 0, room = need ? Sim.loanRoom(S, o.price) : 0;
+    $('offer-loan').hidden = !need || need > room;
+    $('offer-yes').hidden = !!need && need <= room;
+    $('offer-note').hidden = !need;
+    if (need) {
+      const q = Sim.loanQuote(S, need, 90);
+      $('offer-loan').textContent = `Buy with a ${fmtMoney(need)} loan`;
+      $('offer-note').textContent = need <= room ? `Loan: ${(q.rate * 100).toFixed(1)}% a year, about ${fmtMoney(q.first)} a day for 90 days (${fmtMoney(q.interest)} interest in all).`
+        : `You're ${fmtMoney(need)} short, and the bank will lend at most ${fmtMoney(room)} for this.`;
+    }
     el.hidden = false;
   }
+  $('offer-loan').onclick = () => {
+    if (Sim.acceptOffer(S, { loan: true })) { $('offer').hidden = true; renderAll(); save(); resumePlay(); toast('Bought with a bank loan. Repayments start tomorrow.'); }
+  };
   let offerDismissed = null;
   $('offer-yes').onclick = () => {
     const o = S.offer;
@@ -980,7 +998,8 @@
       const goal = Sim.GOALS.find(g => g.unlock === t);
       const vc = T.kind === 'thermal' ? `${fmtPrice(T.vc * (S.fuelMult || 1))}/MWh` : T.kind === 'storage' ? `${Math.round(T.eff * 100)}% round trip` : 'Free';
       const why = Sim.buildProblem(S, t, size, { site, mwh });
-      const label = why === 'cash' ? `Need ${fmtMoney(cost - S.cash)} more` : why ? 'No site has room for this size' : `Build for ${fmtMoney(cost)}`;
+      const borrow = why === 'cash' ? loanFor(cost) : 0;
+      const label = borrow ? `Borrow ${fmtMoney(borrow)} and build` : why === 'cash' ? `Need ${fmtMoney(cost - S.cash)} more` : why ? 'No site has room for this size' : `Build for ${fmtMoney(cost)}`;
       return `<div class="card ${unlocked ? '' : 'locked'}">
         <div class="head">${dot(t)}<b>${T.name}</b></div>
         <p>${T.blurb}</p>
@@ -989,7 +1008,7 @@
           <dt>Site</dt><dd>${st ? `${st.name} · ×${st.mlf.toFixed(2)}` : 'none free'}</dd>
           <dt>${T.kind === 'storage' ? 'Storage' : 'Running cost'}</dt><dd>${T.kind === 'storage' ? `${(mwh / size).toFixed(1)} hours · ${vc}` : vc}</dd>
           <dt>Upkeep</dt><dd>${fmtMoney(Sim.upkeepFor(S, t, size, mwh))}/day</dd><dt>Emissions</dt><dd>${T.emis ? `${T.emis} t/MWh` : 'None'}</dd></dl>
-        <button type="button" class="btn btn-primary" data-build="${t}" ${why ? 'disabled' : ''}>${label}</button>
+        <button type="button" class="btn btn-primary" data-build="${t}" ${borrow ? `data-borrow="${borrow}"` : ''} ${why && !borrow ? 'disabled' : ''}>${label}</button>
         <button type="button" class="btn btn-quiet" data-design="${t}">Custom size and site</button>`
         : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>${T.transition ? `Arrives in year ${(Sim.TRANSITION.find(e => e.unlocks === t) || {}).year}` : `Unlock: ${goal ? goal.text.toLowerCase() : 'later'}`}</div>`}
       </div>`;
@@ -999,9 +1018,43 @@
     const s = e.target.closest('[data-size]'); if (s) { const [t, mw] = s.dataset.size.split(':'); chosenSize[t] = +mw; renderBuild(); return; }
     const d = e.target.closest('[data-design]'); if (d) { openDesign(d.dataset.design); return; }
     const b = e.target.closest('[data-build]'); if (!b) return;
+    if (b.dataset.borrow && !Sim.takeLoan(S, +b.dataset.borrow, 90).ok) return;
     const t = b.dataset.build, r = Sim.build(S, t, chosenSize[t] || TECH[t].sizes[0]);
     if (r.ok) { closeSheets(); renderAll(); save(); toast(`Construction started on ${r.plant.name}.`); }
   });
+
+  // A loan that covers a shortfall, if the bank would lend it (else 0).
+  function loanFor(cost) { const need = Math.ceil((cost - S.cash) / 1000) * 1000; return need > 0 && need <= Sim.loanRoom(S) ? need : 0; }
+  let loanForm = { amount: 0, days: 90 };
+  function openLoans() {
+    const room = Sim.loanRoom(S), owe = Sim.debt(S);
+    loanForm.amount = Math.min(Math.max(loanForm.amount, 0), room) || Math.round(room / 2 / 1000) * 1000;
+    const q = loanForm.amount >= 1000 ? Sim.loanQuote(S, loanForm.amount, loanForm.days) : null;
+    const list = S.loans.map(l => `<li class="info"><svg class="i"><use href="#i-info"/></svg><span><b>${fmtMoney(l.balance)}</b> left of ${fmtMoney(l.principal)} · ${(l.rate * 100).toFixed(1)}% a year · about ${fmtMoney(l.principal / l.days + l.balance * l.rate / Sim.yearDays(S))} a day · ${l.left} day${l.left === 1 ? '' : 's'} left
+      <span class="field-row" style="margin-top:6px"><button type="button" class="btn btn-quiet small" data-repay="${l.id}:half">Repay half</button><button type="button" class="btn btn-quiet small" data-repay="${l.id}:all">Repay all (${fmtMoney(l.balance)})</button></span></span></li>`).join('');
+    info('Bank loans', `<div class="kv"><div><span>You can borrow</span><b>${fmtMoney(room)}</b></div><div><span>You owe</span><b>${fmtMoney(owe)}</b></div><div><span>Company value</span><b>${fmtMoney(Sim.companyValue(S))}</b></div></div>
+      ${S.loans.length ? `<h3>Your loans</h3><ul class="news">${list}</ul>` : ''}
+      <h3>Borrow</h3>
+      ${room >= 1000 ? `<div class="sizes" role="group" aria-label="Amount">${[0.25, 0.5, 0.75, 1].map(f => { const v = Math.floor(room * f / 1000) * 1000; return `<button type="button" data-lamt="${v}" aria-pressed="${v === loanForm.amount}">${fmtMoney(v)}</button>`; }).join('')}</div>
+      <div class="field-row" style="margin-top:10px"><span class="bidbox"><span>$</span><input type="number" id="ln-amt" min="1000" max="${room}" step="1000" value="${loanForm.amount}" enterkeyhint="done" aria-label="Amount to borrow"></span></div>
+      <div class="sizes" role="group" aria-label="Repaid over" style="margin-top:10px">${Sim.LOAN_TERMS.map(d => `<button type="button" data-lterm="${d}" aria-pressed="${d === loanForm.days}">${d} days</button>`).join('')}</div>
+      <p class="note" id="ln-quote">${q ? `${(q.rate * 100).toFixed(1)}% a year, fixed. About ${fmtMoney(q.first)} a day for ${q.days} days, ${fmtMoney(q.interest)} interest in all.` : ''}</p>
+      <button type="button" class="btn btn-primary" id="ln-go" style="width:100%" ${q ? '' : 'disabled'}>Borrow ${fmtMoney(loanForm.amount)}</button>`
+      : `<p>The bank won’t lend more right now. It lends up to ${Math.round(Sim.LOAN_LTV * 100)}% of your company’s value after debts.</p>`}
+      <p class="note" style="margin-top:12px">The bank lends up to ${Math.round(Sim.LOAN_LTV * 100)}% of your company’s value after debts, and when you buy a plant you’re offered, up to ${Math.round(Sim.LOAN_SECURED * 100)}% of its price on top, secured on the plant. The rate is fixed when you sign: about 7% a year, more the more you owe. Each day you repay an equal share plus that day’s interest; repay early at any time for free. Loans count against your company’s value.</p>`);
+    const body = $('i-body');
+    body.querySelectorAll('[data-lamt]').forEach(b => b.onclick = () => { loanForm.amount = +b.dataset.lamt; openLoans(); });
+    body.querySelectorAll('[data-lterm]').forEach(b => b.onclick = () => { loanForm.days = +b.dataset.lterm; openLoans(); });
+    if ($('ln-amt')) $('ln-amt').onchange = e => { loanForm.amount = Math.max(1000, Math.min(room, Math.round(+e.target.value / 1000) * 1000)); openLoans(); };
+    if ($('ln-go')) $('ln-go').onclick = () => { const r = Sim.takeLoan(S, loanForm.amount, loanForm.days); if (r.ok) { toast(`Borrowed ${fmtMoney(loanForm.amount)}.`); loanForm.amount = 0; renderAll(); save(); openLoans(); } };
+    body.querySelectorAll('[data-repay]').forEach(b => b.onclick = () => {
+      const [id, how] = b.dataset.repay.split(':'), l = S.loans.find(x => x.id === id); if (!l) return;
+      const amt = how === 'all' ? l.balance : Math.round(l.balance / 2);
+      const r = Sim.repayLoan(S, id, amt);
+      if (!r.ok) { toast(`You need ${fmtMoney(amt - S.cash)} more cash to repay that.`); return; }
+      toast(`Repaid ${fmtMoney(r.amount)}.`); renderAll(); save(); openLoans();
+    });
+  }
 
   // --- design a plant: choose the site, the MW and (for storage) the MWh ---
   let design = null;
@@ -1023,6 +1076,8 @@
       <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="dz-back" style="flex:1">All technologies</button><button type="button" class="btn btn-primary" id="dz-build" style="flex:1.4"></button></div>`);
     $('dz-back').onclick = openBuild;
     $('dz-build').onclick = () => {
+      const borrow = +$('dz-build').dataset.borrow || 0;
+      if (borrow && !Sim.takeLoan(S, borrow, 90).ok) return;
       const r = Sim.build(S, design.tech, design.mw, { site: design.site, mwh: designMWh() });
       if (r.ok) { closeSheets(); renderAll(); save(); toast(`Construction started on ${r.plant.name}.`); }
     };
@@ -1062,9 +1117,9 @@
       <dt>Upkeep</dt><dd>${fmtMoney(Sim.upkeepFor(S, t, design.mw, mwh))}/day</dd>
       <dt>Loss factor</dt><dd>×${st.mlf.toFixed(2)}</dd>`;
     const why = Sim.buildProblem(S, t, design.mw, { site: design.site, mwh });
-    const b = $('dz-build');
-    b.disabled = !!why;
-    b.textContent = why === 'cash' ? `Need ${fmtMoney(cost - S.cash)} more` : why === 'room' ? 'Not enough room at this site' : why ? 'Can’t build this' : `Build for ${fmtMoney(cost)}`;
+    const b = $('dz-build'), borrow = why === 'cash' ? loanFor(cost) : 0;
+    b.disabled = !!why && !borrow; b.dataset.borrow = borrow || '';
+    b.textContent = borrow ? `Borrow ${fmtMoney(borrow)} and build` : why === 'cash' ? `Need ${fmtMoney(cost - S.cash)} more` : why === 'room' ? 'Not enough room at this site' : why ? 'Can’t build this' : `Build for ${fmtMoney(cost)}`;
   }
   $('i-body').addEventListener('click', e => {
     const b = e.target.closest('[data-site]'); if (!b || !design || b.disabled) return;
@@ -1294,6 +1349,7 @@
     $('m-contracts-n').textContent = S.contracts.length ? `${S.contracts.length} active` : S.contractOffers.length ? `${S.contractOffers.length} on offer` : '';
     $('m-autopause').setAttribute('aria-checked', String(autoPause));
     $('m-idle').setAttribute('aria-checked', String(idle));
+    $('m-loans-n').textContent = S.loans.length ? `${fmtMoney(Sim.debt(S))} owed` : '';
     $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario; $('m-timeline').hidden = !S.transition;
     $('m-scenarios-n').textContent = `${starTotal()} of ${Sim.SCENARIOS.length * 3} ★`;
     openSheet('menu');
@@ -1349,7 +1405,7 @@
       <h3>Profit by day</h3><canvas class="chart" id="c-profit" data-h="130" aria-label="Profit or loss each day"></canvas>` : '<p class="note">Charts appear after two full days.</p>'}
       ${days.length ? `<h3>Accounts, last ${days.length} day${days.length > 1 ? 's' : ''}</h3><table class="res"><tbody>
         ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control: raise', days.reduce((a, d) => a + (d.fcasRaise ?? d.fcas ?? 0), 0))}${line('Frequency control: lower', sum('fcasLower'))}${line('Renewable certificates', sum('certs'))}${line('Start-ups', -sum('starts'))}${S.transition ? line('Underwriting', sum('cis')) : ''}${line('Contracts', sum('contracts'))}
-        ${line('Upkeep', -sum('upkeep'))}${line('Repairs', -sum('repairs'))}${line('Interest', -sum('interest'))}${line('Fines', -sum('penalties'))}${line('Bonuses', sum('bonus'))}${line('Profit', sum('profit'), true)}
+        ${line('Upkeep', -sum('upkeep'))}${line('Repairs', -sum('repairs'))}${line('Overdraft interest', -sum('interest'))}${line('Loan interest', -sum('loanInterest'))}${line('Fines', -sum('penalties'))}${line('Bonuses', sum('bonus'))}${line('Profit', sum('profit'), true)}
       </tbody></table><p class="note">Building costs, sales of plant and goal rewards aren't counted in profit.</p>` : ''}
       ${stationTable()}`);
     if (days.length >= 2) drawCompany(days);
@@ -1419,6 +1475,7 @@
     days.forEach((d, i) => { if ((days.length - 1 - i) % every === 0) ctx.fillText(`Day ${d.day + 1}`, X(i), bottom + 6); });
   }
   $('m-company').onclick = openCompany;
+  $('m-loans').onclick = () => openLoans();
   $('m-updates').onclick = closeSheets;   // the check itself is the shared app-updates block's
   $('m-timeline').onclick = () => openTimeline();
   $('m-goals').onclick = () => info('Goals', Sim.GOALS.map(g => {
@@ -1452,6 +1509,7 @@
       <p><b style="color:var(--ink)">Money:</b> you can go overdrawn, but the bank charges interest every day, and if you owe more than your limit it sells your plant, most valuable first. Lose everything and the company is wound up.</p>
       <p><b style="color:var(--ink)">Scenarios</b> are short, hand-made situations (a heatwave week, a coal closure, a gas squeeze) with three stars to win. Challenges are 30-day races against friends with share codes.</p>
       <p><b style="color:var(--ink)">Energy Transition</b> is a 20-year scenario (60- or 90-day years, your choice) that keeps trading while you're away: coal closes, demand grows, new technology arrives, and the government's Capacity Investment Scheme can underwrite what you build. Each new year opens with a report on the last one.</p>
+      <p><b style="color:var(--ink)">Bank loans</b> (Menu → Bank loans) lend up to ${Math.round(Sim.LOAN_LTV * 100)}% of your company’s value after debts, more when you buy a plant you’re offered, at about 7% a year and more the more you owe. You repay a share every day. Short of cash to build? The build button offers to borrow the difference.</p>
       <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes. To have the game wait for you instead, turn off <b style="color:var(--ink)">Keep trading while I’m away</b> in the menu.</p>
       <p><b style="color:var(--ink)">New games start paused.</b> Tap 1× (or faster) when you’re ready.</p>`);
   }
