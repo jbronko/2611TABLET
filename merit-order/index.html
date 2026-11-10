@@ -88,7 +88,7 @@
   ol.timeline li.done { opacity: 0.6; } ol.timeline li.now { background: rgba(242, 163, 58, 0.12); border: 1px solid rgba(242, 163, 58, 0.45); }
   button.chip { cursor: pointer; min-height: 44px; } .chip.warn { border-color: rgba(242, 163, 58, 0.55); } .chip.warn svg { color: var(--amber); }
   .upgrade b { font-size: 15.5px; } .upgrade p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
-  .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
+  .icon-btn { flex: none; width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
 
   /* ---------- title ---------- */
   .title-screen { position: fixed; inset: 0; z-index: 30; display: grid; align-items: center; overflow: hidden; background: var(--bg); }
@@ -1453,7 +1453,7 @@
     $('m-autopause').setAttribute('aria-checked', String(autoPause));
     $('m-idle').setAttribute('aria-checked', String(idle));
     $('m-loans-n').textContent = S.loans.length ? `${fmtMoney(Sim.debt(S))} owed` : '';
-    $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario; $('m-timeline').hidden = !S.transition;
+    $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario; $('m-tour').hidden = !!(S.scenario || S.challenge); $('m-timeline').hidden = !S.transition;
     $('m-scenarios-n').textContent = `${starTotal()} of ${Sim.SCENARIOS.length * 3} ★`;
     openSheet('menu');
   };
