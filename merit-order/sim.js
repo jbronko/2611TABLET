@@ -224,13 +224,13 @@ const Sim = (() => {
   }
   function freshDay() {
     return { price: [], demand: [], mine: [], revenue: 0, costs: 0, fcas: 0, energy: 0, regionEnergy: 0, emis: 0, maxP: null, minP: null,
-      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0, certs: 0, starts: 0, clean: 0, cis: 0, loanInterest: 0 };
+      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0, certs: 0, starts: 0, clean: 0, cis: 0, loanInterest: 0, retail: 0, keepPay: 0, overruns: 0, rivalBuilt: 0, rivalShelved: 0 };
   }
   // Older saves: fill in fields added since they were made.
   function migrate(S) {
     S.contracts ||= []; S.difficulty ||= 'standard';
     if (!S.contractOffers) makeContractOffers(S);
-    for (const k of ['contracts', 'repairs', 'interest', 'capPay', 'fcasRaise', 'fcasLower', 'certs', 'starts', 'clean', 'cis', 'loanInterest']) S.today[k] ??= 0;
+    for (const k of ['contracts', 'repairs', 'interest', 'capPay', 'fcasRaise', 'fcasLower', 'certs', 'starts', 'clean', 'cis', 'loanInterest', 'retail', 'keepPay', 'overruns', 'rivalBuilt', 'rivalShelved']) S.today[k] ??= 0;
     S.loans ||= [];
     for (const p of S.plants) {
       p.life ||= freshLife(); p.capital ??= p.value || 0; p.life.certs ??= 0; p.life.starts ??= 0;
@@ -782,6 +782,7 @@ const Sim = (() => {
       // caps earn their daily premium a little every interval, so it matches the time at risk
       const v = k.type === 'swap' ? (k.strike - res.price) * k.mw * H : k.premium / IPD - Math.max(0, res.price - k.strike) * k.mw * H;
       k.pnl += v; hedge += v;
+      if (k.retail) d.retail += v;
     }
 
     S.cash += rev - cost + fcasRev + hedge + certs - starts;
@@ -818,7 +819,9 @@ const Sim = (() => {
     S.last = { c, res, fc, supply, demandBids, mine, hedge, rev: rev - cost + fcasRev + hedge };
     S.t++;
     // contracts that have run their term end
-    for (const k of S.contracts) if (S.t >= k.until) addNews(S, k.pnl >= 0 ? 'good' : 'bad', `Your ${k.mw} MW ${k.type === 'swap' ? `swap at ${fmtPrice(k.strike)}` : '$300 cap'} has ended. It ${k.pnl >= 0 ? 'made' : 'cost'} you ${fmtMoney(Math.abs(k.pnl))} overall.`);
+    for (const k of S.contracts) if (S.t >= k.until) addNews(S, k.pnl >= 0 ? 'good' : 'bad', k.retail
+      ? `Your customers' year is over: supplying ${fmtMW(k.mw)} at ${fmtPrice(k.strike)}/MWh ${k.pnl >= 0 ? 'made' : 'cost'} you ${fmtMoney(Math.abs(k.pnl))} against the market.`
+      : `Your ${k.mw} MW ${k.type === 'swap' ? `swap at ${fmtPrice(k.strike)}` : '$300 cap'} has ended. It ${k.pnl >= 0 ? 'made' : 'cost'} you ${fmtMoney(Math.abs(k.pnl))} overall.`);
     if (S.contracts.length) S.contracts = S.contracts.filter(k => S.t < k.until);
     if (S.obligation && S.t >= S.obligation.to) settleObligation(S);
     return S.last;
@@ -861,11 +864,12 @@ const Sim = (() => {
     if (S.cash < 0) { const i = Math.round(-S.cash * OVERDRAFT_RATE * diff(S).penalty); S.cash -= i; d.interest += i; }
     settleUnderwriting(S, d);
     settleKeepOpen(S, d);
+    payBills(S, d);
     const profit = d.revenue - d.costs + d.fcas + d.contracts + d.certs - d.starts + d.cis - upkeep - d.penalties - d.repairs - d.interest - (d.loanInterest || 0) + d.bonus;
     const priceSorted = [...d.price].sort((a, b) => a - b);
     const avg = d.price.reduce((a, b) => a + b, 0) / Math.max(1, d.price.length);
     const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, fcasRaise: d.fcasRaise, fcasLower: d.fcasLower, certs: d.certs, starts: d.starts, clean: d.clean, cis: d.cis, region: d.regionEnergy, contracts: d.contracts, repairs: d.repairs, interest: d.interest, loanInterest: d.loanInterest || 0, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
-      avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus };
+      avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus, retail: d.retail, keepPay: d.keepPay, overruns: d.overruns };
     S.days.push(rec);
     if (S.days.length > 3) { const old = S.days[S.days.length - 4]; delete old.price; delete old.demand; delete old.mine; }
     if (S.days.length > 60) S.days.shift();
@@ -874,7 +878,8 @@ const Sim = (() => {
     if (S.transition) {   // the year's report: reliability, clean share, profit
       const y = Math.floor(day / yearDaysOf(S)), Y = (S.years[y] ||= { shed: 0, shedHours: 0, clean: 0, region: 0, profit: 0 });
       Y.shed += d.shed || 0; Y.shedHours += d.shedN ? d.shedN / 12 : 0; Y.clean += d.clean; Y.region += d.regionEnergy; Y.profit += profit; Y.value = companyValue(S);
-      Y.energy = (Y.energy || 0) + d.energy;
+      Y.energy = (Y.energy || 0) + d.energy; Y.emis = (Y.emis || 0) + d.emis; Y.emisTarget = S.emisTarget;
+      for (const k of ['retail', 'keepPay', 'overruns', 'rivalBuilt', 'rivalShelved']) Y[k] = (Y[k] || 0) + (d[k] || 0);
       Y.priceSum = (Y.priceSum || 0) + avg; Y.days = (Y.days || 0) + 1; Y.peak = Math.max(Y.peak || 0, ...d.demand); Y.curtailed = (Y.curtailed || 0) + (d.curtailed || 0);
     }
     for (const p of S.plants) p.today = { energy: 0, money: 0 };
@@ -886,8 +891,9 @@ const Sim = (() => {
       if (r.out > 0) { r.out--; if (r.out === 0) addNews(S, 'info', `${r.name} is back online.`); }
       if (r.tech === 'coal' && !r.gone) {
         const roll = rnd(S, W), len = rnd(S, W);
-        if (r.out === 0 && roll < (activeEvent(S, 'heatwave') ? 0.03 : 0.012)) {
-          r.out = 1 + Math.floor(len * 3);
+        const odds = (activeEvent(S, 'heatwave') ? 0.03 : 0.012) * coalAge(S);
+        if (r.out === 0 && roll < odds) {
+          r.out = majorFailure(S, r, roll, odds) ? 6 + Math.floor(len * 7) : 1 + Math.floor(len * 3);
           addNews(S, 'info', `${r.name} has broken down and will be out for about ${r.out} day${r.out > 1 ? 's' : ''}. Prices may rise.`);
         }
         if (r.closing && dayIndex(S) >= r.closing) { r.gone = true; addNews(S, 'info', `${r.name} has closed for good after 45 years. The region has ${fmtMW(r.cap)} less coal.`); }
@@ -899,11 +905,13 @@ const Sim = (() => {
       if (p.status === 'outage') { p.outLeft--; if (p.outLeft <= 0) { p.status = 'online'; addNews(S, 'good', `${p.name} is repaired and back online.`); } }
       else if (p.status === 'online' && T.outage) {
         const roll = rnd(S, P), len = rnd(S, P);
-        const odds = T.outage * diff(S).outage * (p.upg && p.tech === 'peaker' ? 0.5 : 1);
+        const odds = T.outage * diff(S).outage * (p.upg && p.tech === 'peaker' ? 0.5 : 1) * (p.tech === 'coal' ? coalAge(S) * (isCompany(S) && activeEvent(S, 'heatwave') ? 2 : 1) : 1);
         if (roll < odds) {
-          p.status = 'outage'; p.outLeft = 1 + Math.floor(len * 2);
-          const fix = Math.round(p.mw * 150 * diff(S).upkeep); S.cash -= fix; S.today.repairs += fix; p.life.repairs += fix;
-          addNews(S, 'bad', `${p.name} has broken down. Repairs cost ${fmtMoney(fix)} and take ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}.`);
+          const major = p.tech === 'coal' && majorFailure(S, p, roll, odds);
+          p.status = 'outage'; p.outLeft = major ? 6 + Math.floor(len * 7) : 1 + Math.floor(len * 2);
+          const fix = Math.round(p.mw * 150 * diff(S).upkeep * (major ? 4 : 1)); S.cash -= fix; S.today.repairs += fix; p.life.repairs += fix;
+          addNews(S, 'bad', major ? `${p.name}: ${FAILURES[Math.floor(len * FAILURES.length)]}. It's out for ${p.outLeft} days and repairs cost ${fmtMoney(fix)}.`
+            : `${p.name} has broken down. Repairs cost ${fmtMoney(fix)} and take ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}.`);
         }
       }
       if (p.status === 'retiring') { p.retireLeft--; if (p.retireLeft <= 0) { p.status = 'closed'; addNews(S, 'info', `${p.name} has closed.`); } }
@@ -943,19 +951,33 @@ const Sim = (() => {
 
     // rooftop solar keeps growing; costs drift each 60 days
     S.rooftop *= S.rooftopGrowth || 1.0012;
+    // emissions: every 30 days the regulator checks your intensity (before a new year's target applies)
+    if (dayIndex(S) % 30 === 0) emissionsCheck(S);
+    choiceTimeout(S);
     if (S.transition && dayIndex(S) % yearDaysOf(S) === 0) transitionYear(S);
+    offerScheduledChoice(S);
     if (dayIndex(S) % (S.transition ? yearDaysOf(S) : 60) === 0) { S.costMult.battery *= 0.96;   // once a transition year
       S.costMult.solar *= 0.97; S.costMult.wind *= 0.985; S.costMult.hydro *= 0.99; }
-    // emissions: every 30 days the regulator checks your intensity
-    if (dayIndex(S) % 30 === 0) emissionsCheck(S);
-    // rivals invest too: a month of high prices brings new peaking plant or batteries
-    if (dayIndex(S) % 15 === 0 && S.days.length >= 15 && !S.transition) rivalInvestment(S);   // the transition follows its plan instead
+    // rivals invest too: a month of high prices brings new peaking plant or batteries. In a company
+    // scenario they announce a project first and decide later; the Energy Transition follows its plan.
+    if (isCompany(S)) { rivalProjects(S); if (dayIndex(S) % 5 === 0 && S.days.length >= 15) rivalProposal(S); }
+    else if (dayIndex(S) % 15 === 0 && S.days.length >= 15 && !S.transition) rivalInvestment(S);
     // a rival coal unit announces its closure on day 40 and closes on day 70
     if (dayIndex(S) === 40 && !S.challenge && !S.scenario) { const r = S.rivals.find(x => x.id === 'bh1'); r.closing = 70; addNews(S, 'info', 'Black Hill 1 will close for good in 30 days. That leaves a gap in the evening peak.'); }
     makeOffers(S);
     if (dayIndex(S) % 3 === 0) makeContractOffers(S);
     rec.value = companyValue(S);
     checkGoals(S, rec);
+  }
+
+  // Ageing coal in company scenarios: breakdowns ×(1 + 0.35 a year), and from year 3, or in a unit's
+  // last year before it closes, one breakdown in five is a major failure lasting 6-12 days.
+  const coalAge = S => isCompany(S) ? 1 + 0.35 * yearOf(S) : 1;
+  const FAILURES = ['a boiler tube has burst', 'a turbine bearing has failed', 'a coal mill has caught fire', 'the generator transformer has failed', 'a cooling-water pump has seized'];
+  function majorFailure(S, unit, roll, odds) {
+    if (!isCompany(S) || roll >= odds * 0.2) return false;
+    const c = unit.ref ? closesIn(S, unit) : null;
+    return yearOf(S) >= 2 || !!(c && c.year === yearOf(S) + 2);
   }
 
   const OVERDRAFT_RATE = 0.003;
@@ -1099,7 +1121,7 @@ const Sim = (() => {
     const target = S.emisTarget ?? Math.max(0.2, 0.7 - 0.08 * year);
     const intensity = emis / energy;
     if (intensity > target) {
-      const over = emis - target * energy, pen = Math.round(over * 30 * diff(S).penalty);
+      const over = emis - target * energy, pen = Math.round(over * ((scenarioOf(S) || {}).emisFine ?? 30) * diff(S).penalty);
       S.cash -= pen; S.today.penalties += pen;
       addNews(S, 'bad', `Your emissions were ${intensity.toFixed(2)} t per MWh, above the ${target.toFixed(2)} target. Penalty: ${fmtMoney(pen)}.`);
     } else if (emis > 0) {
@@ -1322,6 +1344,10 @@ const Sim = (() => {
     // ---- company scenarios: run a portfolio like a real NEM company's (the names are made up).
     // The plants come out of the rival fleet (`owns`), so the market is the same size as ever.
     // Each runs a few 60-day years on the Energy Transition's machinery with a timeline of its own.
+    // `closes`: your plants that close at the start of a year (ref → year). `choices`: decisions the
+    // timeline (or `choiceDays`) puts to you. `report`: the scenario's own lines in the year report.
+    // `firm`: the MW of firm plant the first star asks you to own in the final year. Rivals propose
+    // new plant when prices run high (rivalProposal).
     { id: 'highcountry', group: 'company', name: 'Highcountry Hydro', years: 5, yearDays: 60, startDoy: 0, seed: 7707, cash: 2000000, idle: true, transition: true,
       blurb: 'The mountain hydro company. Run the hydro and the gas peakers that back up the grid, and finish Tunnel Two, a giant pumped hydro scheme that is already late.',
       intro: 'You own the Snowgum hydro scheme and two fleets of gas peakers, the region’s backup. Tunnel Two (1,000 MW of pumped hydro) is half dug. Rivals’ coal closes around you.',
@@ -1330,54 +1356,108 @@ const Sim = (() => {
         const p = givePlant(S, 'hydro', 1000, { site: 'tumut', name: 'Tunnel Two', tunnel: true });
         p.status = 'building'; p.buildLeft = p.buildDays = 2 * S.yearDays + 5;
       },
-      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.7, 0.5],
+      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.7, 0.5], emisFine: 120, firm: 2800,
       timeline: [
         { year: 1, text: 'Tunnel Two, 1,000 MW of pumped hydro under the mountains, is due to start generating early in year 3.' },
         { year: 2, text: 'Black Hill 1, a rival’s coal unit, closes (660 MW).', apply: S => closeRival(S, 'bh1'), close: 660 },
-        { year: 2, text: 'The tunnel boring machine is stuck in soft rock. Tunnel Two will be a year late, and freeing the machine costs $15M.', apply: S => tunnelSetback(S, S.yearDays, 15e6), close: true },
-        { year: 3, text: 'More bad ground in the tailrace tunnel: finishing Tunnel Two costs another $12M.', apply: S => tunnelSetback(S, 0, 12e6), close: true },
-        { year: 4, text: 'Black Hill 2 closes (660 MW). Tunnel Two should be generating early this year.', apply: S => closeRival(S, 'bh2'), close: 660 },
+        { year: 2, text: 'The tunnel boring machine is stuck in soft rock. You decide how to free it.', apply: S => offerChoice(S, 'tbm'), close: true },
+        { year: 3, text: 'More bad ground in the tailrace tunnel: finishing Tunnel Two costs another $12M, paid over 30 days.', apply: S => tunnelSetback(S, 0, 12e6), close: true },
+        { year: 4, text: 'Black Hill 2 closes (660 MW).', apply: S => closeRival(S, 'bh2'), close: 660 },
         { year: 5, text: 'Black Hill 3 closes (660 MW). The final year.', apply: S => closeRival(S, 'bh3'), close: 660 },
       ],
-      stars: [['Keep the lights on in year 5 (the reliability standard), with Tunnel Two generating', r => r.tunnelOn && r.finalShed <= RELIABILITY * r.finalRegion], ['…and grow the company to $400M', r => r.value >= 400e6], ['…and grow it to $650M', r => r.value >= 650e6]] },
+      choices: {
+        tbm: { title: 'Tunnel Two: the boring machine is stuck', deflt: 'wait',
+          text: () => 'The machine is jammed in soft rock, deep under the range. Every month Tunnel Two is late is a month its 1,000 MW of firm power isn’t earning.',
+          options: [
+            { key: 'wait', label: 'Wait it out', detail: 'Dig it free slowly: $15M over the next 30 days, and Tunnel Two is a year late (generating early in year 4).', apply: S => tunnelSetback(S, S.yearDays, 15e6) },
+            { key: 'rescue', label: 'Bring in a rescue machine', detail: '$35M over the next 30 days, and Tunnel Two is only 20 days late (generating in year 3).', apply: S => tunnelSetback(S, 20, 35e6) },
+          ] },
+      },
+      report: (S, Y) => {
+        const p = S.plants.find(x => x.tunnel), rows = [];
+        if (p) rows.push(['Tunnel Two', p.status === 'building' ? `${Math.round(100 * (1 - p.buildLeft / p.buildDays))}% built, ${Math.ceil(p.buildLeft)} days to go` : 'Generating', p.status === 'building' ? '' : 'up']);
+        if (Y.overruns) rows.push(['Tunnel Two overruns', fmtMoney(Y.overruns), 'down']);
+        return rows;
+      },
+      stars: [['Keep the lights on in year 5, with Tunnel Two running and {firm} of your own firm plant', r => r.tunnelOn && r.lightsOn && r.ownFirm >= r.firm], ['…and grow the company to $400M', r => r.value >= 400e6], ['…and grow it to $650M', r => r.value >= 650e6]] },
     { id: 'lakeside', group: 'company', name: 'Lakeside Power', years: 4, yearDays: 60, startDoy: 0, seed: 8808, cash: 1500000, idle: true, transition: true,
       blurb: 'The country’s biggest coal generator has promised to close it all. Shut Black Hill unit by unit, keep the lights on, and rebuild the company clean.',
       intro: 'You own all four Black Hill coal units (2,640 MW), the Ash Hill peaker and 400 MW of wind. Your coal closes on a fixed schedule: one unit at the start of each year from year 2.',
       owns: [['bh1'], ['bh2'], ['bh3'], ['bh4'], ['ash', { tech: 'peaker', site: 'gas-hub', name: 'Ash Hill Peaker' }], ['rwind', { tech: 'wind', mw: 400, site: 'tablelands', name: 'Kestrel Ridge Wind' }]],
-      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.9, 0.45], sites: { 'bh-yard': 2, 'bh-ldes': 3 },
+      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.9, 0.45], emisFine: 120, firm: 2940, sites: { 'bh-yard': 2, 'bh-ldes': 3 },
+      closes: { bh1: 2, bh2: 3, bh3: 4 },
       timeline: [
-        { year: 1, text: 'You’ve promised to close Black Hill: unit 1 at the start of year 2, unit 2 in year 3, unit 3 in year 4. Unit 4 runs to the end. The emissions target tightens every year.' },
-        { year: 2, text: 'Black Hill 1 closes (660 MW of your coal). Its switchyard is free for new batteries.', apply: S => closeOwn(S, 'bh1'), close: 660 },
-        { year: 3, text: 'Black Hill 2 closes (660 MW). Long-duration storage can be built, on the old ash dam.', apply: S => { closeOwn(S, 'bh2'); S.unlocked.ldes = true; }, close: 660, unlocks: 'ldes' },
-        { year: 4, text: 'Black Hill 3 closes (660 MW). Only unit 4 is left, and the emissions target is at its tightest.', apply: S => closeOwn(S, 'bh3'), close: 660 },
+        { year: 1, text: 'You’ve promised to close Black Hill: unit 1 at the start of year 2, unit 2 in year 3, unit 3 in year 4. Unit 4 runs to the end. The emissions target tightens every year, and your coal is getting old.' },
+        { year: 2, text: 'Black Hill 1 closes (660 MW of your coal). Its switchyard is free for new batteries.', close: 660 },
+        { year: 3, text: 'Black Hill 2 closes (660 MW). Long-duration storage can be built, on the old ash dam. The government asks about Black Hill 4.', apply: S => { S.unlocked.ldes = true; offerChoice(S, 'early'); }, close: 660, unlocks: 'ldes' },
+        { year: 4, text: 'Black Hill 3 closes (660 MW), and the emissions target is at its tightest.', close: 660 },
       ],
-      stars: [['Keep the lights on: meet the reliability standard in year 4', r => r.finalShed <= RELIABILITY * r.finalRegion], ['…and make 40% of your own output clean in year 4', r => r.ownClean >= 0.4], ['…and grow the company to $1.2B', r => r.value >= 1.2e9]] },
+      choices: {
+        early: { title: 'Close Black Hill 4 early?', deflt: 'keep',
+          text: () => 'The government will pay you $60M now if Black Hill 4 closes with unit 3 at the start of year 4, a year early. You’d lose its output in the final year, and its emissions.',
+          options: [
+            { key: 'close', label: 'Take $60M and close it early', detail: 'Black Hill 4 closes at the start of year 4 with unit 3.', apply: S => { (S.closeAt ||= {}).bh4 = 4; S.cash += 60e6; S.today.bonus += 60e6; } },
+            { key: 'keep', label: 'Run it to the end', detail: 'Black Hill 4 keeps running through year 4.', apply: () => {} },
+          ] },
+      },
+      report: (S, Y) => {
+        const coal = S.plants.filter(p => p.tech === 'coal').length;
+        return [['Coal units left', `${coal} of 4`, ''], ['Your firm plant', `${fmtMW(ownFirm(S))} (goal ${fmtMW(2940)})`, ownFirm(S) >= 2940 ? 'up' : 'down']];
+      },
+      stars: [['Keep the lights on in year 4, with {firm} of your own firm plant', r => r.lightsOn && r.ownFirm >= r.firm], ['…and make 40% of your own output clean in year 4', r => r.ownClean >= 0.4], ['…and grow the company to $1.15B', r => r.value >= 1.15e9]] },
     { id: 'wellspring', group: 'company', name: 'Wellspring Energy', years: 4, yearDays: 60, startDoy: 0, seed: 9909, cash: 1500000, idle: true, transition: true,
-      blurb: 'Gas and the region’s last big coal station. The closure date keeps moving, and every winter the gas gets dear.',
+      blurb: 'Gas and the region’s last big coal station. The government wants the coal kept open; every winter the gas gets dear.',
       intro: 'You own Black Hill 3 and 4 (1,320 MW of coal), the Tallawang combined-cycle plant and the Mulga Creek peaker. The coal is due to close at the start of year 3, and gas runs short every winter.',
       owns: [['bh3'], ['bh4'], ['tal', { tech: 'ccgt', site: 'gas-hub', name: 'Tallawang Gas' }], ['mul', { tech: 'peaker', site: 'port', name: 'Mulga Creek Peaker' }]],
-      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.85, 0.55], sites: { 'bh-yard': 2 },
+      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.85, 0.55], emisFine: 120, firm: 2800, sites: { 'bh-yard': 2 },
+      closes: { bh3: 3, bh4: 3 },
       script: winters(4, 28, [['gascrunch', 5], ['cold', 3, 3]]),
       timeline: [
         { year: 1, text: 'Black Hill 3 and 4 are due to close at the start of year 3. Gas runs short every winter.' },
-        { year: 2, text: 'The government fears a shortfall when your coal goes. It will pay you $500k a day for each Black Hill unit you keep open, and the closure moves to the end of year 4. The coal switchyard opens for batteries.', apply: S => { S.keepOpen = { refs: ['bh3', 'bh4'], perDay: 500000 }; } },
+        { year: 2, text: 'The government fears a shortfall when your coal goes, and offers you a deal. The coal switchyard opens for batteries.', apply: S => offerChoice(S, 'deal') },
         { year: 3, text: 'Black Hill 1, a rival’s unit, closes (660 MW).', apply: S => closeRival(S, 'bh1'), close: 660 },
-        { year: 4, text: 'Black Hill 2 closes (660 MW). The final year: your coal closes when it ends.', apply: S => closeRival(S, 'bh2'), close: 660 },
+        { year: 4, text: 'Black Hill 2 closes (660 MW). The final year.', apply: S => closeRival(S, 'bh2'), close: 660 },
       ],
-      stars: [['Keep the lights on: meet the reliability standard in year 4', r => r.finalShed <= RELIABILITY * r.finalRegion], ['…and grow the company to $800M', r => r.value >= 800e6], ['…and grow it to $1.4B', r => r.value >= 1.4e9]] },
+      choices: {
+        deal: { title: 'The government’s deal', deflt: 'deal',
+          text: () => 'Keep Black Hill 3 and 4 open to the end of year 4 and be paid for every day a unit is available, or close them at the start of year 3 as planned and take a clean-energy grant instead.',
+          options: [
+            { key: 'deal', label: 'Keep the coal open', detail: '$500k a day for each unit that’s running (not broken down). Black Hill 3 and 4 run to the end of year 4.', apply: S => { delete S.closeAt.bh3; delete S.closeAt.bh4; S.keepOpen = { refs: ['bh3', 'bh4'], perDay: 500000 }; } },
+            { key: 'close', label: 'Close on schedule, take the grant', detail: 'The coal closes at the start of year 3. New wind, solar, batteries and pumped hydro cost 30% less to the end.', apply: S => { for (const t of ['wind', 'solar', 'battery', 'hydro', 'ldes']) S.costMult[t] *= 0.7; S.grant = true; } },
+          ] },
+      },
+      report: (S, Y) => {
+        const rows = [['Coal units left', `${S.plants.filter(p => p.tech === 'coal').length} of 2`, '']];
+        if (Y.keepPay) rows.push(['Government payments', fmtMoney(Y.keepPay), 'up']);
+        if (S.grant) rows.push(['Clean-energy grant', 'New wind, solar and storage 30% cheaper', 'up']);
+        return rows;
+      },
+      stars: [['Keep the lights on in year 4, with {firm} of your own firm plant', r => r.lightsOn && r.ownFirm >= r.firm], ['…and grow the company to $800M', r => r.value >= 800e6], ['…and grow it to $1.4B', r => r.value >= 1.4e9]] },
     { id: 'coastline', group: 'company', name: 'Coastline Energy', years: 4, yearDays: 60, startDoy: 152, seed: 1212, cash: 1500000, idle: true, transition: true,
-      blurb: 'A million customers to supply. You’ve sold 800 MW around the clock at a fixed price; stay able to supply it through cold, dear winters and a coal closure.',
-      intro: 'You own Black Hill 2 (660 MW of coal, closing at the start of year 3), the Wollemi combined-cycle plant and the Mulga Creek peaker, and you supply your retail customers: 800 MW around the clock at a fixed price, renewed each year.',
+      blurb: 'A million customers to supply. You’ve sold 800 MW around the clock at a fixed price, and you set next year’s price. Stay able to supply them through cold, dear winters and a coal closure.',
+      intro: 'You own Black Hill 2 (660 MW of coal, closing at the start of year 3), the Wollemi combined-cycle plant and the Mulga Creek peaker, and you supply your retail customers: 800 MW around the clock at a fixed price. Before each renewal you set the price: dearer keeps fewer customers.',
       owns: [['bh2'], ['wol', { tech: 'ccgt', site: 'gas-hub', name: 'Wollemi Gas' }], ['mul', { tech: 'peaker', site: 'port', name: 'Mulga Creek Peaker' }]],
-      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.8, 0.5],
+      unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.8, 0.5], emisFine: 120, firm: 1510,
+      closes: { bh2: 3 },
       script: winters(4, 3, [['cold', 3], ['gascrunch', 4, 2], ['still', 4, 8]]),
+      choiceDays: [[50, 'price'], [110, 'price'], [170, 'price']],
       timeline: [
         { year: 1, text: 'Your customers buy 800 MW around the clock from you this year at a fixed price. Whenever the market is dearer, you pay the difference.', apply: S => retailBook(S) },
-        { year: 2, text: 'Your customers renew for another year, at last year’s average price plus 5%.', apply: S => retailBook(S) },
-        { year: 3, text: 'Black Hill 2 closes (660 MW of your coal). Your customers renew again.', apply: S => { closeOwn(S, 'bh2'); retailBook(S); }, close: 660 },
+        { year: 2, text: 'Your customers renew on the price you set.', apply: S => retailBook(S) },
+        { year: 3, text: 'Black Hill 2 closes (660 MW of your coal). Your customers renew again.', apply: S => retailBook(S), close: 660 },
         { year: 4, text: 'Black Hill 1, a rival’s unit, closes (660 MW). Your customers renew for the final year.', apply: S => { closeRival(S, 'bh1'); retailBook(S); }, close: 660 },
       ],
-      stars: [['Keep the lights on: meet the reliability standard in year 4', r => r.finalShed <= RELIABILITY * r.finalRegion], ['…and make a profit every year and grow the company to $350M', r => r.minYearProfit > 0 && r.value >= 350e6], ['…and grow it to $575M', r => r.value >= 575e6]] },
+      choices: {
+        price: { title: 'Your customers renew in 10 days', deflt: 'usual',
+          text: S => `Set next year’s price. This year’s market has averaged ${fmtPrice(yearAvg(S))}/MWh so far, and you supply ${fmtMW(S.retailMW || 800)}. Customers pay the market average plus your rise and a ${fmtPrice(RETAIL_MARGIN)} retail margin. A cheaper price wins customers; a dearer one loses them.`,
+          options: [
+            { key: 'low', label: 'Hold the price', detail: S => `${fmtPrice(retailStrike(yearAvg(S), 'low'))}/MWh: customers join, about ${fmtMW(retailSize(S, 'low'))}.`, apply: S => { S.retailPlan = 'low'; } },
+            { key: 'usual', label: 'The usual rise (+5%)', detail: S => `${fmtPrice(retailStrike(yearAvg(S), 'usual'))}/MWh: you keep about ${fmtMW(retailSize(S, 'usual'))}.`, apply: S => { S.retailPlan = 'usual'; } },
+            { key: 'high', label: 'Raise it (+15%)', detail: S => `${fmtPrice(retailStrike(yearAvg(S), 'high'))}/MWh: some leave, about ${fmtMW(retailSize(S, 'high'))} stay.`, apply: S => { S.retailPlan = 'high'; } },
+          ] },
+      },
+      report: (S, Y) => [['Your customers', `${fmtMoney(Y.retail || 0)} against the market`, (Y.retail || 0) >= 0 ? 'up' : 'down'], ['Supplying next year', `${fmtMW(S.retailMW || 800)} at ${fmtPrice((S.contracts.find(k => k.retail) || {}).strike || 0)}/MWh`, '']],
+      stars: [['Keep the lights on in year 4, with {firm} of your own firm plant', r => r.lightsOn && r.ownFirm >= r.firm], ['…and make a profit every year and grow the company to $450M', r => r.minYearProfit > 0 && r.value >= 450e6], ['…and grow it to $700M', r => r.value >= 700e6]] },
   ];
   // Winter events for each year of a company scenario: [key, length, days after the first].
   function winters(years, at, list) {
@@ -1386,6 +1466,7 @@ const Sim = (() => {
     return out;
   }
   const scenarioOf = S => S.scenario ? SCENARIOS.find(x => x.id === S.scenario.id) : null;
+  const isCompany = S => (scenarioOf(S) || {}).group === 'company';
   // How many years a multi-year scenario runs, and its timeline of milestones.
   const yearsOf = S => (S.scenario && S.scenario.years) || TRANSITION_YEARS;
   const timelineOf = S => (scenarioOf(S) || {}).timeline || TRANSITION;
@@ -1442,6 +1523,7 @@ const Sim = (() => {
     const N = yearsOf(S), TL = timelineOf(S), em = (scenarioOf(S) || {}).emis || [0.7, 0.05];
     S.emisTarget = Math.round((em[0] + (em[1] - em[0]) * (y - 1) / Math.max(1, N - 1)) * 100) / 100;
     for (const e of TL.filter(e => e.year === y)) { addNews(S, e.close ? 'bad' : 'info', `Year ${y}: ${e.text}`); if (e.apply) e.apply(S); }
+    for (const [ref, at] of Object.entries(S.closeAt || {})) if (at === y) closeOwn(S, ref);   // your plants that close this year
     const next = TL.filter(e => e.year === y + 1);
     if (next.length) addNews(S, 'info', `Next year: ${next.map(e => e.text).join(' ')}`);
     // the year just ended, in review (shown as a pop-up), with what this year and next year bring
@@ -1449,8 +1531,17 @@ const Sim = (() => {
     if (y > 1 && y <= N && P) {
       S.yearReport = { ...P, year: y - 1, avgPrice: P.priceSum / Math.max(1, P.days), valueBefore: y > 2 && S.years[y - 3] ? S.years[y - 3].value : S.scenario.v0,
         now: TL.filter(e => e.year === y).map(e => ({ text: e.text, close: !!e.close })), next: next.map(e => e.text),
-        tender: !!S.tender && S.tender.offeredAt === dayIndex(S), seen: false };
+        tender: !!S.tender && S.tender.offeredAt === dayIndex(S), rows: reportRows(S, P), seen: false };
     }
+  }
+  // A company scenario's own lines in the year report: [label, value, tone] (tone 'up', 'down' or '').
+  function reportRows(S, Y) {
+    const sc = scenarioOf(S);
+    if (!sc || sc.group !== 'company') return [];
+    const rows = [];
+    if (Y.energy > 0) { const i = Y.emis / Y.energy; rows.push(['Emissions', `${i.toFixed(2)} t/MWh (target ${(Y.emisTarget ?? 0).toFixed(2)})`, i > (Y.emisTarget ?? 1) ? 'down' : 'up']); }
+    if (Y.rivalBuilt || Y.rivalShelved) rows.push(['Rival projects', `${Y.rivalBuilt || 0} went ahead, ${Y.rivalShelved || 0} shelved`, '']);
+    return rows.concat(sc.report ? sc.report(S, Y) : []);
   }
   // Capacity Investment Scheme: for a year, new plant of the right kind can be underwritten for 5
   // years: topped up to a floor if it earns less in a day, half of anything above a ceiling paid back.
@@ -1518,31 +1609,171 @@ const Sim = (() => {
     const p = S.plants.find(x => x.ref === ref && x.status !== 'closed');
     if (!p) return;
     p.status = 'closed'; retireRecord(S, p, 0); S.plants = S.plants.filter(x => x !== p);
+    addNews(S, 'info', `${p.name} has closed for good, as planned.`);
   }
-  // Tunnel Two's setbacks: a delay in days and a bill.
+  // When one of your plants is due to close: the year it closes at the start of, and days to go.
+  function closesIn(S, p) {
+    const at = S.closeAt && p.ref != null ? S.closeAt[p.ref] : null;
+    return at == null ? null : { year: at, days: Math.max(0, (at - 1) * yearDaysOf(S) - dayIndex(S)) };
+  }
+  // Firm plant you own (gas, coal, hydro and storage), counting units under repair but not ones still being built.
+  const ownFirm = S => S.plants.reduce((a, p) => a + (p.status !== 'building' && p.status !== 'closed' && (TECH[p.tech].kind === 'thermal' || TECH[p.tech].kind === 'storage') ? p.mw : 0), 0);
+  // Tunnel Two's setbacks: a delay in days and a bill, paid over 30 days. The bill is capital
+  // spending on the tunnel, not a running cost.
   function tunnelSetback(S, days, cost) {
     const p = S.plants.find(x => x.tunnel);
     if (!p) return;
     if (p.status === 'building') { p.buildLeft += days; p.buildDays += days; }
-    S.cash -= cost; S.today.penalties += cost; p.capital += cost; p.life.repairs = (p.life.repairs || 0) + cost;
+    (S.bills ||= []).push({ left: cost, perDay: cost / 30 });
   }
-  // Your retail customers: a year-long swap, struck at last year's average price plus 5%.
+  function payBills(S, d) {
+    if (!S.bills || !S.bills.length) return;
+    const p = S.plants.find(x => x.tunnel);
+    for (const b of S.bills) { const pay = Math.min(b.left, b.perDay); b.left -= pay; S.cash -= pay; d.overruns += pay; if (p) p.capital += pay; }
+    S.bills = S.bills.filter(b => b.left > 0.5);
+  }
+  // Your retail customers: a year-long swap at the price you set (last year's average, plus a rise),
+  // for as many customers as that price keeps.
+  const RETAIL = { low: { markup: 1, keep: 1.15 }, usual: { markup: 1.05, keep: 1 }, high: { markup: 1.15, keep: 0.75 } };
+  // Customers pay the wholesale-based price plus a retail margin on every MWh.
+  const RETAIL_MARGIN = 15, retailStrike = (avg, plan) => Math.round(avg * RETAIL[plan].markup + RETAIL_MARGIN);
+  const yearAvg = S => { const Y = S.years && S.years[yearOf(S)]; return Y && Y.days ? Y.priceSum / Y.days : 95; };
+  const retailSize = (S, plan) => Math.round(Math.min(1200, Math.max(400, (S.retailMW || 800) * RETAIL[plan].keep)) / 10) * 10;
   function retailBook(S) {
-    const P = S.years && S.years[yearOf(S) - 1];
-    const strike = Math.round((P && P.days ? P.priceSum / P.days : 95) * 1.05);
+    const plan = S.retailPlan || 'usual', P = S.years && S.years[yearOf(S) - 1];
+    if (P) S.retailMW = retailSize(S, plan);
+    const mw = S.retailMW || (S.retailMW = 800);
+    const strike = retailStrike(P && P.days ? P.priceSum / P.days : 95, plan);
     S.contracts = S.contracts.filter(k => !k.retail);
-    S.contracts.push({ type: 'swap', retail: true, mw: 800, strike, days: yearDaysOf(S), until: S.t + yearDaysOf(S) * IPD, pnl: 0, signed: S.t });
+    S.contracts.push({ type: 'swap', retail: true, mw, strike, days: yearDaysOf(S), until: S.t + yearDaysOf(S) * IPD, pnl: 0, signed: S.t });
+    S.retailPlan = null;
   }
-  // The government's payment for keeping coal open: so much a day for each unit still running.
+  // The government's payment for keeping coal open: so much a day for each unit that's available.
   function settleKeepOpen(S, d) {
     const K = S.keepOpen;
     if (!K) return;
-    for (const p of S.plants) if (K.refs.includes(p.ref) && p.status !== 'closed' && p.status !== 'retiring') { S.cash += K.perDay; d.bonus += K.perDay; }
+    for (const p of S.plants) if (K.refs.includes(p.ref) && p.status === 'online') { S.cash += K.perDay; d.bonus += K.perDay; d.keepPay += K.perDay; }
+  }
+
+  // ---- decisions: a company scenario puts a choice to you; unanswered, the default applies ----
+  // S.choice holds only its id and deadline (saves stay plain JSON); the words and effects live in
+  // the scenario's `choices`.
+  const CHOICE_DAYS = 10;
+  const choiceDef = S => { const sc = scenarioOf(S), c = S.choice; return c && sc && sc.choices ? sc.choices[c.id] : null; };
+  function offerChoice(S, id) {
+    if (S.choice) choose(S, choiceDef(S).deflt, true);
+    S.choice = { id, until: dayIndex(S) + CHOICE_DAYS, at: dayIndex(S) };
+    addNews(S, 'info', `Decision waiting: ${scenarioOf(S).choices[id].title}. You have ${CHOICE_DAYS} days.`);
+  }
+  function offerScheduledChoice(S) {
+    for (const [day, id] of (scenarioOf(S) || {}).choiceDays || []) if (dayIndex(S) === day) offerChoice(S, id);
+  }
+  // What the pop-up shows: the title, the text and each option's label and detail, worked out now.
+  function choiceView(S) {
+    const C = choiceDef(S);
+    if (!C) return null;
+    const val = v => typeof v === 'function' ? v(S) : v;
+    return { id: S.choice.id, at: S.choice.at, title: C.title, text: val(C.text), deflt: C.deflt, daysLeft: S.choice.until - dayIndex(S),
+      options: C.options.map(o => ({ key: o.key, label: o.label, detail: val(o.detail) })) };
+  }
+  function choose(S, key, timedOut) {
+    const C = choiceDef(S);
+    if (!C) return false;
+    const o = C.options.find(x => x.key === key) || C.options.find(x => x.key === C.deflt);
+    (S.chosen ||= {})[S.choice.id] = o.key;
+    S.choice = null;
+    o.apply(S);
+    addNews(S, 'info', timedOut ? `No decision in time, so the default was taken: ${o.label.toLowerCase()}.` : `You decided: ${o.label.toLowerCase()}.`);
+    return true;
+  }
+  function choiceTimeout(S) { if (S.choice && dayIndex(S) >= S.choice.until) choose(S, choiceDef(S).deflt, true); }
+
+  // ---- rival proposals (company scenarios): when prices run high a rival announces a project,
+  // decides 10 days later and builds only if prices stayed high, so you can build first to change its
+  // mind, or buy the project. Built projects join the rival fleet after their build time.
+  const DEVELOPERS = ['Tasman Power', 'Red Gum Energy', 'Southern Cross Renewables', 'Granite Peak Energy', 'Brolga Power', 'Saltbush Energy', 'Bight Energy', 'Boundary Gen'];
+  const PROPOSAL_DAYS = 7, PROPOSAL_POPUP_MW = 300, PROPOSAL_PREMIUM = 1.25;
+  // The average price each kind of project needs to pay its way (Standard; scaled by difficulty).
+  const HURDLE = { wind: 100, ccgt: 120, battery: 130, peaker: 150 }, RIVAL_TECHS = ['ccgt', 'battery', 'wind', 'peaker'];
+  function rivalProposal(S) {
+    if (S.proposal) return;
+    const last = S.days.slice(-15), k = diff(S).rivalAt / 140;   // tougher difficulties: rivals pounce sooner
+    const avg = last.reduce((a, d) => a + d.avg, 0) / last.length, short = last.some(d => d.shed > 0);
+    // gas, batteries, wind and peakers in turn; a shortfall brings a peaker forward
+    const n = (S.rivalBuilds || 0) + 1;
+    const tech = short && n % 2 === 0 ? 'peaker' : RIVAL_TECHS[(n - 1) % RIVAL_TECHS.length], T = TECH[tech];
+    const hurdle = Math.round(HURDLE[tech] * k);
+    if (avg <= hurdle && !short) return;
+    S.rivalBuilds = n;
+    const mw = Math.round(Math.min(T.range[1], 800, Math.max(0, avg - hurdle) * 4 + 200 + (short ? 300 : 0)) / 50) * 50;
+    const site = siteFor(S, tech, mw);
+    S.proposal = { n, dev: DEVELOPERS[(n - 1) % DEVELOPERS.length], tech, mw, hurdle, from: dayIndex(S), decideAt: dayIndex(S) + PROPOSAL_DAYS,
+      buy: Math.round(priceOf(S, tech, mw, site ? { site } : {}) * PROPOSAL_PREMIUM / 1000) * 1000, big: mw >= PROPOSAL_POPUP_MW };
+    addNews(S, 'info', `${S.proposal.dev} plans a ${fmtMW(mw)} ${T.name.toLowerCase()}. It decides in ${PROPOSAL_DAYS} days and builds if prices average ${fmtPrice(hurdle)}/MWh or more until then.`);
+  }
+  // Each day: decide an open proposal when its day comes, and connect rival projects that are finished.
+  function rivalProjects(S) {
+    const P = S.proposal, day = dayIndex(S);
+    if (P && day >= P.decideAt) {
+      const since = S.days.filter(d => d.day >= P.from), avg = since.reduce((a, d) => a + d.avg, 0) / Math.max(1, since.length);
+      const what = `${fmtMW(P.mw)} ${TECH[P.tech].name.toLowerCase()}`;
+      if (avg >= P.hurdle) {
+        const days = Math.ceil(buildDays(P.tech, P.mw, siteFor(S, P.tech, P.mw) || undefined));
+        (S.rivalPending ||= []).push({ ...P, online: day + days });
+        S.today.rivalBuilt++;
+        addNews(S, 'bad', `${P.dev} is going ahead: prices averaged ${fmtPrice(avg)}, above its ${fmtPrice(P.hurdle)} hurdle. Its ${what} starts in ${days} days.`);
+      } else {
+        S.today.rivalShelved++;
+        addNews(S, 'good', `${P.dev} has shelved its ${what}: prices averaged only ${fmtPrice(avg)}, below its ${fmtPrice(P.hurdle)} hurdle.`);
+      }
+      S.proposal = null;
+    }
+    for (const q of (S.rivalPending || []).filter(q => day >= q.online)) {
+      const name = `${q.dev} ${{ peaker: 'peaker', ccgt: 'gas plant', battery: 'battery', wind: 'wind farm' }[q.tech]}`, id = `rv${q.n}`;
+      S.rivals.push(q.tech === 'peaker' ? { id, name, tech: 'peaker', cap: q.mw, bands: [[0.6, 320], [0.4, 520]], out: 0 }
+        : q.tech === 'ccgt' ? { id, name, tech: 'ccgt', cap: q.mw, bands: [[0.5, 92], [0.5, 128]], out: 0 }
+        : q.tech === 'battery' ? { id, name, tech: 'battery', cap: q.mw, hours: 2, soc: q.mw }
+        : { id, name, tech: 'wind', cap: q.mw, bid: -35 });
+      addNews(S, 'info', `${name} (${fmtMW(q.mw)}) is now running. More competition.`);
+    }
+    if (S.rivalPending) S.rivalPending = S.rivalPending.filter(q => day < q.online);
+  }
+  // Buy the open proposal: it becomes your plant, built at the first site with room, for its price
+  // plus the developer's premium. With opts.loan, borrow what you're short (secured on the plant).
+  function buyProposal(S, opts = {}) {
+    const P = S.proposal;
+    if (!P) return { ok: false, why: 'gone' };
+    const site = siteFor(S, P.tech, P.mw);
+    if (!site) return { ok: false, why: 'room' };
+    const price = Math.round(priceOf(S, P.tech, P.mw, { site }) * PROPOSAL_PREMIUM / 1000) * 1000;
+    if (S.cash < price) {
+      if (!opts.loan) return { ok: false, why: 'cash', price };
+      if (!takeLoan(S, Math.ceil((price - S.cash) / 1000) * 1000, 90, price).ok) return { ok: false, why: 'cash', price };
+    }
+    const was = S.unlocked[P.tech];
+    S.unlocked[P.tech] = true;
+    const r = build(S, P.tech, P.mw, { site });
+    S.unlocked[P.tech] = was;
+    if (!r.ok) return r;
+    const premium = price - r.plant.capital;
+    S.cash -= premium; r.plant.capital += premium; r.plant.value += premium;
+    S.news.shift();   // not "construction has started": say it this way
+    addNews(S, 'good', `You bought ${P.dev}'s ${fmtMW(P.mw)} project for ${fmtMoney(price)}. ${r.plant.name} connects in ${r.plant.buildLeft} days.`);
+    S.proposal = null;
+    return { ok: true, plant: r.plant, price };
+  }
+  // What the proposal pop-up shows.
+  function proposalView(S) {
+    const P = S.proposal;
+    if (!P) return null;
+    const since = S.days.filter(d => d.day >= P.from), site = siteFor(S, P.tech, P.mw);
+    return { ...P, daysLeft: P.decideAt - dayIndex(S), avgSoFar: since.length ? since.reduce((a, d) => a + d.avg, 0) / since.length : null,
+      site: site ? siteOf(P.tech, site).name : null, price: site ? Math.round(priceOf(S, P.tech, P.mw, { site }) * PROPOSAL_PREMIUM / 1000) * 1000 : null };
   }
   // A scenario's length: the Energy Transition offers Standard (60-day years) or Long (90-day years).
   const lengthOf = (sc, key) => sc.lengths ? sc.lengths[key] || sc.lengths.standard : null;
   const fmtTarget = v => v >= 1e9 ? `$${+(v / 1e9).toFixed(1)}B` : fmtMoney(v);
-  const starText = (sc, key) => sc.stars.map(([t]) => t.replace('{target}', fmtTarget((lengthOf(sc, key) || {}).target || 0)));
+  const starText = (sc, key) => sc.stars.map(([t]) => t.replace('{target}', fmtTarget((lengthOf(sc, key) || {}).target || 0)).replace('{firm}', fmtMW(sc.firm || 0)));
   function createScenario(id, opts = {}) {
     const sc = SCENARIOS.find(x => x.id === id), L = lengthOf(sc, opts.length);
     const S = create(sc.seed, { cash: sc.cash, startDoy: sc.startDoy });
@@ -1559,6 +1790,7 @@ const Sim = (() => {
     for (const [t, mw, extra] of sc.plants || []) { const was = S.unlocked[t]; S.unlocked[t] = true; givePlant(S, t, mw, extra); S.unlocked[t] = was || (sc.unlock || []).includes(t); }
     for (const [rid, o] of sc.owns || []) takeRival(S, rid, o);
     if (sc.setup) sc.setup(S);
+    if (sc.closes) S.closeAt = { ...sc.closes };
     for (const [rid, day] of Object.entries(sc.closures || {})) S.rivals.find(r => r.id === rid).closing = day;
     // no early goal bonuses in a scenario: it's scored on what you make of it
     for (const g of GOALS) S.goalsDone[g.id] = S.goalsDone[g.id] ?? -1;
@@ -1576,7 +1808,8 @@ const Sim = (() => {
     const sc = scenarioOf(S), full = (S.years || []).slice(0, yearsOf(S)).filter(Boolean);
     return { value: companyValue(S), gain: companyValue(S) - S.scenario.v0, target: S.scenario.target ?? (lengthOf(sc, 'standard') || {}).target,
       finalShed: Y.shed, finalRegion: Y.region, cleanShare: Y.clean / Math.max(1, Y.region), ownClean: Y.clean / Math.max(1, Y.energy || 0),
-      minYearProfit: full.length ? Math.min(...full.map(y => y.profit)) : 0, tunnelOn: S.plants.some(p => p.tunnel && running(p)), bust: !!S.bust };
+      minYearProfit: full.length ? Math.min(...full.map(y => y.profit)) : 0, tunnelOn: S.plants.some(p => p.tunnel && p.status !== 'building'),
+      lightsOn: Y.shed <= RELIABILITY * Y.region, ownFirm: ownFirm(S), firm: sc.firm || 0, bust: !!S.bust };
   }
   function scenarioResult(S) {
     const sc = scenarioOf(S);
@@ -1705,7 +1938,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

@@ -13,14 +13,37 @@ are built, tested and published); this file is what's specific to Merit Order. C
   wind and long-duration storage arriving, Renewable Energy Zones with grid line limits, storage that
   wears out (refurbish), Capacity Investment Scheme underwriting rounds, a yearly report.
 - **Company scenarios** (`group: 'company'`, listed under "Run a company"): a real company's
-  portfolio under a made-up name, 4–5 years of 60 days on the same yearly machinery. Highcountry Hydro
-  (Snowy Hydro: hydro, peakers, Tunnel Two being built late and over budget), Lakeside Power (AGL:
-  all four Black Hill units closing one a year), Wellspring Energy (Origin: coal whose closure moves
-  for a government payment, gas squeezes each winter), Coastline Energy (EnergyAustralia: an 800 MW
-  retail book renewed yearly as a swap). Scenario fields: `years`, `yearDays`, `timeline` (same
-  shape as `TRANSITION`), `owns` (rivals handed to you via `takeRival`, so the market keeps its
-  size), `setup`, `sites` (which zones open in which year; unlisted ones stay shut), `emis`,
-  `rivalPlan`, `intro`. Use `yearsOf`/`timelineOf`/`siteOpensIn`, never `TRANSITION` directly.
+  portfolio under a made-up name, 4–5 years of 60 days on the same yearly machinery, each with a
+  decision:
+  - Highcountry Hydro (Snowy Hydro): hydro and peakers; Tunnel Two is stuck in year 2 (wait it out, or
+    pay for a rescue machine). Overruns are paid over 30 days as capital.
+  - Lakeside Power (AGL): all four Black Hill units close one a year; in year 3, take $60M to close
+    unit 4 early.
+  - Wellspring Energy (Origin): in year 2, keep the coal open for $500k a day per running unit, or
+    close on schedule with a grant (new wind, solar and storage 30% cheaper). Gas squeezes each winter.
+  - Coastline Energy (EnergyAustralia): a retail book (a year-long swap, `retail: true`), renewed
+    each year at a price you set 10 days before (hold / +5% / +15%: customers join or leave), plus a
+    $15/MWh retail margin.
+- **What company scenarios add:**
+  - Rivals propose plant when prices run high (`rivalProposal`, every 5 days; one open at a time).
+    A proposal decides 7 days later and builds only if prices averaged above its hurdle: wind $100,
+    gas $120, battery $130, peaker $150. A pop-up for 300 MW or more offers "Build to compete" and
+    "Buy it" (cost + 25%).
+  - Ageing coal: breakdowns ×(1 + 0.35 a year); from year 3, or in a unit's last year, one in five
+    is major (6–12 days).
+  - Emissions fines at `emisFine` ($120/t).
+  - Year-report rows from `report(S, Y)`.
+  - Closure badges from `closes` (copied to `S.closeAt`; `closesIn`).
+- **Scenario fields:**
+  - `years`, `yearDays`, `timeline` (same shape as `TRANSITION`)
+  - `owns`: rivals handed to you via `takeRival`, so the market keeps its size
+  - `setup`, `closes`
+  - `choices` (`{ title, text, options: [{ key, label, detail, apply }], deflt }`; put to you with
+    `offerChoice` or `choiceDays`; `S.choice` stores only the id; the default applies after 10 days)
+  - `sites`: which zones open in which year; unlisted ones stay shut
+  - `emis`, `emisFine`, `firm` (the first star's MW of your own firm plant), `rivalPlan`, `report`,
+    `intro`
+  - Use `yearsOf`/`timelineOf`/`siteOpensIn`, never `TRANSITION` directly.
 - **Challenges**: 30 days, a shareable code (`MO-…`), highest company value wins.
 - The career and the multi-year scenarios keep trading while the app is closed (up to 7 game days per
   absence) unless "Keep trading while I'm away" is off. New games start paused.
@@ -62,9 +85,17 @@ are built, tested and published); this file is what's specific to Merit Order. C
 - Scenarios: doing nothing earns at most 1 star, steady play 1–2, a good plan 3.
 - Energy Transition: doing nothing 0 stars (the region runs short); the steady and firm bots
   3 stars at both lengths with no shortfall from year 12.
-- Company scenarios: the first star is always keeping the lights on, which doing nothing fails (the
-  big portfolio then earns the most from scarcity, but 0 stars); the steady and firm bots get 2 stars,
-  and the third is set just above the steady bot. Company values run to hundreds of millions.
+- Company scenarios (`--companies`), measured with these bots: handsoff, steady, firm, gouge
+  (thermal only at $300+), quitcoal (closes its coal on day 1), buyer (buys every proposal), plus
+  steady with each decision option.
+  - **First star:** keep the lights on *and* own the scenario's `firm` MW, so rivals filling the
+    gap doesn't earn it for you.
+  - **Targets:**
+    - Handsoff, gouge and quitcoal end below steady in value (rival proposals are what stop
+      withholding from paying).
+    - Handsoff earns 0 stars; steady 2.
+    - No decision option is more than about 15% from another.
+  - Company values run to hundreds of millions.
 - Plants pay back in weeks here, so anything that adds capital (loans, subsidies) compounds fast:
   simulate before choosing numbers.
 

@@ -59,6 +59,19 @@ const SEEDS = {
       });
       await p.keyboard.press('Escape');
     },
+    // Highcountry Hydro in year 2: the boring-machine decision waiting and a rival's proposal open
+    companies: async p => {
+      await p.click('#t-scenarios'); await p.click('[data-scenario="highcountry"]'); await p.click('#sc-go');
+      await p.waitForTimeout(150);
+      await p.evaluate(() => {
+        const M = MeritOrder, S = M.state; S.cash = 2e8; M.setSpeed(0);
+        while (S.t < 61 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal && S.t < 60 * 288) S.proposal = null; }
+        for (const d of S.days.slice(-15)) d.avg = 400;   // dear days: a rival proposes on the next fifth day
+        while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
+        S.proposal.big = true; if (S.yearReport) S.yearReport.seen = true;
+        M.renderAll();
+      });
+    },
     // the Energy Transition at the start of year 3: a yearly report with an underwriting round
     transition: async p => {
       await p.click('#t-scenarios'); await p.click('[data-scenario="energy-transition"]'); await p.click('#sc-go');

@@ -425,6 +425,51 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#sh-build [data-close]');
     await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 61 * 288) M.Sim.step(S); S.yearReport.seen = true; M.renderAll(); });
     check('your coal closes on schedule', /Year 2 of 4/.test(await p.textContent('#clock')) && await state(p, () => !MeritOrder.state.plants.some(x => x.name === 'Black Hill 1')));
+    const bh2 = await state(p, () => MeritOrder.state.plants.find(x => x.ref === 'bh2').id);
+    check('a plant due to close says when', (await p.textContent(`[data-plant="${bh2}"] .closes`)) === 'Closes in 59 days');
+    await p.context().close();
+  }
+
+  // 8f. Company scenarios, round 2: a decision pop-up, a rival's proposal (and buying it), the year
+  //     report's own lines, and the 32x speed.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="coastline"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await p.click('[data-speed="32"]'); await p.waitForTimeout(100);
+    check('a 32× speed', (await p.$eval('[data-speed="32"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    // just before day 50, when the customers' renewal comes up
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 50 * 288 - 5) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal) S.proposal = null; } M.renderAll(); M.setSpeed(16); });
+    let title = '';
+    for (let k = 0; k < 10 && title !== 'Your customers renew in 10 days'; k++) {
+      await p.waitForTimeout(300); title = await p.textContent('#i-title');
+      if (/New contracts|A rival plans/.test(title) && !(await p.$eval('#sh-info', x => x.hidden))) await p.keyboard.press('Escape');
+    }
+    check('a decision pops up, paused, with its options', title === 'Your customers renew in 10 days' && (await p.$$('[data-choose]')).length === 3 && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await shot(p, 'company-decision');
+    await p.click('[data-choose="high"]'); await p.waitForTimeout(200);
+    check('choosing applies it and carries on', await state(p, () => MeritOrder.state.chosen.price === 'high' && !MeritOrder.state.choice) && (await p.$eval('[data-speed="16"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    // a run of dear days brings a rival's proposal
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.proposal = null; for (const d of S.days.slice(-15)) d.avg = 400; S.cash = 5e8;
+      while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.choice) M.Sim.choose(S, M.Sim.choiceView(S).deflt); } S.proposal.big = true; M.renderAll(); });
+    check('a rival proposal shows as a chip', /decides in \d+ days/.test(await p.textContent('#chips')));
+    await p.click('[data-proposal]'); await p.waitForTimeout(200);
+    check('…and opens its pop-up: carry on, build to compete or buy', (await p.textContent('#i-title')) === 'A rival plans new plant' && !!(await p.$('#pr-buy')) && !!(await p.$('#pr-build')));
+    await shot(p, 'company-proposal');
+    const n0 = await state(p, () => MeritOrder.state.plants.length);
+    await p.click('#pr-buy'); await p.waitForTimeout(200);
+    check('buying it makes it your plant', await state(p, n => MeritOrder.state.plants.length === n + 1 && !MeritOrder.state.proposal, n0));
+    // the year report has the scenario's own lines
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 60 * 288 - 5) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.choice) M.Sim.choose(S, M.Sim.choiceView(S).deflt); if (S.proposal) S.proposal = null; } M.renderAll(); M.setSpeed(16); });
+    for (let k = 0; k < 10 && title !== 'Year 1 in review'; k++) {
+      await p.waitForTimeout(300); title = await p.textContent('#i-title');
+      if (/New contracts|A rival plans/.test(title) && !(await p.$eval('#sh-info', x => x.hidden))) await p.keyboard.press('Escape');
+    }
+    const body = await p.textContent('#i-body');
+    check('the year report has the company’s own lines', title === 'Year 1 in review' && /Your customers/.test(body) && /Emissions/.test(body) && /Clean, of your output/.test(body), body.replace(/\s+/g, ' ').slice(0, 160));
+    await shot(p, 'company-report');
     await p.context().close();
   }
 

@@ -299,30 +299,96 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
 }
 
 // 11b. Company scenarios: the portfolio comes out of the rival fleet, the timeline is the scenario's
-//      own, and the Energy Transition is untouched.
+//      own, closures are on a schedule, decisions apply (or default), rivals propose plant when
+//      prices run high, and the Energy Transition and the career are untouched.
 {
   const fleet = S => S.rivals.filter(r => !r.gone).reduce((a, r) => a + r.cap, 0) + S.plants.filter(p => !p.tunnel).reduce((a, p) => a + p.mw, 0);
   const base = fleet(Sim.create(1)) + 0;
   const companies = Sim.SCENARIOS.filter(sc => sc.group === 'company');
   check('company scenarios take their plants from the rivals: the market is the same size', companies.length === 4 && companies.every(sc => Math.abs(fleet(Sim.createScenario(sc.id)) - base) < 1), companies.map(sc => fleet(Sim.createScenario(sc.id))).join(', '));
-  const run = (S, days) => { const end = S.t + days * Sim.IPD; while (S.t < end) Sim.step(S); };
+  // whole days; a decision that comes up is answered by pick(view) (unanswered ones wait for their deadline)
+  const run = (S, days, pick) => { const end = S.t + days * Sim.IPD; while (S.t < end) { Sim.step(S); if (S.offer) Sim.declineOffer(S); if (S.choice && pick) { const k = pick(Sim.choiceView(S)); if (k) Sim.choose(S, k); } } };
   const L = Sim.createScenario('lakeside');
   check('a company scenario has its own years and timeline', L.scenario.days === 240 && Sim.yearsOf(L) === 4 && Sim.timelineOf(L).length === 4 && Sim.timelineOf(Sim.createScenario('energy-transition')) === Sim.TRANSITION);
+  const bh1 = L.plants.find(p => p.ref === 'bh1'), c0 = Sim.closesIn(L, bh1);
+  check('your plants know when they close', c0.year === 2 && c0.days === 60 && Sim.closesIn(L, L.plants.find(p => p.ref === 'bh4')) === null);
   run(L, 61);
-  check('your coal closes on the schedule', !L.plants.some(p => p.ref === 'bh1') && L.plants.some(p => p.ref === 'bh2' && p.status !== 'closed') && Sim.yearOf(L) === 1);
+  check('your coal closes on the schedule', !L.plants.some(p => p.ref === 'bh1') && L.plants.some(p => p.ref === 'bh2' && p.status !== 'closed') && Sim.yearOf(L) === 1 && L.retired.some(r => r.name === 'Black Hill 1'));
   const zone = Sim.SITES.solar.find(x => x.id === 'cw-rez'), yard = Sim.SITES.battery.find(x => x.id === 'bh-yard'), ET = Sim.createScenario('energy-transition');
   check('zones open only where the scenario says (the Energy Transition as before)', Sim.siteOpensIn(L, zone) == null && Sim.siteOpensIn(L, yard) === 2 && Sim.siteRoom(L, 'battery', 'bh-yard') > 0 && Sim.siteOpensIn(ET, zone) === 5 && Sim.siteOpensIn(Sim.create(1), zone) == null);
+  // Lakeside, year 3: close Black Hill 4 early for $60M
+  run(L, 60, v => v.id === 'early' ? 'close' : null);
+  check('a decision applies what you choose: Black Hill 4 now closes with unit 3', L.chosen.early === 'close' && Sim.closesIn(L, L.plants.find(p => p.ref === 'bh4')).year === 4);
+  // the emissions check on the first day of a year is judged on the year that ended
+  const yr1 = L.years[0];
+  check('emissions are judged on the target of the year they were made in', yr1.emisTarget === 0.9 && L.news.every(n => !/above the 0\.75 target/.test(n.text) || n.t > 61 * Sim.IPD));
+
+  // Highcountry: the boring machine; unanswered, the default (wait it out) applies after 10 days
   const H = Sim.createScenario('highcountry'), tunnel = () => H.plants.find(p => p.tunnel), left0 = tunnel().buildLeft, cash0 = H.cash;
   run(H, 61);
-  check('Tunnel Two is under way, then a year late and $15M dearer', tunnel().status === 'building' && Math.abs(tunnel().buildLeft - (left0 - 61 + 60)) < 0.1 && tunnel().capital - Sim.priceOf(H, 'hydro', 1000, { site: 'tumut' }) > 14e6, `${tunnel().buildLeft.toFixed(1)} days left, cash ${Sim.fmtMoney(cash0)} → ${Sim.fmtMoney(H.cash)}`);
+  check('a decision waits for you, with its options', !!H.choice && Sim.choiceView(H).options.length === 2 && Sim.choiceView(H).daysLeft === 9);
+  run(H, 10);
+  check('…and unanswered, the default applies when time runs out', !H.choice && H.chosen.tbm === 'wait' && Math.abs(tunnel().buildLeft - (left0 - 71 + 60)) < 0.1);
+  run(H, 31);
+  check('Tunnel Two’s overrun is paid over 30 days, as capital spending', tunnel().capital - Sim.priceOf(H, 'hydro', 1000, { site: 'tumut' }) > 14.9e6 && !H.bills.length && H.years[1].overruns > 14.9e6, `cash ${Sim.fmtMoney(cash0)} → ${Sim.fmtMoney(H.cash)}`);
+  const H2 = Sim.createScenario('highcountry');
+  run(H2, 62, v => 'rescue');
+  check('…or the rescue machine: only 20 days late', Math.abs(H2.plants.find(p => p.tunnel).buildLeft - (left0 - 62 + 20)) < 0.1);
+
+  // Coastline: the retail book renews each year at the price you set
   const C = Sim.createScenario('coastline'), book = () => C.contracts.filter(k => k.retail);
   const first = book()[0];
-  run(C, 61);
-  check('the retail book renews each year at the new price', book().length === 1 && first.mw === 800 && book()[0] !== first && Math.abs(book()[0].until - 120 * Sim.IPD) <= 2, `${first.strike} → ${book()[0].strike}`);
+  run(C, 61, v => v.id === 'price' ? 'high' : null);
+  check('the retail book renews on your price: dearer keeps fewer customers', book().length === 1 && first.mw === 800 && book()[0].mw === 600 && book()[0].strike > first.strike && Math.abs(book()[0].until - 120 * Sim.IPD) <= 2, `${first.mw} MW at ${first.strike} → ${book()[0].mw} MW at ${book()[0].strike}`);
+  check('…and its year is reported as your customers', C.news.some(n => /Your customers' year is over/.test(n.text)) && C.years[0].retail !== 0);
+
+  // Wellspring: take the deal and be paid for each unit that's running
   const W = Sim.createScenario('wellspring');
-  run(W, 61);
-  run(W, 1); const today = W.days[W.days.length - 1];
-  check('the government pays to keep coal open', !!W.keepOpen && today.bonus >= 2 * 500000, Sim.fmtMoney(today.bonus));
+  run(W, 62, v => 'deal');
+  const today = W.days[W.days.length - 1];
+  check('the government pays for each coal unit that is running', !!W.keepOpen && today.keepPay >= 500000 && today.keepPay % 500000 === 0 && !W.closeAt.bh3, Sim.fmtMoney(today.keepPay));
+  const W2 = Sim.createScenario('wellspring'), wind0 = Sim.priceOf(W2, 'wind', 120);
+  run(W2, 61, v => 'close');
+  check('…or close on schedule with the clean-energy grant: new wind 30% cheaper', W2.grant && Sim.priceOf(W2, 'wind', 120) < wind0 * 0.72 && W2.closeAt.bh3 === 3);
+
+  // rival proposals: announced when prices run high, decided 7 days later, built or shelved
+  const R = Sim.createScenario('lakeside');
+  R.days.push(...Array.from({ length: 15 }, (_, i) => ({ day: -15 + i, avg: 400, shed: 0, capPay: 0 })));   // a run of dear days
+  for (let k = 0; k <= 5 * Sim.IPD; k++) Sim.step(R);
+  const P = R.proposal;
+  check('a rival proposes a plant when prices run high', !!P && P.mw >= 300 && P.decideAt === Sim.dayIndex(R) + 7 && P.hurdle > 0, P && `${P.dev}: ${P.mw} MW ${P.tech}, hurdle $${P.hurdle}`);
+  const before = R.rivals.length;
+  for (let k = 0; k < 7 * Sim.IPD; k++) Sim.step(R);
+  check('…and shelves it when prices fall below its hurdle', !R.proposal && R.rivals.length === before && R.news.some(n => /has shelved/.test(n.text)));
+  const B = Sim.createScenario('lakeside');
+  B.days.push(...Array.from({ length: 15 }, (_, i) => ({ day: -15 + i, avg: 400, shed: 0, capPay: 0 })));
+  for (let k = 0; k <= 5 * Sim.IPD; k++) Sim.step(B);
+  B.cash = 1e9;
+  const n0 = B.plants.length, view = Sim.proposalView(B), got = Sim.buyProposal(B);
+  check('buying a proposal makes it your plant, at its price plus the premium', got.ok && B.plants.length === n0 + 1 && got.plant.status === 'building' && got.price === view.price && !B.proposal);
+  const G = Sim.createScenario('lakeside');
+  G.days.push(...Array.from({ length: 15 }, (_, i) => ({ day: -15 + i, avg: 400, shed: 0, capPay: 0 })));
+  for (let k = 0; k <= 5 * Sim.IPD; k++) Sim.step(G);
+  const gp = G.proposal; gp.hurdle = 0;   // prices will clear any hurdle
+  for (let k = 0; k < 7 * Sim.IPD; k++) Sim.step(G);
+  const pend = (G.rivalPending || [])[0];
+  check('…or goes ahead and joins the rival fleet once built', !!pend && G.news.some(n => /is going ahead/.test(n.text)));
+  const steps = (pend.online - Sim.dayIndex(G) + 1) * Sim.IPD;
+  for (let k = 0; k < steps; k++) Sim.step(G);
+  check('…once built', G.rivals.some(r => r.id === `rv${gp.n}` && r.cap === gp.mw));
+  // the career and the Energy Transition never get proposals
+  const K = Sim.create(3), E2 = Sim.createScenario('energy-transition');
+  for (const S of [K, E2]) S.days.push(...Array.from({ length: 15 }, (_, i) => ({ day: -15 + i, avg: 400, shed: 0, capPay: 0 })));
+  for (let k = 0; k < 6 * Sim.IPD; k++) { Sim.step(K); Sim.step(E2); if (K.offer) Sim.declineOffer(K); }
+  check('the career and the Energy Transition get no proposals', !K.proposal && !E2.proposal && !Sim.isCompany(K) && !Sim.isCompany(E2));
+
+  // ageing coal: breakdowns get likelier each year in a company scenario
+  const A = Sim.createScenario('wellspring');
+  check('ageing coal breaks down more often each year, only in company scenarios', Sim.coalAge(A) === 1 && Sim.coalAge({ ...A, t: 180 * Sim.IPD }) > 2 && Sim.coalAge(Sim.create(1)) === 1);
+  // the first star is your own part: lights on, and your own firm plant
+  const F = Sim.createScenario('wellspring');
+  const r0 = Sim.starsIf(F, { shed: 0, region: 1e7, clean: 0, energy: 1, profit: 1 });
+  check('the first star needs your own firm plant, not just the rivals’', Sim.ownFirm(F) === 2320 && !r0.lines[0].ok && /2\.8 GW/.test(r0.lines[0].text));
 }
 
 // 11. Energy Transition: a compressed calendar, a timeline that fires once and is announced a year

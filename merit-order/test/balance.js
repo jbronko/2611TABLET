@@ -110,16 +110,28 @@ STRATS.firm = {
   },
   offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
 };
-function runScenario(kind, id, report, opts) {
+// Company scenarios: a decision is answered with opts.picks[id] (else its default), and a rival
+// proposal is passed to the strategy's proposal() if it has one.
+function runScenario(kind, id, report, opts = {}) {
   const S = Sim.createScenario(id, opts), st = STRATS[kind];
   const maxDays = S.scenario.days + 5;
   for (let d = 0; d < maxDays && !Sim.scenarioOver(S); d++) {
     if (report && S.yearDays && d % S.yearDays === 0 && d) report(S, d);
     st.day(S, d);
-    for (let k = 0; k < IPD && !Sim.scenarioOver(S); k++) { Sim.step(S); if (S.offer && S.offer !== S._seen) { S._seen = S.offer; st.offer(S); } }
+    for (let k = 0; k < IPD && !Sim.scenarioOver(S); k++) {
+      Sim.step(S);
+      if (S.offer && S.offer !== S._seen) { S._seen = S.offer; st.offer(S); }
+      if (S.choice) { const v = Sim.choiceView(S); Sim.choose(S, (opts.picks || {})[v.id] || v.deflt); }
+      if (S.proposal && st.proposal) st.proposal(S);
+    }
   }
   return Sim.scenarioResult(S);
 }
+// Company-scenario styles from the playtest: the exploits they test must not beat steady play.
+STRATS.handsoff = { day() {}, offer(S) { Sim.declineOffer(S); } };   // builds nothing, bids as given
+STRATS.gouge = { day(S, d) { if (d === 0) for (const p of S.plants) if (TECH[p.tech].kind === 'thermal') p.bid = 'peak'; }, offer(S) { Sim.declineOffer(S); } };   // gas and coal only at $300+
+STRATS.quitcoal = { day(S, d) { if (d === 0) for (const p of S.plants.filter(p => p.tech === 'coal')) Sim.retire(S, p); STRATS.steady.day(S, d); }, offer: S => STRATS.steady.offer(S) };   // closes its coal on day 1
+STRATS.buyer = { day: (S, d) => STRATS.steady.day(S, d), offer: S => STRATS.steady.offer(S), proposal(S) { Sim.buyProposal(S, { loan: true }); } };   // steady, and buys every rival project
 function run(kind, seed, difficulty, days) {
   const S = Sim.create(seed, { difficulty });
   const st = STRATS[kind], out = { minCash: S.cash, at: {} };
@@ -153,17 +165,25 @@ if (require.main === module && process.argv[2] === '--transition') {
   }
 } else if (require.main === module && process.argv[2] === '--companies') {
   // node merit-order/test/balance.js --companies [strategies] [scenario ids]
-  // Company scenarios (a few 60-day years with a real company's portfolio). Targets: idle at most
-  // 1 star, steady 1-2, firm 2-3.
-  const kinds = (process.argv[3] || 'idle,steady,firm').split(',');
+  // Company scenarios: a real company's portfolio for a few 60-day years, rivals proposing plant
+  // when prices run high, and a decision or two. Each strategy plays with the defaults, then steady
+  // plays each option of each decision. Targets: handsoff, gouge and quitcoal end below steady in
+  // value; handsoff at most 1 star; steady 2; no option beats another by more than about 15%.
+  // Last run (v25): Highcountry handsoff $324M 0★, steady $597M ★★, gouge $416M, rescue $575M; Lakeside
+  // handsoff $911M 0★, steady $1.09B ★★, gouge $637M, quitcoal $685M, close BH4 early $1.12B; Wellspring
+  // handsoff $1.26B 0★, steady $1.27B ★★, gouge $639M, quitcoal $814M, close on schedule $1.12B; Coastline
+  // handsoff $436M 0★, steady $657M ★★, gouge $241M, quitcoal $632M, hold $604M, raise $704M ★★★.
+  const kinds = (process.argv[3] || 'handsoff,steady,firm,gouge,quitcoal,buyer').split(',');
   const ids = process.argv[4] ? process.argv[4].split(',') : Sim.SCENARIOS.filter(sc => sc.group === 'company').map(sc => sc.id);
+  const line = (label, r, yrs) => console.log(`  ${label.padEnd(16)} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}  value ${Sim.fmtMoney(r.value).padStart(7)}  worst year ${Sim.fmtMoney(r.minYearProfit).padStart(7)}  final short ${r.finalShed.toFixed(0).padStart(6)} MWh  own firm ${String(Math.round(r.ownFirm)).padStart(5)}/${r.firm}  own clean ${(r.ownClean * 100).toFixed(0)}%${r.tunnelOn ? '  tunnel on' : ''}${r.bust ? '  BUST' : ''}  [${yrs.join(' ')}]`);
+  const yearly = yrs => (S, d) => { const Y = S.years[d / S.yearDays - 1]; yrs.push(`${Sim.fmtMoney(Y.value)}/${Y.shedHours.toFixed(0)}h`); };
   for (const id of ids) {
     const sc = Sim.SCENARIOS.find(x => x.id === id);
     console.log(`${sc.name} (${sc.years} years)`);
-    for (const kind of kinds) {
-      const yrs = [];
-      const r = runScenario(kind, id, (S, d) => { const Y = S.years[d / S.yearDays - 1]; yrs.push(`${Sim.fmtMoney(Y.value)}/${Y.shedHours.toFixed(0)}h/${Math.round(Y.clean / Math.max(1, Y.energy) * 100)}%`); });
-      console.log(`  ${kind.padEnd(7)} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}  value ${Sim.fmtMoney(r.value).padStart(7)}  profit ${Sim.fmtMoney(r.profit).padStart(7)}  worst year ${Sim.fmtMoney(r.minYearProfit)}  final short ${r.finalShed.toFixed(0)} MWh  own clean ${(r.ownClean * 100).toFixed(0)}%${r.tunnelOn ? '  tunnel on' : ''}${r.bust ? '  BUST' : ''}  [${yrs.join(' ')}]`);
+    for (const kind of kinds) { const yrs = []; line(kind, runScenario(kind, id, yearly(yrs)), yrs); }
+    for (const [cid, C] of Object.entries(sc.choices || {})) for (const o of C.options) {
+      if (o.key === C.deflt) continue;
+      const yrs = []; line(`steady, ${cid}=${o.key}`, runScenario('steady', id, yearly(yrs), { picks: { [cid]: o.key } }), yrs);
     }
   }
 } else if (require.main === module && process.argv[2] === '--scenarios') {
