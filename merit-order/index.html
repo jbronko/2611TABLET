@@ -341,7 +341,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 27</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 28</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -358,6 +358,7 @@
       <button type="button" data-speed="4" aria-pressed="false">4×</button>
       <button type="button" data-speed="16" aria-pressed="false">16×</button>
       <button type="button" data-speed="32" aria-pressed="false">32×</button>
+      <button type="button" data-speed="64" aria-pressed="false">64×</button>
     </div>
     <div class="cash"><b class="num" id="cash">$0</b><span class="num" id="today-pl">Today $0</span></div>
     <button type="button" class="icon-btn" id="open-menu" aria-label="Menu"><svg class="i"><use href="#i-menu"/></svg></button>
@@ -497,7 +498,7 @@
     copy.days = S.days.map((d, i) => i < S.days.length - 2 ? { ...d, priceSorted: undefined, price: undefined, demand: undefined, mine: undefined } : d);
     return copy;
   }
-  let S = null, slot = 'career', speed = [0, 1, 4, 16, 32].includes(store.speed) ? store.speed : 1;
+  let S = null, slot = 'career', speed = [0, 1, 4, 16, 32, 64].includes(store.speed) ? store.speed : 1;
   let waitingToStart = false;   // a new game starts paused, with 1x pulsing until you start the clock
   function save() {
     if (!S || S.ended) return;
@@ -878,7 +879,7 @@
     const bat = S.plants.find(p => p.tech === 'battery');
     switch (m.hint) {
       case 'build:solar': return q('#add-plant, [data-build="solar"]');
-      case 'speed': return q('[data-speed="4"], [data-speed="16"], [data-speed="32"]');
+      case 'speed': return q('[data-speed="4"], [data-speed="16"], [data-speed="32"], [data-speed="64"]');
       case 'merit': return q('#c-merit');
       case 'battery': return bat ? q(`[data-plant="${bat.id}"], #sh-plant .seg`) : q('#add-plant, [data-build="battery"]');
       case 'forecast': return q('#c-price');

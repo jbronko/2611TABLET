@@ -473,6 +473,19 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8i. 64x: offered, and really twice as fast as 32x (the loop's per-frame cap doesn't hold it back).
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="first-light"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    const rate = async sp => { await p.click(`[data-speed="${sp}"]`); await p.waitForTimeout(300); const t0 = await state(p, () => MeritOrder.state.t); await p.waitForTimeout(2000); return (await state(p, () => MeritOrder.state.t)) - t0; };
+    const r32 = await rate(32), r64 = await rate(64);
+    check('a 64× speed, twice as fast as 32×', (await p.$eval('[data-speed="64"]', x => x.getAttribute('aria-pressed'))) === 'true' && r64 >= r32 * 1.6 && r64 >= 80, `${r32} intervals in 2 s at 32×, ${r64} at 64×`);
+    await p.context().close();
+  }
+
   // 8h. A save that storage refuses says so (once), and play carries on.
   {
     const p = await page();
