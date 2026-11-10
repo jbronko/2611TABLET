@@ -7,9 +7,10 @@ let fails = 0, passes = 0;
 const ok = (cond, msg) => { if (cond) passes++; else { fails++; console.log('FAIL', msg); } };
 const fresh = S.freshSave();
 // a hand-made level: objs plus a far-off bunker
-const custom = (objs, save = fresh, hp = 3) => {
-  const end = 400;
-  return S.createFrom({ num: 1, title: 'test', d: 0, objs: [...objs, { type: 'bunker', z: end, hp }], end, hp, stepCost: 1 }, save);
+// (no runners unless asked for, so each check sees only what it sets up)
+const custom = (objs, save = fresh, hp = 3, runEvery = 1e9, last = { type: 'bunker', z: 400, hp }) => {
+  const all = [...objs, last];
+  return S.createFrom({ num: 1, title: 'test', d: 0, objs: all, end: last.z, hp: last.hp, stepCost: 1, runEvery, seed: 7 }, save);
 };
 const runUntil = (s, cond, max = 60 * 120) => { for (let i = 0; i < max && !cond(s) && s.phase !== 'won' && s.phase !== 'lost'; i++) S.step(s, 1 / 60); return s; };
 const withSquad = n => { const v = S.freshSave(); v.up.squad = n; return v; };
@@ -94,6 +95,63 @@ ok(S.dpsOf(20, 0) > S.dpsOf(5, 0) && S.dpsOf(5, 1) > S.dpsOf(5, 0) && S.dpsOf(5,
   ok(top.weapon === S.WEAPONS.length - 1, 'weapons stop at Rockets');
 }
 
+// runners keep coming, get shot, and pay coins
+{
+  const s = custom([], withSquad(6), 3, 0.6);
+  runUntil(s, s => s.t > 8);
+  ok(s.kills > 5 && s.bonus > 1, `runners keep coming and are shot down for coins (${s.kills} kills)`);
+  const t = custom([], withSquad(1));
+  t.runners.push({ id: 1, x: 0, at: 4, rem: 3, n: 3 });
+  runUntil(t, t => t.t > 0.3);
+  ok(t.n < 3, 'runners that reach the squad cut into it');
+}
+// brutes: smash if not stopped, die if shot
+{
+  const s = custom([{ type: 'brute', z: 80, x: 0, hp: 90 }], withSquad(10));
+  runUntil(s, s => s.objs[0].gone);
+  ok(s.objs[0].gone && s.n < 42 && s.phase === 'run', `an unstopped brute smashes into the squad (${s.n} of 42 left)`);
+  const t = custom([{ type: 'brute', z: 80, x: 0, hp: 8 }], withSquad(10));
+  runUntil(t, t => t.objs[0].rem <= 0 || t.objs[0].gone);
+  ok(t.objs[0].rem === 0 && t.n === 42 && t.kills === 1 && t.bonus >= 1.5, 'a brute shot down pays well and hurts no one');
+}
+// the boss: every third level, and he can be shot down before he arrives
+{
+  ok(S.makeLevel(3).boss && S.makeLevel(3).objs.at(-1).boss && !S.makeLevel(4).boss, 'every third level ends with a boss');
+  const s = custom([], withSquad(10), 0, 1e9, { type: 'bunker', boss: true, z: 120, hp: 30 });
+  let fought = false;
+  runUntil(s, s => { if (s.phase === 'fight') fought = true; return s.phase === 'climb'; });
+  ok(s.phase === 'climb' && !fought && s.n === 42, 'a strong squad shoots the boss down before he reaches it');
+  const t = custom([], withSquad(1), 0, 1e9, { type: 'bunker', boss: true, z: 120, hp: 200 });
+  runUntil(t, t => t.phase === 'fight');
+  ok(t.phase === 'fight' && t.fight.obj.boss, 'a weak squad has to swarm him');
+}
+// boom barrels blow up what's near them
+{
+  const s = custom([{ type: 'barrel', z: 60, x0: 0.05, x1: 0.95, hp: 2, reward: { kind: 'boom' } }, { type: 'enemy', z: 70, n: 15, x0: -1, x1: 1 }], withSquad(4));
+  s.targetX = 0.5;
+  runUntil(s, s => s.objs[0].rem <= 0);
+  ok(s.objs[0].rem <= 0 && s.objs[1].rem === 0 && s.kills >= 15, `a boom barrel wipes out the squad behind it (${s.kills} kills)`);
+}
+// FIRE gates
+{
+  const s = custom([{ type: 'gate', z: 60, left: { op: 'f', n: 20 }, right: { op: 'f', n: 20 } }], withSquad(6));
+  s.targetX = -0.5;
+  runUntil(s, s => s.next > 0);
+  ok(s.objs[0].left.n > 20 && s.objs[0].right.n === 20, `shooting a FIRE gate raises it (${S.opLabel('f', s.objs[0].left.n)})`);
+  ok(Math.abs(s.fire - (1 + s.objs[0].left.n / 100)) < 1e-9 && s.n === 20, 'running through it speeds up the squad\'s fire, not its size');
+  ok(S.opLabel('f', 25) === 'FIRE +25%', 'fire gates say what they do');
+}
+// no dead time: in careful play there is always something to shoot
+for (let n = 1; n <= 15; n++) {
+  const s = S.create(n, fresh);
+  let gap = 0, worst = 0;
+  for (let i = 0; i < 60 * 600 && s.phase !== 'won' && s.phase !== 'lost'; i++) {
+    s.targetX = S.autopilot(s, 'good'); S.step(s, 1 / 60); s.events.length = 0;
+    if (s.phase === 'run' && s.z > 40) { gap = s.aim ? 0 : gap + 1 / 60; worst = Math.max(worst, gap); }
+  }
+  ok(worst <= 1.8, `level ${n}: never more than a moment without a target (longest ${worst.toFixed(1)} s)`);
+}
+
 // levels are the same every time, and sorted up the beach
 for (let n = 1; n <= 40; n++) {
   const a = S.makeLevel(n);
@@ -103,6 +161,7 @@ for (let n = 1; n <= 40; n++) {
   ok(g.type === 'gate' && S.goodOp(g.left.op) && S.goodOp(g.right.op), `level ${n} opens with a fair gate`);
 }
 ok(S.makeLevel(1).objs.some(o => o.type === 'enemy') && S.makeLevel(1).objs.some(o => o.type === 'barrel'), 'level 1 has a charge and a barrel');
+ok(S.makeLevel(4).objs.some(o => o.type === 'brute'), 'brutes arrive by level 4');
 ok(S.makeLevel(15).objs.length > S.makeLevel(1).objs.length, 'later levels are longer');
 
 // fair play: every level is won with no upgrades by playing well, and lost by playing badly

@@ -68,6 +68,13 @@ const ok = (cond, msg) => { if (cond) passes++; else { fails++; console.log('FAI
     ok(r2.t < -0.3 && r2.x < 0, `${name}: dragging left steers left (${r2.t.toFixed(2)}, ${r2.x.toFixed(2)})`);
     await shot('play');
 
+    // the sound switch, saved for next time
+    ok(await page.getAttribute('#sound', 'aria-pressed') === 'true', `${name}: sound starts on`);
+    await page.click('#sound'); await page.waitForTimeout(50);
+    ok(await page.getAttribute('#sound', 'aria-pressed') === 'false' && await page.evaluate(() => localStorage.getItem('storm-the-shore-sound')) === 'off', `${name}: the sound button mutes, and remembers`);
+    await page.click('#sound');
+    ok(await page.evaluate(() => localStorage.getItem('storm-the-shore-sound')) === 'on', `${name}: and unmutes`);
+
     // pause and resume
     await page.click('#pause'); await page.waitForTimeout(200);
     const zp = await page.evaluate(() => StormShore.G.run.z);
@@ -93,6 +100,8 @@ const ok = (cond, msg) => { if (cond) passes++; else { fails++; console.log('FAI
     const seen = await page.evaluate(() => { clearInterval(window.__watch); return window.__seen; });
     ok(seen.aimed, `${name}: the squad fires`);
     ok(seen.shotAtRange, `${name}: charging enemies are shot down before they arrive`);
+    ok(await page.evaluate(() => StormShore.G.best) >= 10, `${name}: kill streaks build up (best ×${await page.evaluate(() => StormShore.G.best)})`);
+    ok(+(await text('#r-kills')) > 20 && (await text('#r-streak')).startsWith('×'), `${name}: the result shows kills and best streak`);
     ok(await page.evaluate(() => StormShore.G.run.weapon) >= 1 && (await text('#hud-weapon')) !== 'Rifle', `${name}: a barrel gives a new weapon (${await text('#hud-weapon')})`);
     ok(await visible('#result') && (await text('#r-title')) === 'Bunker taken!', `${name}: level 1 played through to a win`);
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('storm-the-shore')));
@@ -125,6 +134,18 @@ const ok = (cond, msg) => { if (cond) passes++; else { fails++; console.log('FAI
     ok(await page.evaluate(() => StormShore.G.run.num) === 2, `${name}: Try again replays the same level`);
     await page.click('#pause'); await page.click('#p-menu'); await page.waitForTimeout(150);
     ok(await visible('#title') && (await text('#t-play')).includes('level 2'), `${name}: Menu returns to the title at level 2`);
+
+    // a boss level: the boss bar shows when he comes
+    await page.evaluate(() => {
+      StormShore.startLevel(3);
+      const s = StormShore.G.run, b = s.objs[s.objs.length - 1];
+      for (let i = 0; i < 60 * 120 && !b.awake && s.phase !== 'lost'; i++) { s.targetX = StormShore.S.autopilot(s, 'good'); StormShore.S.step(s, 1 / 60); s.events.length = 0; }
+    });
+    await page.waitForTimeout(200);
+    ok(await visible('#bossbar') && (await text('#boss-text')).startsWith('BOSS'), `${name}: the boss bar shows on level 3`);
+    await shot('boss');
+    await page.click('#pause'); await page.click('#p-menu'); await page.waitForTimeout(100);
+    ok(!(await visible('#bossbar')), `${name}: and goes away with the level`);
 
     // the save survives a reload, and level 1 can be replayed
     await page.reload(); await page.waitForTimeout(300);
