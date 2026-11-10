@@ -143,6 +143,10 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('accepting it pays and resumes at the earlier speed', (await state(p, () => MeritOrder.state.cash)) > cash0 && (await p.$eval('[data-speed="16"]', x => x.getAttribute('aria-pressed'))) === 'true');
     const toRefresh = () => state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (!((S.t + 3) % 288 === 0 && Math.floor((S.t + 3) / 288) % 3 === 0)) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); });
     await toRefresh(); await state(p, () => MeritOrder.setSpeed(16)); await p.waitForTimeout(1200);
+    // the promise's window has passed (solar can't be reserve): its result comes first, paused
+    check('a missed reserve promise says so in a paused pop-up, with the penalty', (await p.textContent('#i-title')) === 'Reserve promise missed' && /Penalty/.test(await p.textContent('#i-body')) && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await shot(p, 'reserve-missed');
+    await p.click('#rr-ok'); await p.waitForTimeout(1200);
     check('new contracts pause the game with a dialog', (await p.textContent('#i-title')) === 'New contracts on offer' && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
     await shot(p, 'contracts-dialog');
     await p.click('#nc-play'); await p.waitForTimeout(200);
@@ -522,6 +526,32 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#m-timeline'); await p.waitForTimeout(200);
     const tl = await p.textContent('#i-body');
     check('the timeline’s past years show clean output the way the stars count it', /% of your output clean/.test(tl) && !/of the region from your clean plant/.test(tl) && !!(await p.$('#tl-report')));
+    await p.context().close();
+  }
+
+  // 8k. A reserve promise: the chip shows what's ready during the window, and a kept promise says so
+  //     in a paused pop-up (or a toast with "Pause for decisions" off).
+  {
+    const p = await page();
+    await newCompany(p);
+    await state(p, () => { const M = MeritOrder, S = M.state; S.cash = 1e7; M.Sim.skipTour(S); M.Sim.build(S, 'peaker', 50); M.setSpeed(0);
+      for (let k = 0; k < 4 * 288; k++) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
+      S.obligation = { mw: 30, payment: 5000, from: S.t + 2, to: S.t + 40, worst: null };
+      for (let k = 0; k < 5; k++) M.Sim.step(S); M.renderAll(); });
+    check('during the window the chip shows how much is ready', /Reserve now: 50 MW of 30 MW ready/.test(await p.textContent('#chips')), await p.textContent('#chips'));
+    await state(p, () => MeritOrder.setSpeed(16));
+    let title = '';
+    for (let k = 0; k < 12 && title !== 'Reserve promise kept'; k++) { await p.waitForTimeout(250); title = await p.textContent('#i-title'); if (title === 'New contracts on offer' && !(await p.$eval('#sh-info', x => x.hidden))) await p.click('#nc-play'); }
+    check('a kept reserve promise says so in a paused pop-up', title === 'Reserve promise kept' && /stayed ready/.test(await p.textContent('#i-body')) && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await shot(p, 'reserve-kept');
+    await p.click('#rr-ok'); await p.waitForTimeout(200);
+    check('…and Carry on picks the speed back up', (await p.$eval('[data-speed="16"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    // with "Pause for decisions" off: a toast, no pop-up
+    await state(p, () => MeritOrder.setSpeed(0));
+    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-autopause'); await p.waitForTimeout(100); await p.click('#sh-menu [data-close]'); await p.waitForTimeout(150);
+    await state(p, () => { const S = MeritOrder.state; S.obligation = { mw: 500, payment: 5000, from: S.t + 1, to: S.t + 6, worst: null }; MeritOrder.setSpeed(32); });
+    await p.waitForTimeout(1200);
+    check('with "Pause for decisions" off, the result is a toast', /Reserve promise missed/.test(await p.textContent('#toast')) && await p.$eval('#sh-info', x => x.hidden));
     await p.context().close();
   }
 

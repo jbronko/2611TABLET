@@ -805,7 +805,7 @@ const Sim = (() => {
     // reliability obligation window
     if (S.obligation && S.t >= S.obligation.from && S.t < S.obligation.to) {
       const firm = firmCapacity(S, true);
-      S.obligation.worst = S.obligation.worst == null ? firm : Math.min(S.obligation.worst, firm);
+      if (S.obligation.worst == null || firm < S.obligation.worst) { S.obligation.worst = firm; S.obligation.worstAt = S.t; }
     }
     if (res.shortfall > 0) {
       d.shed = (d.shed || 0) + res.shortfall * H; d.shedN = (d.shedN || 0) + 1;
@@ -848,13 +848,16 @@ const Sim = (() => {
   function settleObligation(S) {
     const o = S.obligation; S.obligation = null;
     const short = Math.max(0, o.mw - (o.worst ?? 0));
+    const at = o.worstAt != null ? clock(((o.worstAt % IPD) * H)) : null;
+    // what the result pop-up shows (the news line says it too)
+    S.reserveResult = { mw: o.mw, worst: o.worst ?? 0, at, short, payment: o.payment, penalty: 0, kept: short <= 1, seen: false };
     if (short > 1) {
       const pen = Math.round(short / o.mw * o.payment * 3 * diff(S).penalty);
-      S.cash -= pen; S.today.penalties += pen;
-      addNews(S, 'bad', `You were ${fmtMW(short)} short of the reserve you promised. Penalty: ${fmtMoney(pen)}.`);
+      S.cash -= pen; S.today.penalties += pen; S.reserveResult.penalty = pen;
+      addNews(S, 'bad', `You were ${fmtMW(short)} short of the reserve you promised (lowest ${fmtMW(o.worst ?? 0)} ready${at ? ` at ${at}` : ''}). Penalty: ${fmtMoney(pen)}.`);
     } else {
       S.goalFlags = { ...(S.goalFlags || {}), reserveKept: true };
-      addNews(S, 'good', `You kept your reserve promise through the shortfall. Well done.`);
+      addNews(S, 'good', `You kept your reserve promise: at least ${fmtMW(o.worst ?? 0)} stayed ready from 3 to 8 pm.`);
     }
   }
 

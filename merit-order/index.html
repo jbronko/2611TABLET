@@ -348,7 +348,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 30</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 31</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -741,6 +741,15 @@
     $('cash').style.color = shownCash < 0 ? 'var(--bad)' : '';
   }
   // The next milestone of the Energy Transition, and an open underwriting round.
+  // A reserve promise: before its window, when it is; during it, how much is ready now, or that it's
+  // already missed (it's judged on the lowest point).
+  function reserveChip() {
+    const o = S.obligation;
+    if (S.t < o.from) return `<span class="chip"><svg class="i"><use href="#i-flag"/></svg>Reserve promised: ${fmtMW(o.mw)}, 3–8 pm ${Math.floor(o.from / Sim.IPD) > Sim.dayIndex(S) ? 'tomorrow' : 'today'}</span>`;
+    if (o.worst != null && o.worst < o.mw - 1) return `<span class="chip bad"><svg class="i"><use href="#i-bad"/></svg>Reserve missed: lowest ${fmtMW(o.worst)} of ${fmtMW(o.mw)} ready</span>`;
+    const now = Sim.firmCapacity(S, true);
+    return `<span class="chip ${now >= o.mw - 1 ? 'good' : 'bad'}"><svg class="i"><use href="#i-${now >= o.mw - 1 ? 'good' : 'bad'}"/></svg>Reserve now: ${fmtMW(now)} of ${fmtMW(o.mw)} ready</span>`;
+  }
   function transitionChips() {
     const y = Sim.yearOf(S) + 1, next = Sim.timelineOf(S).find(e => e.year > y), out = [];
     const lights = finalYearLights();
@@ -793,7 +802,7 @@
     const icon = { heatwave: 'i-heat', cold: 'i-info', still: 't-wind', windy: 't-wind', cloudy: 't-solar', linktrip: 'i-bad', gascrunch: 't-peaker' };
     const html = S.events.map(e => { const E = Sim.EVENTS[e.key]; return `<span class="chip ${E.tone}"><svg class="i"><use href="#${icon[e.key]}"/></svg>${E.name} · ${e.left} day${e.left > 1 ? 's' : ''} left</span>`; })
       .concat(S.upcoming.map(u => `<span class="chip soon"><svg class="i"><use href="#${icon[u.key]}"/></svg>Tomorrow: ${Sim.EVENTS[u.key].name}</span>`))
-      .concat(S.obligation ? [`<span class="chip"><svg class="i"><use href="#i-flag"/></svg>Reserve promised: ${fmtMW(S.obligation.mw)}</span>`] : [])
+      .concat(S.obligation ? [reserveChip()] : [])
       .concat(S.apc ? [`<span class="chip bad"><svg class="i"><use href="#i-info"/></svg>Prices capped at ${fmtPrice(Sim.APC)}</span>`] : [])
       .concat(S.cash < 0 ? [`<span class="chip bad"><svg class="i"><use href="#i-bad"/></svg>Overdrawn · the bank sells plant past −${fmtMoney(Sim.overdraftLimit(S))}</span>`] : [])
       .concat(S.choice ? [`<button type="button" class="chip warn" data-choice><svg class="i"><use href="#i-info"/></svg>Decision: ${esc(Sim.choiceView(S).title)}</button>`] : [])
@@ -992,6 +1001,22 @@
     if (paused) onSheetClose = resumePlay;
     $('yr-ok').onclick = closeSheets;
     if (tender) $('yr-tender').onclick = () => { onSheetClose = null; tenderOpened(paused); };
+  }
+  // How a reserve promise went, once its window is over.
+  function reserveResultOpened(paused) {
+    const R = S.reserveResult;
+    if (!R) return;
+    if (paused) autoPauseNow();
+    info(R.kept ? 'Reserve promise kept' : 'Reserve promise missed', `<div class="kv">
+        <div><span>Promised</span><b>${fmtMW(R.mw)}</b></div>
+        <div><span>Lowest ready</span><b class="${R.kept ? 'up' : 'down'}">${fmtMW(R.worst)}</b>${!R.kept && R.at ? `<small>at ${R.at}</small>` : ''}</div>
+        <div><span>Paid for it</span><b class="up">${fmtMoney(R.payment)}</b></div>
+        ${R.kept ? '' : `<div><span>Penalty</span><b class="down">−${fmtMoney(R.penalty)}</b></div>`}</div>
+      <p style="margin-top:10px">${R.kept ? `At least ${fmtMW(R.worst)} stayed ready through the whole 3 to 8 pm window, so the ${fmtMoney(R.payment)} is yours.` : `At the lowest point you were ${fmtMW(R.short)} short, so you pay back three times that share of the payment.`}</p>
+      <p class="note">Ready means gas and coal plant that can run (not broken down), plus what batteries and hydro can deliver from their charge for two hours.${R.kept ? '' : ' Next time: charge batteries before 3 pm, and keep spare gas in case a plant breaks down.'}</p>
+      <button type="button" class="btn btn-primary" id="rr-ok" style="width:100%;margin-top:12px">Carry on</button>`);
+    if (paused) onSheetClose = resumePlay;
+    $('rr-ok').onclick = closeSheets;
   }
   // A decision the scenario puts to you: one button per option; unanswered, the default applies.
   function choiceOpened(paused) {
@@ -1873,6 +1898,11 @@
               toast('An underwriting round is open: tap its chip to decide.');
             }
           }
+          if (S.reserveResult && !S.reserveResult.seen && !openId) {
+            const R = S.reserveResult; R.seen = true;
+            if (autoPause) { reserveResultOpened(true); break; }
+            toast(R.kept ? `Reserve promise kept: at least ${fmtMW(R.worst)} stayed ready.` : `Reserve promise missed: ${fmtMW(R.short)} short. Penalty ${fmtMoney(R.penalty)}.`);
+          }
           if (S.choice && S.choice !== seenChoice && !openId) {
             seenChoice = S.choice;
             if (autoPause) { choiceOpened(true); break; }
@@ -1991,7 +2021,7 @@
   function enterApp() {
     scene = 'app'; $('title').hidden = true; $('app').hidden = false;
     meritAnim.clear(); shownCash = null; plantIds = null; newsKey = ''; fcast = null; missionKey = ''; missionCount = -1; syncSpeed(); renderAll(); resized = true;
-    pausedFor = S.offer; seenOffers = S.contractOffers; seenTender = S.tender; seenChoice = S.choice; seenProposal = S.proposal; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
+    pausedFor = S.offer; seenOffers = S.contractOffers; seenTender = S.tender; seenChoice = S.choice; seenProposal = S.proposal; if (S.reserveResult) S.reserveResult.seen = true; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
   }
   function awayReport(rep) {
     const hours = rep.intervals * H, days = hours / 24;

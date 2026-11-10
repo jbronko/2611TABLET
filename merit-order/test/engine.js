@@ -399,6 +399,20 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('…and the Energy Transition’s first star shows its lights-on part', EP.length === 1 && EP[0].ok && /year 20/.test(EP[0].detail));
 }
 
+// 11d. Reserve promises: judged on the lowest ready capacity in the window, with a result to show.
+{
+  const promise = mw => {
+    const S = Sim.create(4); S.cash = 1e8; Sim.build(S, 'peaker', 150);
+    for (let k = 0; k < 5 * Sim.IPD; k++) { Sim.step(S); if (S.offer) Sim.declineOffer(S); }
+    S.obligation = { mw, payment: 30000, from: S.t + 2, to: S.t + 12, worst: null };
+    const cash0 = S.cash; for (let k = 0; k < 14; k++) Sim.step(S);
+    return { S, R: S.reserveResult, spent: cash0 - S.cash };
+  };
+  const kept = promise(100), missed = promise(400);
+  check('a reserve promise you can cover is kept, with a result to show', kept.R && kept.R.kept && kept.R.worst === 150 && kept.R.penalty === 0 && !kept.R.seen && /kept your reserve promise: at least 150 MW stayed ready/.test(kept.S.news[0].text) && kept.S.goalFlags.reserveKept);
+  check('…one you can’t is missed: the shortfall, when, and the penalty', !missed.R.kept && missed.R.short === 250 && missed.R.penalty > 0 && /\d+:\d\d [ap]m/.test(missed.R.at) && /250 MW short .*lowest 150 MW ready at/.test(missed.S.news[0].text) && !(missed.S.goalFlags || {}).reserveKept, `${missed.R.short} MW short, penalty ${missed.R.penalty}`);
+}
+
 // 11c. Company games saved by version 24 (no closure schedule, no decisions) load and play on.
 {
   const run = (S, days, pick) => { const end = S.t + days * Sim.IPD; while (S.t < end) { Sim.step(S); if (S.offer) Sim.declineOffer(S); if (S.choice && pick) Sim.choose(S, pick); } };
