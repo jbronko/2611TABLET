@@ -517,6 +517,11 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('…and shows your firm plant against the first star', /Your firm plant/.test(await p.textContent('#i-body')));
     await p.click('#yr-ok'); await p.waitForTimeout(200);
     check('…and Carry on picks up the speed again', (await p.$eval('[data-speed="16"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await p.evaluate(() => MeritOrder.setSpeed(0));
+    await p.click('#open-menu'); await p.waitForTimeout(150);
+    await p.click('#m-timeline'); await p.waitForTimeout(200);
+    const tl = await p.textContent('#i-body');
+    check('the timeline’s past years show clean output the way the stars count it', /% of your output clean/.test(tl) && !/of the region from your clean plant/.test(tl) && !!(await p.$('#tl-report')));
     await p.context().close();
   }
 

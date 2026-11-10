@@ -348,7 +348,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 29</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 30</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -781,7 +781,7 @@
     const sc = Sim.scenarioOf(st), company = sc && sc.group === 'company';
     for (let k = 1; k <= Sim.yearsOf(st); k++) {
       const ev = Sim.timelineOf(st).filter(e => e.year === k), Y = st.years && st.years[k - 1];
-      const facts = Y && k < y ? `<small>${Y.shedHours > 0.05 ? `${Y.shedHours.toFixed(1)} hours short` : 'no shortfall'} · ${Math.round(Y.clean / Math.max(1, Y.region) * 100)}% of the region from your clean plant</small>` : '';
+      const facts = Y && k < y ? `<small>${Y.shedHours > 0.05 ? `${Y.shedHours.toFixed(1)} hours short` : 'no shortfall'} · ${company ? `${Math.round(Y.clean / Math.max(1, Y.energy || 0) * 100)}% of your output clean` : `${Math.round(Y.clean / Math.max(1, Y.region) * 100)}% of the region from your clean plant`}</small>` : '';
       years.push(`<li class="${k < y ? 'done' : k === y && !back ? 'now' : ''}"><b>Year ${k}</b><span>${ev.length ? ev.map(e => esc(e.text)).join(' ') : 'Demand grows; rivals add some wind, solar and batteries.'}${facts}</span></li>`);
     }
     info(company ? `${sc.name}: the plan` : 'The Energy Transition', `<p>Each year is ${st.yearDays} game days. Every year demand grows about 2%, rooftop solar spreads, rivals add a little wind, solar and storage, and the emissions target tightens${back ? '' : ` (now ${st.emisTarget} t per MWh)`}. ${company ? 'What happens when:' : 'The big steps:'}</p>${!back && st.yearReport ? `<button type="button" class="btn btn-quiet small" id="tl-report">Year ${st.yearReport.year} in review</button>` : ''}<ol class="timeline">${years.join('')}</ol>
