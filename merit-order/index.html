@@ -348,7 +348,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 31</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 32</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -741,6 +741,20 @@
     $('cash').style.color = shownCash < 0 ? 'var(--bad)' : '';
   }
   // The next milestone of the Energy Transition, and an open underwriting round.
+  // A rival's project: red while prices are on course to clear its hurdle (it would build), green
+  // while they're below it (it would shelve the plan).
+  const RIVAL_KIND = { peaker: 'gas peaker', ccgt: 'gas plant', battery: 'battery', wind: 'wind farm' };
+  function proposalChip() {
+    const v = Sim.proposalView(S), days = Math.max(0, v.daysLeft);
+    const tone = v.avgSoFar == null ? 'soon' : v.avgSoFar >= v.hurdle ? 'bad' : 'good';
+    const vs = v.avgSoFar == null ? `builds at ${fmtPrice(v.hurdle)}` : `${fmtPrice(v.avgSoFar)} vs its ${fmtPrice(v.hurdle)} hurdle`;
+    return `<button type="button" class="chip ${tone}" data-proposal><svg class="i"><use href="#t-${v.tech}"/></svg>${esc(v.dev)}: ${fmtMW(v.mw)} ${RIVAL_KIND[v.tech]} · ${vs} · decides in ${days} day${days === 1 ? '' : 's'}</button>`;
+  }
+  // A rival plant that's going ahead: when the soonest one starts.
+  function rivalBuildChip() {
+    const list = S.rivalPending.slice().sort((a, b) => a.online - b.online), q = list[0], d = Math.max(0, q.online - Sim.dayIndex(S));
+    return `<span class="chip soon"><svg class="i"><use href="#t-${q.tech}"/></svg>${esc(q.dev)} ${RIVAL_KIND[q.tech]} (${fmtMW(q.mw)}) starts in ${d} day${d === 1 ? '' : 's'}${list.length > 1 ? ` · ${list.length - 1} more being built` : ''}</span>`;
+  }
   // A reserve promise: before its window, when it is; during it, how much is ready now, or that it's
   // already missed (it's judged on the lowest point).
   function reserveChip() {
@@ -806,7 +820,8 @@
       .concat(S.apc ? [`<span class="chip bad"><svg class="i"><use href="#i-info"/></svg>Prices capped at ${fmtPrice(Sim.APC)}</span>`] : [])
       .concat(S.cash < 0 ? [`<span class="chip bad"><svg class="i"><use href="#i-bad"/></svg>Overdrawn · the bank sells plant past −${fmtMoney(Sim.overdraftLimit(S))}</span>`] : [])
       .concat(S.choice ? [`<button type="button" class="chip warn" data-choice><svg class="i"><use href="#i-info"/></svg>Decision: ${esc(Sim.choiceView(S).title)}</button>`] : [])
-      .concat(S.proposal ? [`<button type="button" class="chip soon" data-proposal><svg class="i"><use href="#t-${S.proposal.tech}"/></svg>${esc(S.proposal.dev)}: ${fmtMW(S.proposal.mw)} ${{ peaker: "gas peaker", ccgt: "gas plant", battery: "battery", wind: "wind farm" }[S.proposal.tech]} · decides in ${Math.max(0, S.proposal.decideAt - Sim.dayIndex(S))} days</button>`] : [])
+      .concat(S.proposal ? [proposalChip()] : [])
+      .concat(S.rivalPending && S.rivalPending.length ? [rivalBuildChip()] : [])
       .concat(S.transition ? transitionChips() : [])
       .concat(S.loans.length ? [`<button type="button" class="chip" data-loans><svg class="i"><use href="#i-info"/></svg>Loans ${fmtMoney(Sim.debt(S))}</button>`] : []);
     $('chips').innerHTML = html.join('');
@@ -1001,6 +1016,24 @@
     if (paused) onSheetClose = resumePlay;
     $('yr-ok').onclick = closeSheets;
     if (tender) $('yr-tender').onclick = () => { onSheetClose = null; tenderOpened(paused); };
+  }
+  // A rival's decision on its project: going ahead (and what that does to prices) or shelved.
+  const RIVAL_EFFECT = { peaker: 'it offers at $320 and $520, so expect fewer big price spikes.', ccgt: 'it offers at about $92 to $128, so evening prices will often be lower.',
+    battery: 'it charges when power is cheap and sells into the evening, so prices will be flatter.', wind: 'it runs whenever it’s windy, so prices will be lower on windy days.' };
+  function proposalResultOpened(paused) {
+    const R = S.proposalResult;
+    if (!R) return;
+    if (paused) autoPauseNow();
+    const what = `${fmtMW(R.mw)} ${RIVAL_KIND[R.tech]}`;
+    info(R.built ? `${R.dev} is going ahead` : `${R.dev} shelved its plan`, `<div class="kv">
+        <div><span>The project</span><b>${what}</b></div>
+        <div><span>Its hurdle</span><b>${fmtPrice(R.hurdle)}/MWh</b></div>
+        <div><span>Average since announced</span><b class="${R.built ? 'down' : 'up'}">${fmtPrice(R.avg)}/MWh</b></div>
+        ${R.built ? `<div><span>Starts</span><b>in ${R.startsIn} days</b></div>` : ''}</div>
+      <p style="margin-top:10px">${R.built ? `Prices stayed at or above what it needs, so ${esc(R.dev)} is building. In ${R.startsIn} days its ${what} joins the market: ${RIVAL_EFFECT[R.tech]}` : `Prices stayed below what it needs to pay its way, so it won't be built. More competition is off, for now.`}</p>
+      <button type="button" class="btn btn-primary" id="pd-ok" style="width:100%;margin-top:12px">Carry on</button>`);
+    if (paused) onSheetClose = resumePlay;
+    $('pd-ok').onclick = closeSheets;
   }
   // How a reserve promise went, once its window is over.
   function reserveResultOpened(paused) {
@@ -1903,6 +1936,11 @@
             if (autoPause) { reserveResultOpened(true); break; }
             toast(R.kept ? `Reserve promise kept: at least ${fmtMW(R.worst)} stayed ready.` : `Reserve promise missed: ${fmtMW(R.short)} short. Penalty ${fmtMoney(R.penalty)}.`);
           }
+          if (S.proposalResult && !S.proposalResult.seen && !openId) {
+            const R = S.proposalResult; R.seen = true;
+            if (autoPause && R.big) { proposalResultOpened(true); break; }
+            toast(R.built ? `${R.dev} is going ahead: its ${fmtMW(R.mw)} ${RIVAL_KIND[R.tech]} starts in ${R.startsIn} days.` : `${R.dev} shelved its ${fmtMW(R.mw)} ${RIVAL_KIND[R.tech]}: prices stayed below its hurdle.`);
+          }
           if (S.choice && S.choice !== seenChoice && !openId) {
             seenChoice = S.choice;
             if (autoPause) { choiceOpened(true); break; }
@@ -2021,7 +2059,7 @@
   function enterApp() {
     scene = 'app'; $('title').hidden = true; $('app').hidden = false;
     meritAnim.clear(); shownCash = null; plantIds = null; newsKey = ''; fcast = null; missionKey = ''; missionCount = -1; syncSpeed(); renderAll(); resized = true;
-    pausedFor = S.offer; seenOffers = S.contractOffers; seenTender = S.tender; seenChoice = S.choice; seenProposal = S.proposal; if (S.reserveResult) S.reserveResult.seen = true; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
+    pausedFor = S.offer; seenOffers = S.contractOffers; seenTender = S.tender; seenChoice = S.choice; seenProposal = S.proposal; if (S.reserveResult) S.reserveResult.seen = true; if (S.proposalResult) S.proposalResult.seen = true; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
   }
   function awayReport(rep) {
     const hours = rep.intervals * H, days = hours / 24;

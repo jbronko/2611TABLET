@@ -1741,9 +1741,11 @@ const Sim = (() => {
         const days = Math.ceil(buildDays(P.tech, P.mw, siteFor(S, P.tech, P.mw) || undefined));
         (S.rivalPending ||= []).push({ ...P, online: day + days });
         S.today.rivalBuilt++;
+        S.proposalResult = { dev: P.dev, tech: P.tech, mw: P.mw, hurdle: P.hurdle, avg, built: true, startsIn: days, big: P.big, seen: false };
         addNews(S, 'bad', `${P.dev} is going ahead: prices averaged ${fmtPrice(avg)}, above its ${fmtPrice(P.hurdle)} hurdle. Its ${what} starts in ${days} days.`);
       } else {
         S.today.rivalShelved++;
+        S.proposalResult = { dev: P.dev, tech: P.tech, mw: P.mw, hurdle: P.hurdle, avg, built: false, big: P.big, seen: false };
         addNews(S, 'good', `${P.dev} has shelved its ${what}: prices averaged only ${fmtPrice(avg)}, below its ${fmtPrice(P.hurdle)} hurdle.`);
       }
       S.proposal = null;

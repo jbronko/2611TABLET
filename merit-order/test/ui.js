@@ -555,6 +555,53 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8l. A rival's project: the chip shows prices against its hurdle; its decision pops up (paused),
+  //     or toasts with "Pause for decisions" off; a chip says when a going-ahead plant starts.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    // a proposal with an impossible hurdle, a day after it was announced
+    const propose = hurdle => state(p, h => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.proposal = null;
+      for (const d of S.days.slice(-15)) d.avg = 400;
+      while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.choice) M.Sim.choose(S, M.Sim.choiceView(S).deflt); }
+      S.proposal.hurdle = h; S.proposal.big = true;
+      const end = S.t + 288 + 2; while (S.t < end) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
+      M.renderAll(); }, hurdle);
+    // run on to just before it decides, then let the loop decide
+    const toDecision = () => state(p, () => { const M = MeritOrder, S = M.state, at = S.proposal.decideAt * 288 - 3;
+      while (S.t < at) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.choice) M.Sim.choose(S, M.Sim.choiceView(S).deflt); }
+      M.renderAll(); M.setSpeed(16); });
+    const waitTitle = async re => { let t = ''; for (let k = 0; k < 12 && !re.test(t); k++) { await p.waitForTimeout(250); t = await p.textContent('#i-title');
+      if (re.test(t) || await p.$eval('#sh-info', x => x.hidden)) continue;
+      if (/in review$/.test(t)) await p.click('#yr-ok'); else if (/New contracts/.test(t)) await p.click('#nc-play'); else if (await p.$('#rr-ok')) await p.click('#rr-ok'); else await p.keyboard.press('Escape'); } return t; };
+    await propose(9000);
+    check('a rival proposal’s chip shows prices so far against its hurdle, green when it’s on course to shelve', /vs its \$9k hurdle · decides in \d+ days?/.test(await p.textContent('#chips')) && !!(await p.$('[data-proposal].good')), await p.textContent('#chips'));
+    await toDecision();
+    let title = await waitTitle(/shelved its plan/);
+    check('a shelved project says so in a paused pop-up', /shelved its plan/.test(title) && /won't be built/.test(await p.textContent('#i-body')) && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true', title);
+    await shot(p, 'rival-shelved');
+    await p.click('#pd-ok'); await p.waitForTimeout(200);
+    await propose(0);
+    check('…red when it’s on course to go ahead', !!(await p.$('[data-proposal].bad')));
+    await toDecision();
+    title = await waitTitle(/is going ahead/);
+    check('a project going ahead says so, with when it starts and what it does to prices', /is going ahead/.test(title) && /Starts/.test(await p.textContent('#i-body')) && /joins the market/.test(await p.textContent('#i-body')), title);
+    await shot(p, 'rival-going-ahead');
+    await p.click('#pd-ok'); await p.waitForTimeout(200);
+    check('…and a chip says when it starts', /starts in \d+ days?/.test(await p.textContent('#chips')));
+    // pausing off: a toast
+    await state(p, () => MeritOrder.setSpeed(0));
+    for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(200); }
+    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-autopause'); await p.waitForTimeout(100); await p.click('#sh-menu [data-close]'); await p.waitForTimeout(150);
+    await propose(9000);
+    await toDecision(); await p.waitForTimeout(900);
+    check('with "Pause for decisions" off, the decision is a toast', /shelved its/.test(await p.textContent('#toast')) && await p.$eval('#sh-info', x => x.hidden));
+    await p.context().close();
+  }
+
   // 8i. 64x: offered, and really twice as fast as 32x (the loop's per-frame cap doesn't hold it back).
   {
     const p = await page();

@@ -376,6 +376,10 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   const steps = (pend.online - Sim.dayIndex(G) + 1) * Sim.IPD;
   for (let k = 0; k < steps; k++) Sim.step(G);
   check('…once built', G.rivals.some(r => r.id === `rv${gp.n}` && r.cap === gp.mw));
+  check('each decision is recorded for the screen: shelved below the hurdle, going ahead with a start date, none when bought',
+    R.proposalResult && !R.proposalResult.built && R.proposalResult.avg < R.proposalResult.hurdle && !R.proposalResult.seen
+    && G.proposalResult && G.proposalResult.built && G.proposalResult.avg >= G.proposalResult.hurdle && G.proposalResult.startsIn === pend.online - (gp.decideAt) && !B.proposalResult,
+    `${R.proposalResult && Math.round(R.proposalResult.avg)} vs ${R.proposalResult && R.proposalResult.hurdle}; starts in ${G.proposalResult && G.proposalResult.startsIn}`);
   // the career and the Energy Transition never get proposals
   const K = Sim.create(3), E2 = Sim.createScenario('energy-transition');
   for (const S of [K, E2]) S.days.push(...Array.from({ length: 15 }, (_, i) => ({ day: -15 + i, avg: 400, shed: 0, capPay: 0 })));
