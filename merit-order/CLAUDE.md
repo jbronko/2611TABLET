@@ -32,7 +32,12 @@ are built, tested and published); this file is what's specific to Merit Order. C
   - Ageing coal: breakdowns ×(1 + 0.35 a year); from year 3, or in a unit's last year, one in five
     is major (6–12 days).
   - Emissions fines at `emisFine` ($120/t).
-  - Year-report rows from `report(S, Y)`.
+  - Year-report rows from `report(S, Y)` (plus common rows: emissions, rival projects, your firm
+    plant against the first star).
+  - Compound stars list their parts (a third element in `stars`, e.g. `lightsPart`, `firmPart`),
+    shown ✓/✗ on the end screen and in the year report; stars are won in order, and the screen says
+    so. In the final year a chip tracks the lights-on part. Year reports always pause, even with
+    "Pause for decisions" off.
   - Closure badges from `closes` (copied to `S.closeAt`; `closesIn`).
 - **Scenario fields:**
   - `years`, `yearDays`, `timeline` (same shape as `TRANSITION`)

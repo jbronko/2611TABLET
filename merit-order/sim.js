@@ -1342,7 +1342,7 @@ const Sim = (() => {
       lengths: { standard: { name: 'Standard', yearDays: 60, target: 2e9 }, long: { name: 'Long', yearDays: 90, target: 3e9 } }, seed: 2026, cash: 1500000, idle: true, transition: true,
       blurb: 'Twenty fast years. The coal closes, demand grows, new technology arrives and the targets head to zero. Keep the lights on, go green and grow.',
       unlock: ['wind', 'ccgt', 'hydro'],
-      stars: [['Keep the lights on: meet the reliability standard in year 20 (no more than 0.002% of demand unserved)', r => r.finalShed <= RELIABILITY * r.finalRegion], ['…and supply 30% of the region from clean plant in year 20', r => r.cleanShare >= 0.3], ['…and grow the company to {target}', r => r.value >= r.target]] },
+      stars: [['Keep the lights on: meet the reliability standard in year 20 (no more than 0.002% of demand unserved)', r => r.finalShed <= RELIABILITY * r.finalRegion, r => [lightsPart(r)]], ['…and supply 30% of the region from clean plant in year 20', r => r.cleanShare >= 0.3], ['…and grow the company to {target}', r => r.value >= r.target]] },
     { id: 'big-build', name: 'The Big Build', days: 45, startDoy: 304, seed: 6606, cash: 3000000,
       blurb: '$3M, every technology but coal, and six weeks over summer. Build an empire.',
       unlock: ['wind', 'ccgt', 'hydro'],
@@ -1386,7 +1386,7 @@ const Sim = (() => {
         if (Y.overruns) rows.push(['Tunnel Two overruns', fmtMoney(Y.overruns), 'down']);
         return rows;
       },
-      stars: [['Keep the lights on in year 5, with Tunnel Two running and {firm} of your own firm plant', r => r.tunnelOn && r.lightsOn && r.ownFirm >= r.firm], ['…and grow the company to $400M', r => r.value >= 400e6], ['…and grow it to $650M', r => r.value >= 650e6]] },
+      stars: [['Keep the lights on in year 5, with Tunnel Two running and {firm} of firm plant of your own (gas, coal, hydro or storage)', r => r.tunnelOn && r.lightsOn && r.ownFirm >= r.firm, r => [lightsPart(r), tunnelPart(r), firmPart(r)]], ['…and grow the company to $400M', r => r.value >= 400e6], ['…and grow it to $650M', r => r.value >= 650e6]] },
     { id: 'lakeside', group: 'company', name: 'Lakeside Power', years: 4, yearDays: 60, startDoy: 0, seed: 8808, cash: 1500000, idle: true, transition: true,
       blurb: 'The country’s biggest coal generator has promised to close it all. Shut Black Hill unit by unit, keep the lights on, and rebuild the company clean.',
       intro: 'You own all four Black Hill coal units (2,640 MW), the Ash Hill peaker and 400 MW of wind. Your coal closes on a fixed schedule: one unit at the start of each year from year 2.',
@@ -1409,9 +1409,9 @@ const Sim = (() => {
       },
       report: (S, Y) => {
         const coal = S.plants.filter(p => p.tech === 'coal').length;
-        return [['Coal units left', `${coal} of 4`, ''], ['Your firm plant', `${fmtMW(ownFirm(S))} (goal ${fmtMW(2940)})`, ownFirm(S) >= 2940 ? 'up' : 'down']];
+        return [['Coal units left', `${coal} of 4`, '']];
       },
-      stars: [['Keep the lights on in year 4, with {firm} of your own firm plant', r => r.lightsOn && r.ownFirm >= r.firm], ['…and make 40% of your own output clean in year 4', r => r.ownClean >= 0.4], ['…and grow the company to $1.15B', r => r.value >= 1.15e9]] },
+      stars: [['Keep the lights on in year 4, with {firm} of firm plant of your own (gas, coal, hydro or storage)', r => r.lightsOn && r.ownFirm >= r.firm, r => [lightsPart(r), firmPart(r)]], ['…and make 40% of your own output clean in year 4', r => r.ownClean >= 0.4], ['…and grow the company to $1.15B', r => r.value >= 1.15e9]] },
     { id: 'wellspring', group: 'company', name: 'Wellspring Energy', years: 4, yearDays: 60, startDoy: 0, seed: 9909, cash: 1500000, idle: true, transition: true,
       blurb: 'Gas and the region’s last big coal station. The government wants the coal kept open; every winter the gas gets dear.',
       intro: 'You own Black Hill 3 and 4 (1,320 MW of coal), the Tallawang combined-cycle plant and the Mulga Creek peaker. The coal is due to close at the start of year 3, and gas runs short every winter.',
@@ -1439,7 +1439,7 @@ const Sim = (() => {
         if (S.grant) rows.push(['Clean-energy grant', 'New wind, solar and storage 30% cheaper', 'up']);
         return rows;
       },
-      stars: [['Keep the lights on in year 4, with {firm} of your own firm plant', r => r.lightsOn && r.ownFirm >= r.firm], ['…and grow the company to $800M', r => r.value >= 800e6], ['…and grow it to $1.4B', r => r.value >= 1.4e9]] },
+      stars: [['Keep the lights on in year 4, with {firm} of firm plant of your own (gas, coal, hydro or storage)', r => r.lightsOn && r.ownFirm >= r.firm, r => [lightsPart(r), firmPart(r)]], ['…and grow the company to $800M', r => r.value >= 800e6], ['…and grow it to $1.4B', r => r.value >= 1.4e9]] },
     { id: 'coastline', group: 'company', name: 'Coastline Energy', years: 4, yearDays: 60, startDoy: 152, seed: 1212, cash: 1500000, idle: true, transition: true,
       blurb: 'A million customers to supply. You’ve sold 800 MW around the clock at a fixed price, and you set next year’s price. Stay able to supply them through cold, dear winters and a coal closure.',
       intro: 'You own Black Hill 2 (660 MW of coal, closing at the start of year 3), the Wollemi combined-cycle plant and the Mulga Creek peaker, and you supply your retail customers: 800 MW around the clock at a fixed price. Before each renewal you set the price: dearer keeps fewer customers.',
@@ -1464,8 +1464,17 @@ const Sim = (() => {
           ] },
       },
       report: (S, Y) => [['Your customers', `${fmtMoney(Y.retail || 0)} against the market`, (Y.retail || 0) >= 0 ? 'up' : 'down'], ['Supplying next year', `${fmtMW(S.retailMW || 800)} at ${fmtPrice((S.contracts.find(k => k.retail) || {}).strike || 0)}/MWh`, '']],
-      stars: [['Keep the lights on in year 4, with {firm} of your own firm plant', r => r.lightsOn && r.ownFirm >= r.firm], ['…and make a profit every year and grow the company to $450M', r => r.minYearProfit > 0 && r.value >= 450e6], ['…and grow it to $700M', r => r.value >= 700e6]] },
+      stars: [['Keep the lights on in year 4, with {firm} of firm plant of your own (gas, coal, hydro or storage)', r => r.lightsOn && r.ownFirm >= r.firm, r => [lightsPart(r), firmPart(r)]], ['…and make a profit every year and grow the company to $450M', r => r.minYearProfit > 0 && r.value >= 450e6], ['…and grow it to $700M', r => r.value >= 700e6]] },
   ];
+  // The parts of a compound star, shown under it so you can see which one failed.
+  function lightsPart(r) {
+    const allowed = Math.round(r.allowedShed || 0);
+    return { label: 'Lights on', ok: r.lightsOn, detail: r.finalShed > 0.5
+      ? `${(r.finalShedHours || 0).toFixed(1)} hours short in year ${r.finalYear}: ${Math.round(r.finalShed).toLocaleString()} MWh unserved, and the reliability standard allows ${allowed.toLocaleString()}`
+      : `No shortfall in year ${r.finalYear}` };
+  }
+  const tunnelPart = r => ({ label: 'Tunnel Two running', ok: r.tunnelOn, detail: r.tunnelOn ? 'Generating' : 'Still being built' });
+  const firmPart = r => ({ label: 'Your firm plant', ok: r.ownFirm >= r.firm, detail: `${fmtMW(r.ownFirm)} of the ${fmtMW(r.firm)} needed (gas, coal, hydro and storage you own)` });
   // Winter events for each year of a company scenario: [key, length, days after the first].
   function winters(years, at, list) {
     const out = [];
@@ -1547,6 +1556,7 @@ const Sim = (() => {
     if (!sc || sc.group !== 'company') return [];
     const rows = [];
     if (Y.energy > 0 && Y.emis != null) { const i = Y.emis / Y.energy; rows.push(['Emissions', `${i.toFixed(2)} t/MWh (target ${(Y.emisTarget ?? 0).toFixed(2)})`, i > (Y.emisTarget ?? 1) ? 'down' : 'up']); }
+    if (sc.firm) rows.push(['Your firm plant', `${fmtMW(ownFirm(S))} (the first star needs ${fmtMW(sc.firm)})`, ownFirm(S) >= sc.firm ? 'up' : 'down']);
     if (Y.rivalBuilt || Y.rivalShelved) rows.push(['Rival projects', `${Y.rivalBuilt || 0} went ahead, ${Y.rivalShelved || 0} shelved`, '']);
     return rows.concat(sc.report ? sc.report(S, Y) : []);
   }
@@ -1816,7 +1826,8 @@ const Sim = (() => {
     return { value: companyValue(S), gain: companyValue(S) - S.scenario.v0, target: S.scenario.target ?? (lengthOf(sc, 'standard') || {}).target,
       finalShed: Y.shed, finalRegion: Y.region, cleanShare: Y.clean / Math.max(1, Y.region), ownClean: Y.clean / Math.max(1, Y.energy || 0),
       minYearProfit: full.length ? Math.min(...full.map(y => y.profit)) : 0, tunnelOn: S.plants.some(p => p.tunnel && p.status !== 'building'),
-      lightsOn: Y.shed <= RELIABILITY * Y.region, ownFirm: ownFirm(S), firm: sc.firm || 0, bust: !!S.bust };
+      lightsOn: Y.shed <= RELIABILITY * Y.region, finalShedHours: Y.shedHours || 0, allowedShed: RELIABILITY * (Y.region || 0), finalYear: Y.year ?? yearsOf(S),
+      ownFirm: ownFirm(S), firm: sc.firm || 0, bust: !!S.bust };
   }
   function scenarioResult(S) {
     const sc = scenarioOf(S);
@@ -1830,7 +1841,7 @@ const Sim = (() => {
   function scoreStars(S, sc, r) {
     let stars = 0;
     const texts = starText(sc, S.scenario.length);
-    const lines = sc.stars.map(([, test], i) => { const ok = !r.bust && test(r); if (ok && stars === i) stars++; return { text: texts[i], ok }; });
+    const lines = sc.stars.map(([, test, parts], i) => { const ok = !r.bust && test(r); if (ok && stars === i) stars++; return { text: texts[i], ok, parts: parts ? parts(r) : null }; });
     return { stars, lines };
   }
   // A multi-year scenario's stars as they would be if year Y were the final year.

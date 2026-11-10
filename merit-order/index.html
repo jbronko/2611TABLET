@@ -82,6 +82,12 @@
   .starlist li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
   .starlist li::before { content: '☆'; color: var(--ink-3); font-family: system-ui, sans-serif; }
   .starlist li.ok::before { content: '★'; color: var(--amber); }
+  .starlist li > div { display: grid; gap: 6px; }
+  .starlist .parts { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+  .starlist .parts li { font-size: 13.5px; color: var(--ink-2); gap: 8px; }
+  .starlist .parts li::before { content: '✗'; color: var(--bad); font-weight: 800; }
+  .starlist .parts li.ok::before { content: '✓'; color: var(--good); }
+  .starlist .parts b { color: var(--ink); font-weight: 650; }
   ol.timeline { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 2px; }
   ol.timeline li { display: grid; grid-template-columns: 5.5em 1fr; gap: 10px; padding: 9px 10px; border-radius: 10px; font-size: 14px; }
   ol.timeline li span { color: var(--ink-2); } ol.timeline li small { display: block; color: var(--ink-3); margin-top: 2px; }
@@ -342,7 +348,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 28</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 29</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -452,7 +458,7 @@
     <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Timeline</span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
     <button type="button" class="switch-row" id="m-loans"><span>Bank loans</span><span class="num" id="m-loans-n"></span></button>
-    <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive</small></span><span class="switch"></span></button>
+    <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive (year reports always pause)</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-idle" role="switch" aria-checked="true"><span>Keep trading while I’m away<small>Up to 7 game days each time you leave: your company and the Energy Transition</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
     <button type="button" class="switch-row" id="m-title"><span>Title screen</span></button>
@@ -737,13 +743,32 @@
   // The next milestone of the Energy Transition, and an open underwriting round.
   function transitionChips() {
     const y = Sim.yearOf(S) + 1, next = Sim.timelineOf(S).find(e => e.year > y), out = [];
+    const lights = finalYearLights();
+    if (lights) out.push(`<button type="button" class="chip ${lights.tone}" data-lights><svg class="i"><use href="#i-${lights.tone === 'good' ? 'good' : lights.tone === 'bad' ? 'bad' : 'info'}"/></svg>${lights.chip}</button>`);
     if (next) out.push(`<button type="button" class="chip soon" data-timeline><svg class="i"><use href="#i-flag"/></svg>Year ${next.year}: ${esc(next.text.split(/[.:](?:\s|$)/)[0])}</button>`);
     const t = S.tender, open = t && Sim.dayIndex(S) <= t.until;
     if (open && !t.accepted && !t.declined) out.push(`<button type="button" class="chip warn" data-tender><svg class="i"><use href="#i-info"/></svg>Underwriting round open: decide</button>`);
     if (open && t.accepted && t.used < t.mw) out.push(`<span class="chip"><svg class="i"><use href="#i-good"/></svg>Underwriting: ${fmtMW(t.mw - t.used)} of new ${Sim.TENDER_KINDS[t.kind].name} left</span>`);
     return out;
   }
+  // In a multi-year scenario's final year: shortfall so far against the reliability standard, which
+  // the first star is judged on (the allowance is for the whole year, from the year's demand so far).
+  function finalYearLights() {
+    const N = Sim.yearsOf(S), Y = S.years && S.years[N - 1];
+    if (!S.transition || Sim.yearOf(S) + 1 !== N || !Y || !Y.days) return null;
+    const allowed = Sim.RELIABILITY * Y.region / Y.days * Sim.yearDays(S), h = Y.shedHours.toFixed(1);
+    if (Y.shed < 0.5) return { tone: 'good', chip: 'Final year: no shortfall so far', Y, allowed };
+    if (Y.shed <= allowed) return { tone: 'warn', chip: `Final year: ${h} h short so far, close to the limit`, Y, allowed };
+    return { tone: 'bad', chip: `Final year: ${h} h short, the lights-on star is lost`, Y, allowed };
+  }
+  function lightsExplained() {
+    const L = finalYearLights(); if (!L) return;
+    info('Keeping the lights on', `<p>The first star is judged on this, the final year: the region may leave no more than 0.002% of the year's demand unserved, about <b>${Math.round(L.allowed).toLocaleString()} MWh</b>.</p>
+      <p>So far this year: <b>${Math.round(L.Y.shed).toLocaleString()} MWh</b> unserved over ${L.Y.shedHours.toFixed(1)} hours.${L.tone === 'bad' ? ' That is past the limit, so the first star (and the ones after it) can no longer be won this time.' : ''}</p>
+      <p class="note">Shortfalls come in evening peaks, heatwaves and still weeks. Firm plant helps most: gas peakers, batteries with a few hours of storage, hydro.</p>`);
+  }
   $('chips').addEventListener('click', e => {
+    if (e.target.closest('[data-lights]')) lightsExplained();
     if (e.target.closest('[data-timeline]')) openTimeline();
     if (e.target.closest('[data-tender]')) tenderOpened(false);
     if (e.target.closest('[data-loans]')) openLoans();
@@ -960,7 +985,7 @@
         <div><span>Peak demand</span><b>${fmtMW(R.peak)}</b></div></div>
       ${R.rows && R.rows.length ? `<table class="res compact" style="margin-top:10px"><tbody>${R.rows.map(([l, v, tone]) => `<tr><td>${esc(l)}</td><td class="${tone}">${esc(v)}</td></tr>`).join('')}</tbody></table>` : ''}
       ${R.curtailed > 1 ? `<p class="note" style="margin-top:8px">${Math.round(R.curtailed).toLocaleString()} MWh of your wind and solar were cut because a zone’s line was full.</p>` : ''}
-      <h3>If this were year ${Sim.yearsOf(S)}</h3><ul class="starlist">${st.lines.map(l => `<li class="${l.ok ? 'ok' : ''}">${l.text}</li>`).join('')}</ul>
+      <h3>If this were year ${Sim.yearsOf(S)}</h3>${starLines(st)}
       ${R.now.length ? `<h3>This year</h3><ul class="news">${R.now.map(e => `<li class="${e.close ? 'bad' : 'info'}"><svg class="i"><use href="#i-${e.close ? 'bad' : 'info'}"/></svg><span>${esc(e.text)}</span></li>`).join('')}</ul>` : ''}
       ${R.next.length ? `<h3>Coming next year</h3><ul class="news">${R.next.map(t => `<li class="info"><svg class="i"><use href="#i-flag"/></svg><span>${esc(t)}</span></li>`).join('')}</ul>` : ''}
       <div class="field-row" style="margin-top:14px">${tender ? '<button type="button" class="btn btn-quiet" id="yr-tender" style="flex:1">See the underwriting offer</button>' : ''}<button type="button" class="btn btn-primary" id="yr-ok" style="flex:1">Carry on</button></div>`);
@@ -1710,6 +1735,13 @@
       (store.results[r.seed] ||= []).push({ name: $('res-name').value.trim() || 'Friend', value: r.value, emis: r.emis }); persist(); openChallenges();
     };
   }
+  // Star lines with each compound star's parts (✓/✗) under it, and a note when a later star's goal
+  // is met but doesn't count because an earlier one isn't won.
+  function starLines(st) {
+    const items = st.lines.map(l => `<li class="${l.ok ? 'ok' : ''}"><div><span>${l.text}</span>${l.parts ? `<ul class="parts">${l.parts.map(q => `<li class="${q.ok ? 'ok' : ''}"><span><b>${esc(q.label)}</b>: ${esc(q.detail)}</span></li>`).join('')}</ul>` : ''}</div></li>`).join('');
+    const blocked = st.lines.some((l, i) => l.ok && i >= st.stars);
+    return `<ul class="starlist">${items}</ul>${blocked ? '<p class="note">Stars are won in order: the first has to be won before the others count.</p>' : ''}`;
+  }
   // --- scenarios: hand-made situations, the same weather for everyone, scored with stars ---
   const starStr = n => `${'★'.repeat(n)}<i>${'☆'.repeat(3 - n)}</i>`;
   const starTotal = () => Sim.SCENARIOS.reduce((a, sc) => a + ((store.scenarios || {})[sc.id]?.stars || 0), 0);
@@ -1767,7 +1799,7 @@
     delete store.scenario; S.ended = true; persist();
     speed = 0; syncSpeed(); acc = 0;
     info(sc.name, `<div class="stars big" aria-label="${r.stars} of 3 stars">${starStr(r.stars)}</div>
-      <ul class="starlist">${r.lines.map(l => `<li class="${l.ok ? 'ok' : ''}">${l.text}</li>`).join('')}</ul>
+      ${starLines(r)}
       ${r.bust ? '<p>The company collapsed before the end, so no stars this time.</p>' : ''}
       <div class="kv"><div><span>Company value</span><b>${fmtMoney(r.value)}</b></div><div><span>Profit</span><b class="${r.profit >= 0 ? 'up' : 'down'}">${fmtMoney(r.profit)}</b></div><div><span>Growth</span><b class="${r.gain >= 0 ? 'up' : 'down'}">${fmtMoney(r.gain)}</b></div></div>
       ${S.transition && S.years ? `<h3>Year by year</h3><table class="res compact"><thead><tr><th>Year</th><th>Hours short</th><th>${Sim.isCompany(S) ? 'Clean output' : 'Clean from you'}</th><th>Profit</th></tr></thead><tbody>${S.years.map((Y, k) => `<tr><td>${k + 1}</td><td class="${Y.shedHours > 0.05 ? 'down' : 'up'}">${Y.shedHours.toFixed(1)}</td><td>${Math.round(Y.clean / Math.max(1, Sim.isCompany(S) ? Y.energy || 0 : Y.region) * 100)}%</td><td>${fmtMoney(Y.profit)}</td></tr>`).join('')}</tbody></table>` : ''}
@@ -1816,8 +1848,8 @@
       if (S.bust && !S.ended) { companyBust(); return; }
       if (S.transition && S.yearReport && !S.yearReport.seen && !openId) {
         S.yearReport.seen = true;
-        if (autoPause || speed === 0) { if (S.yearReport.tender) seenTender = S.tender; yearReportOpened(speed > 0); }   // its underwriting offer is in the report
-        else toast(`Year ${S.yearReport.year} is over: its report is in the timeline.`);
+        if (S.yearReport.tender) seenTender = S.tender;   // its underwriting offer is in the report
+        yearReportOpened(speed > 0);   // year reports always pause, even with "Pause for decisions" off
       }
       if (speed > 0 && !S.ended && !(openId && openId !== 'plant')) {
         acc += dt * 1000 * speed;

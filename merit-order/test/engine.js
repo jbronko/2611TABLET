@@ -389,6 +389,14 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   const F = Sim.createScenario('wellspring');
   const r0 = Sim.starsIf(F, { shed: 0, region: 1e7, clean: 0, energy: 1, profit: 1 });
   check('the first star needs your own firm plant, not just the rivals’', Sim.ownFirm(F) === 2320 && !r0.lines[0].ok && /2\.8 GW/.test(r0.lines[0].text));
+  // …and says which of its conditions failed
+  const HP = Sim.starsIf(Sim.createScenario('highcountry'), { shed: 1240, shedHours: 10.5, region: 7.5e6, clean: 0, energy: 1, profit: 1, year: 5 }).lines[0].parts;
+  check('a compound star lists its parts: lights on, Tunnel Two, firm plant', HP.length === 3 && HP.map(q => q.label).join('|') === 'Lights on|Tunnel Two running|Your firm plant'
+    && !HP[0].ok && /10\.5 hours short in year 5: 1,240 MWh unserved, and the reliability standard allows 150/.test(HP[0].detail) && !HP[1].ok && !HP[2].ok && /1\.4 GW of the 2\.8 GW/.test(HP[2].detail), HP[0].detail);
+  const ok0 = r0.lines[0].parts;
+  check('…each part judged on its own: lights on, firm plant short', ok0[0].ok && /No shortfall in year 4/.test(ok0[0].detail) && !ok0[1].ok);
+  const EP = Sim.starsIf(Sim.createScenario('energy-transition'), { shed: 0, shedHours: 0, region: 7e6, clean: 0, energy: 1, profit: 1, year: 20 }).lines[0].parts;
+  check('…and the Energy Transition’s first star shows its lights-on part', EP.length === 1 && EP[0].ok && /year 20/.test(EP[0].detail));
 }
 
 // 11c. Company games saved by version 24 (no closure schedule, no decisions) load and play on.

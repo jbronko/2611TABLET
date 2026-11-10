@@ -343,7 +343,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     }
     const paused = async () => (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true';
     check('a new year opens with a report on the last, paused', title === 'Year 2 in review' && /Year 3 of 20/.test(await p.textContent('#clock')) && await paused()
-      && /Black Hill 1 closes/.test(await p.textContent('#i-body')) && (await p.$$('#i-body .starlist li')).length === 3 && !!(await p.$('#yr-tender')));
+      && /Black Hill 1 closes/.test(await p.textContent('#i-body')) && (await p.$$('#i-body .starlist > li')).length === 3 && !!(await p.$('#yr-tender')));
     await shot(p, 'transition-report');
     await p.click('#yr-tender'); await p.waitForTimeout(150);
     title = await p.textContent('#i-title');
@@ -470,6 +470,53 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const body = await p.textContent('#i-body');
     check('the year report has the company’s own lines', title === 'Year 1 in review' && /Your customers/.test(body) && /Emissions/.test(body) && /Clean, of your output/.test(body), body.replace(/\s+/g, ' ').slice(0, 160));
     await shot(p, 'company-report');
+    await p.context().close();
+  }
+
+  // 8j. The first star says which of its parts failed; a final-year chip tracks the lights; year
+  //     reports pause even with "Pause for decisions" off.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    // the final year with a shortfall past the standard: the chip says the star is lost
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 288 + 5) M.Sim.step(S);
+      S.years[4] = { ...S.years[0], shed: 300, shedHours: 2, region: 3e6, days: 20 }; S.t = 250 * 288 + 5; M.renderAll(); });
+    check('in the final year, a chip tracks the lights-on star', /Final year: 2\.0 h short, the lights-on star is lost/.test(await p.textContent('#chips')));
+    await p.click('[data-lights]'); await p.waitForTimeout(200);
+    check('…and explains it', (await p.textContent('#i-title')) === 'Keeping the lights on' && /no more than 0\.002%/.test(await p.textContent('#i-body')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    // the end: rich enough for stars 2 and 3, but year 5 ran short
+    await state(p, () => { const M = MeritOrder, S = M.state; S.cash = 1e9;
+      for (let k = 0; k < 5; k++) S.years[k] = { ...S.years[0], shed: k === 4 ? 1240 : 0, shedHours: k === 4 ? 10.5 : 0, region: 7.5e6, profit: 1e8, days: 60 };
+      S.days.push({ ...S.days[S.days.length - 1], day: S.scenario.days - 1 }); M.setSpeed(16); });
+    let title = '';
+    for (let k = 0; k < 10 && !(await p.$('.stars.big')); k++) await p.waitForTimeout(300);
+    const end = await p.textContent('#i-body');
+    check('the end screen shows the first star’s parts, ✓ and ✗', (await p.$$('.starlist .parts li')).length === 3 && /Lights on: 10\.5 hours short in year 5/.test(end) && /Your firm plant: /.test(end));
+    check('…and says stars are won in order', /Stars are won in order/.test(end));
+    await shot(p, 'company-end-parts');
+    await p.context().close();
+  }
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="coastline"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await p.click('#open-menu'); await p.waitForTimeout(150);
+    await p.click('#m-autopause'); await p.waitForTimeout(100);
+    check('"Pause for decisions" can be turned off', (await p.$eval('#m-autopause', x => x.getAttribute('aria-checked'))) === 'false');
+    await p.click('#sh-menu [data-close]'); await p.waitForTimeout(150);
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 60 * 288 - 5) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.choice) M.Sim.choose(S, 'usual'); if (S.proposal) S.proposal = null; } M.renderAll(); M.setSpeed(16); });
+    let title = '';
+    for (let k = 0; k < 10 && title !== 'Year 1 in review'; k++) { await p.waitForTimeout(300); title = await p.textContent('#i-title'); }
+    check('with "Pause for decisions" off, the year report still opens and pauses', title === 'Year 1 in review' && !(await p.$eval('#sh-info', x => x.hidden)) && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    check('…and shows your firm plant against the first star', /Your firm plant/.test(await p.textContent('#i-body')));
+    await p.click('#yr-ok'); await p.waitForTimeout(200);
+    check('…and Carry on picks up the speed again', (await p.$eval('[data-speed="16"]', x => x.getAttribute('aria-pressed'))) === 'true');
     await p.context().close();
   }
 
