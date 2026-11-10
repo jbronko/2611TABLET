@@ -3,7 +3,7 @@
 // from the network in the background, so updates appear on the next launch.
 // Bump VERSION whenever you change the list of files below.
 const APP = 'storm-the-shore';
-const VERSION = 3;
+const VERSION = 4;
 const CACHE = `${APP}-v${VERSION}`;
 const PRECACHE = [
   './',
@@ -14,6 +14,34 @@ const PRECACHE = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  // CC0 sprites and sounds (assets/CREDITS.md)
+  './assets/fx/circle2.png',
+  './assets/fx/dirt1.png',
+  './assets/fx/fire1.png',
+  './assets/fx/flare1.png',
+  './assets/fx/muzzle2.png',
+  './assets/fx/scorch1.png',
+  './assets/fx/smoke10.png',
+  './assets/fx/smoke4.png',
+  './assets/fx/smoke7.png',
+  './assets/fx/star6.png',
+  './assets/fx/star8.png',
+  './assets/fx/star9.png',
+  './assets/fx/trace7.png',
+  './assets/sfx/bad.ogg',
+  './assets/sfx/bigboom.ogg',
+  './assets/sfx/boom.ogg',
+  './assets/sfx/clank.ogg',
+  './assets/sfx/coin.ogg',
+  './assets/sfx/glass.ogg',
+  './assets/sfx/hit.ogg',
+  './assets/sfx/pop.ogg',
+  './assets/sfx/powerup.ogg',
+  './assets/sfx/rocket.ogg',
+  './assets/sfx/shatter.ogg',
+  './assets/sfx/shot-heavy.ogg',
+  './assets/sfx/shot.ogg',
+  './assets/sfx/smash.ogg',
 ];
 // Other hosts whose files should also work offline (for example Google Fonts).
 const RUNTIME_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];

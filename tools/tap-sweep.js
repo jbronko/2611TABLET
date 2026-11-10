@@ -26,7 +26,7 @@ const BASE = '/2611TABLET/';
 const launcher = app === 'launcher';
 if (!launcher && !fs.existsSync(path.join(ROOT, app, 'index.html'))) { console.error(`${app}/index.html not found.`); process.exit(1); }
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
-  '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.ogg': 'audio/ogg' };
 
 // Reviewed taps that change nothing a test can see. { app: [[pattern for "label [selector]", why]] }
 const ALLOW = {

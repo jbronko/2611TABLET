@@ -95,6 +95,28 @@ ok(S.dpsOf(20, 0) > S.dpsOf(5, 0) && S.dpsOf(5, 1) > S.dpsOf(5, 0) && S.dpsOf(5,
   ok(top.weapon === S.WEAPONS.length - 1, 'weapons stop at Rockets');
 }
 
+// Rockets splash: the same squad clears a crowd faster with them, and the page hears about each blast
+{
+  const crowd = weapon => {
+    const s = custom([{ type: 'enemy', z: 75, n: 400, x0: -1, x1: 1 }], withSquad(4));
+    s.weapon = weapon;
+    let blasts = 0;
+    for (let i = 0; i < 60 * 4 && s.phase === 'run'; i++) { S.step(s, 1 / 60); blasts += s.events.filter(e => e.kind === 'splash').length; s.events.length = 0; }
+    return { killed: 400 - s.objs[0].rem, blasts, kills: s.kills };
+  };
+  const heavy = crowd(S.ROCKETS - 1), rockets = crowd(S.ROCKETS);
+  const plain = S.dpsOf(20, S.ROCKETS) / S.dpsOf(20, S.ROCKETS - 1);
+  ok(rockets.blasts > 0 && heavy.blasts === 0, `only Rockets splash (${rockets.blasts} blasts)`);
+  ok(rockets.killed > heavy.killed * plain * 1.25, `the splash takes extra enemies (${rockets.killed} vs ${heavy.killed} with the Heavy MG)`);
+  ok(rockets.kills === rockets.killed, 'every splash kill counts and pays');
+  // a splash with nothing left in the target spills onto a runner group close by
+  const s = custom([], withSquad(4)); s.weapon = S.ROCKETS; s.splash = 0.9;
+  s.runners.push({ id: 1, x: 0, at: 20, rem: 1, n: 1 }, { id: 2, x: 0.1, at: 22, rem: 5, n: 5 });
+  for (let i = 0; i < 30 && s.kills === 0; i++) S.step(s, 1 / 60);
+  const next = s.runners.find(u => u.id === 2);
+  ok(s.kills === 2 && next && next.rem === 4,'a splash spills onto the runners next to the one it killed');
+}
+
 // runners keep coming, get shot, and pay coins
 {
   const s = custom([], withSquad(6), 3, 0.6);

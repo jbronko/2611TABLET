@@ -20,7 +20,7 @@ if (!fs.existsSync(path.join(ROOT, app, 'index.html'))) { console.error(`${app}/
 
 const BASE = '/2611TABLET/';
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
-  '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.woff2': 'font/woff2', '.ico': 'image/x-icon' };
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.ogg': 'audio/ogg' };
 
 let newerSw = false;   // when true, sw.js is served changed, as if a new version had been published
 const server = http.createServer((req, res) => {

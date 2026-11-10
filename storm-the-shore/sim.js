@@ -26,6 +26,9 @@ const Shore = (() => {
   const STORE = 'storm-the-shore';
 
   const WEAPONS = ['Rifle', 'SMG', 'Machine gun', 'Heavy MG', 'Rockets'];
+  const ROCKETS = WEAPONS.length - 1;
+  const SPLASH = 0.4;        // with Rockets, each kill on a crowd adds this much to a splash meter;
+                             // every time it fills, the blast takes one more enemy nearby
 
   // ---- random numbers (seeded, so every level is the same each time) ----
   const rng = seed => () => {
@@ -307,7 +310,7 @@ const Shore = (() => {
     return {
       num: lvl.num, lvl, objs, runners: [], spawn: 1.2, rnd: rng(lvl.seed || lvl.num), rid: 0,
       armour: UPGRADES.armour.value(s0.up.armour), coinRate: UPGRADES.coins.value(s0.up.coins), guns: UPGRADES.guns.value(s0.up.guns),
-      n: start, start, x: 0, targetX: 0, z: 0, next: 0, t: 0, weapon: 0, fire: 1, kills: 0,
+      n: start, start, x: 0, targetX: 0, z: 0, next: 0, t: 0, weapon: 0, fire: 1, kills: 0, splash: 0,
       phase: 'run',          // run → fight → run … → final assault → climb → won | lost
       fight: null, acc: 0, lossAcc: 0, dmg: 0, aim: null, steps: 0, climb: 0, coins: 0, bonus: 0, peak: start,
       events: [],            // what just happened, for the page to show (cleared by the page)
@@ -358,9 +361,26 @@ const Shore = (() => {
     return best;
   }
 
-  function killOne(s, x, z, big) {
+  // who: 'run' (a runner), 'foe' (the enemy line) or 'brute', so the page can draw the right body
+  function killOne(s, x, z, big, who = 'run') {
     s.kills++; s.bonus += big ? KILL_COIN * 6 : KILL_COIN;
-    emit(s, { kind: 'kill', x, z, big: !!big });
+    emit(s, { kind: 'kill', x, z, big: !!big, who: big ? 'brute' : who });
+  }
+
+  // Rockets: a kill on a runner group or an enemy squad also blasts a little of what's around it.
+  // `o` was just hit at (x, z); the extra kill comes off it if any are left, else the nearest
+  // runner group within a few metres.
+  function splash(s, o, x, z) {
+    if (s.weapon < ROCKETS) return;
+    s.splash += SPLASH;
+    if (s.splash < 1) return;
+    s.splash -= 1;
+    let t = o.rem > 0 ? o : null;
+    if (!t) for (const u of s.runners) if (u !== o && u.rem > 0 && Math.abs(u.at - z) < 5 && Math.abs(u.x - x) < 0.35) { t = u; break; }
+    emit(s, { kind: 'splash', x, z, k: t ? 1 : 0 });
+    if (!t) return;
+    t.rem--;   // (when t is o, fire() sees it emptied and routs it as usual)
+    killOne(s, t === o ? x : t.x, t.at, false, t.type ? 'foe' : 'run');
   }
 
   // A boom barrel: everything near it goes up.
@@ -371,7 +391,7 @@ const Shore = (() => {
       const o = s.objs[i];
       if (o.z - bz > 30) break;
       if (o.at == null || o.gone || o.rem <= 0 || Math.abs(o.at - bz) > 18) continue;
-      if (o.type === 'enemy') { const m = Math.min(o.rem, 20); for (let j = 0; j < m; j++) { o.rem--; k++; killOne(s, (o.x0 + o.x1) / 2, o.at); } }
+      if (o.type === 'enemy') { const m = Math.min(o.rem, 20); for (let j = 0; j < m; j++) { o.rem--; k++; killOne(s, o.x0 + (o.x1 - o.x0) * (j + 0.5) / m, o.at, false, 'foe'); } }
       if (o.type === 'brute') { o.rem = Math.max(0, o.rem - 30); if (o.rem === 0) { k++; killOne(s, o.x, o.at, true); } }
     }
     emit(s, { kind: 'boom', x: bx, z: bz, kills: k });
@@ -389,9 +409,9 @@ const Shore = (() => {
     s.aim = { x: ax, z: az, kind: o.type || 'runner' };
     while (s.dmg >= cost) {
       s.dmg -= cost;
-      if (o.type === 'gate') { raise(s.x < 0 ? o.left : o.right); emit(s, { kind: 'raise' }); continue; }
+      if (o.type === 'gate') { raise(s.x < 0 ? o.left : o.right); emit(s, { kind: 'raise', side: s.x < 0 ? 'left' : 'right', z: o.z }); continue; }
       o.rem--;
-      if (runner || o.type === 'enemy') killOne(s, ax, az);
+      if (runner || o.type === 'enemy') { killOne(s, ax, az, false, runner ? 'run' : 'foe'); splash(s, o, ax, az); }
       else emit(s, { kind: 'hit', on: o.type, x: ax, z: az });
       if (o.rem <= 0) {
         if (o.type === 'barrel') {
@@ -495,7 +515,7 @@ const Shore = (() => {
       s.acc += f.rate * dt;
       while (s.acc >= 1 && o.rem > 0 && s.n > 0) {
         s.acc -= 1; o.rem--;
-        if (o.type === 'enemy') { hurt(s, 1, 'enemy'); killOne(s, (o.x0 + o.x1) / 2, o.at); }
+        if (o.type === 'enemy') { hurt(s, 1, 'enemy'); killOne(s, Math.max(o.x0, Math.min(o.x1, s.x)), o.at, false, 'foe'); }
         else lose(s, 1, o.boss ? 'boss' : 'bunker');   // each soldier storming it takes 1 HP
         emit(s, { kind: 'melee', on: o.type });
       }
@@ -536,7 +556,7 @@ const Shore = (() => {
         s.n = Math.max(0, apply(side.op, side.n, s.n));
         if (side.op === 'f') s.fire *= 1 + side.n / 100;
         o.hit = s.x < 0 ? 'left' : 'right';
-        emit(s, { kind: 'gate', op: side.op, a: side.n, before, after: s.n });
+        emit(s, { kind: 'gate', op: side.op, a: side.n, before, after: s.n, side: o.hit, z: o.z });
         if (s.n <= 0) { s.n = before; lose(s, before, 'gate'); return; }
       } else if (o.type === 'pickup') {
         if (Math.abs(s.x - o.x) < R + 0.18) { s.n += o.n; o.hit = true; emit(s, { kind: 'pickup', n: o.n }); }
@@ -628,7 +648,7 @@ const Shore = (() => {
     return save;
   }
 
-  return { SPEED, LADDER_STEPS, RANGE, WAKE, FOE_SPEED, RUNNER_SPEED, STORE, UPGRADES, LEVELS, WEAPONS, upgradeCost, freshSave, cleanSave, buy,
+  return { SPEED, LADDER_STEPS, RANGE, WAKE, FOE_SPEED, RUNNER_SPEED, STORE, UPGRADES, LEVELS, WEAPONS, ROCKETS, SPLASH, upgradeCost, freshSave, cleanSave, buy,
     apply, goodOp, opLabel, raise, raisable, worth, dpsOf, makeLevel, levelSpec, isBoss, radius, discShare, create, createFrom, step, targetOf,
     autopilot, simulate, finish, winCoins, runCoins, zOf, rng };
 })();

@@ -77,6 +77,9 @@ simulation so careful play wins every level with no upgrades:
 
 - `node storm-the-shore/test/engine.js` and `node storm-the-shore/test/ui.js` must both pass before pushing changes to it.
 - Bump `VERSION` in `storm-the-shore/sw.js` with every published change.
+- Bundled sprites and sounds live in `storm-the-shore/assets/`: CC0 only, each credited in `assets/CREDITS.md`
+  and the title's Credits sheet, and listed in `sw.js` PRECACHE. The page must still play if any fail to load
+  (`ui.js` blocks them all and checks).
 
 ## Optional: also publish to claude.ai
 
