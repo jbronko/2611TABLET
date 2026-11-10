@@ -473,6 +473,49 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8g. Company scenarios saved and reloaded: a decision waiting and a rival proposal open come back
+  //     as chips that still work; trading while away past a decision's deadline takes its default.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.cash = 2e8;
+      while (S.t < 61 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal) S.proposal = null; }
+      for (const d of S.days.slice(-15)) d.avg = 400;
+      while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
+      S.proposal.big = true; if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.save(); });
+    await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('#sc-resume'); await p.waitForTimeout(400);
+    const chips = await p.textContent('#chips');
+    check('after a reload, the waiting decision and the open proposal are chips again', /Decision: Tunnel Two/.test(chips) && /decides in \d+ days/.test(chips), chips.slice(0, 160));
+    await p.click('[data-choice]'); await p.waitForTimeout(200);
+    await p.click('[data-choose="rescue"]'); await p.waitForTimeout(200);
+    check('…the decision still works', await state(p, () => MeritOrder.state.chosen.tbm === 'rescue' && !MeritOrder.state.choice));
+    await p.click('[data-proposal]'); await p.waitForTimeout(200);
+    const n0 = await state(p, () => MeritOrder.state.plants.length);
+    await p.click('#pr-buy'); await p.waitForTimeout(200);
+    check('…and so does buying the project', await state(p, n => MeritOrder.state.plants.length === n + 1 && !MeritOrder.state.proposal, n0));
+    // away past a decision's deadline: a new game four days before the deadline, then a week away
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0);
+      while (S.t < 66 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
+      if (S.yearReport) S.yearReport.seen = true; M.save(); });
+    check('a decision is waiting before going away', await state(p, () => !!MeritOrder.state.choice && MeritOrder.Sim.choiceView(MeritOrder.state).daysLeft === 4));
+    await p.reload(); await p.waitForTimeout(300);   // reloading saves, so edit the save after it
+    await state(p, () => { const st = JSON.parse(localStorage.getItem('merit-order')); st.scenarioSeen = Date.now() - 7 * 288 * 1250; localStorage.setItem('merit-order', JSON.stringify(st)); });
+    await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('#sc-resume'); await p.waitForTimeout(600);
+    check('away past the deadline: the default was taken, and the away report shows', (await p.textContent('#i-title')) === 'While you were away' && await state(p, () => MeritOrder.state.chosen.tbm === 'wait' && !MeritOrder.state.choice && MeritOrder.state.news.some(n => /No decision in time/.test(n.text))));
+    await p.context().close();
+  }
+
   // 8d. Bank loans: borrow and repay in the menu, borrow-and-build, and buy an offered plant on a loan.
   {
     const p = await page();

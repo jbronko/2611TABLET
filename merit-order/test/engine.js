@@ -391,6 +391,31 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('the first star needs your own firm plant, not just the rivals’', Sim.ownFirm(F) === 2320 && !r0.lines[0].ok && /2\.8 GW/.test(r0.lines[0].text));
 }
 
+// 11c. Company games saved by version 24 (no closure schedule, no decisions) load and play on.
+{
+  const run = (S, days, pick) => { const end = S.t + days * Sim.IPD; while (S.t < end) { Sim.step(S); if (S.offer) Sim.declineOffer(S); if (S.choice && pick) Sim.choose(S, pick); } };
+  const v24 = (id, days, edit) => {   // a game as version 24 would have saved it, through a JSON round trip
+    const S = Sim.createScenario(id); run(S, days);
+    delete S.closeAt; delete S.choice; edit && edit(S);
+    for (const k of ['retail', 'keepPay', 'overruns', 'rivalBuilt', 'rivalShelved']) delete S.today[k];
+    return Sim.migrate(JSON.parse(JSON.stringify(S)));
+  };
+  const L = v24('lakeside', 10);
+  check('a version 24 Lakeside game gets its closure schedule back', L.closeAt && L.closeAt.bh1 === 2 && L.closeAt.bh3 === 4 && L.today.retail === 0);
+  run(L, 52);
+  check('…and closes its coal on schedule', !L.plants.some(p => p.ref === 'bh1') && L.plants.some(p => p.ref === 'bh2'));
+  const W = v24('wellspring', 70, S => { S.keepOpen = { refs: ['bh3', 'bh4'], perDay: 500000 }; });   // past the deal, as v24 made it
+  check('a version 24 Wellspring game past the deal keeps its coal open', Object.keys(W.closeAt).length === 0);
+  run(W, 52);
+  check('…to the end', W.plants.filter(p => p.tech === 'coal').length === 2);
+  for (const key of ['deal', 'close']) {
+    const W2 = v24('wellspring', 10);
+    let ok = true;
+    try { run(W2, 112, key); } catch (e) { ok = false; }
+    check(`a version 24 Wellspring game before the deal can take "${key}"`, ok && W2.chosen.deal === key && (key === 'deal' ? W2.plants.filter(p => p.tech === 'coal').length === 2 : !W2.plants.some(p => p.tech === 'coal')));
+  }
+}
+
 // 11. Energy Transition: a compressed calendar, a timeline that fires once and is announced a year
 //     ahead, underwriting that settles into the ledger, stars on the final year, and nothing leaks
 //     into the career or the other scenarios.

@@ -260,6 +260,13 @@ const Sim = (() => {
       for (const p of vre) p.bid = 'nonneg';
       if (vre.length) addNews(S, 'info', 'Market update: your wind and solar farms now stop when prices go negative. You can change this for each plant.');
     }
+    // company scenarios started on version 24 had no closure schedule: give them the scenario's,
+    // without units already gone or kept open by the government's deal
+    const sc = scenarioOf(S);
+    if (sc && sc.group === 'company' && sc.closes && !S.closeAt) {
+      const kept = (S.keepOpen && S.keepOpen.refs) || [];
+      S.closeAt = Object.fromEntries(Object.entries(sc.closes).filter(([ref]) => !kept.includes(ref) && S.plants.some(p => p.ref === ref)));
+    }
     S.v = 3;
     return S;
   }
@@ -1422,7 +1429,7 @@ const Sim = (() => {
         deal: { title: 'The government’s deal', deflt: 'deal',
           text: () => 'Keep Black Hill 3 and 4 open to the end of year 4 and be paid for every day a unit is available, or close them at the start of year 3 as planned and take a clean-energy grant instead.',
           options: [
-            { key: 'deal', label: 'Keep the coal open', detail: '$500k a day for each unit that’s running (not broken down). Black Hill 3 and 4 run to the end of year 4.', apply: S => { delete S.closeAt.bh3; delete S.closeAt.bh4; S.keepOpen = { refs: ['bh3', 'bh4'], perDay: 500000 }; } },
+            { key: 'deal', label: 'Keep the coal open', detail: '$500k a day for each unit that’s running (not broken down). Black Hill 3 and 4 run to the end of year 4.', apply: S => { S.closeAt ||= {}; delete S.closeAt.bh3; delete S.closeAt.bh4; S.keepOpen = { refs: ['bh3', 'bh4'], perDay: 500000 }; } },
             { key: 'close', label: 'Close on schedule, take the grant', detail: 'The coal closes at the start of year 3. New wind, solar, batteries and pumped hydro cost 30% less to the end.', apply: S => { for (const t of ['wind', 'solar', 'battery', 'hydro', 'ldes']) S.costMult[t] *= 0.7; S.grant = true; } },
           ] },
       },
@@ -1451,9 +1458,9 @@ const Sim = (() => {
         price: { title: 'Your customers renew in 10 days', deflt: 'usual',
           text: S => `Set next year’s price. This year’s market has averaged ${fmtPrice(yearAvg(S))}/MWh so far, and you supply ${fmtMW(S.retailMW || 800)}. Customers pay the market average plus your rise and a ${fmtPrice(RETAIL_MARGIN)} retail margin. A cheaper price wins customers; a dearer one loses them.`,
           options: [
-            { key: 'low', label: 'Hold the price', detail: S => `${fmtPrice(retailStrike(yearAvg(S), 'low'))}/MWh: customers join, about ${fmtMW(retailSize(S, 'low'))}.`, apply: S => { S.retailPlan = 'low'; } },
-            { key: 'usual', label: 'The usual rise (+5%)', detail: S => `${fmtPrice(retailStrike(yearAvg(S), 'usual'))}/MWh: you keep about ${fmtMW(retailSize(S, 'usual'))}.`, apply: S => { S.retailPlan = 'usual'; } },
-            { key: 'high', label: 'Raise it (+15%)', detail: S => `${fmtPrice(retailStrike(yearAvg(S), 'high'))}/MWh: some leave, about ${fmtMW(retailSize(S, 'high'))} stay.`, apply: S => { S.retailPlan = 'high'; } },
+            { key: 'low', label: 'Hold the price', detail: S => `About ${fmtPrice(retailStrike(yearAvg(S), 'low'))}/MWh: customers join, about ${fmtMW(retailSize(S, 'low'))}.`, apply: S => { S.retailPlan = 'low'; } },
+            { key: 'usual', label: 'The usual rise (+5%)', detail: S => `About ${fmtPrice(retailStrike(yearAvg(S), 'usual'))}/MWh: you keep about ${fmtMW(retailSize(S, 'usual'))}.`, apply: S => { S.retailPlan = 'usual'; } },
+            { key: 'high', label: 'Raise it (+15%)', detail: S => `About ${fmtPrice(retailStrike(yearAvg(S), 'high'))}/MWh: some leave, about ${fmtMW(retailSize(S, 'high'))} stay.`, apply: S => { S.retailPlan = 'high'; } },
           ] },
       },
       report: (S, Y) => [['Your customers', `${fmtMoney(Y.retail || 0)} against the market`, (Y.retail || 0) >= 0 ? 'up' : 'down'], ['Supplying next year', `${fmtMW(S.retailMW || 800)} at ${fmtPrice((S.contracts.find(k => k.retail) || {}).strike || 0)}/MWh`, '']],
@@ -1539,7 +1546,7 @@ const Sim = (() => {
     const sc = scenarioOf(S);
     if (!sc || sc.group !== 'company') return [];
     const rows = [];
-    if (Y.energy > 0) { const i = Y.emis / Y.energy; rows.push(['Emissions', `${i.toFixed(2)} t/MWh (target ${(Y.emisTarget ?? 0).toFixed(2)})`, i > (Y.emisTarget ?? 1) ? 'down' : 'up']); }
+    if (Y.energy > 0 && Y.emis != null) { const i = Y.emis / Y.energy; rows.push(['Emissions', `${i.toFixed(2)} t/MWh (target ${(Y.emisTarget ?? 0).toFixed(2)})`, i > (Y.emisTarget ?? 1) ? 'down' : 'up']); }
     if (Y.rivalBuilt || Y.rivalShelved) rows.push(['Rival projects', `${Y.rivalBuilt || 0} went ahead, ${Y.rivalShelved || 0} shelved`, '']);
     return rows.concat(sc.report ? sc.report(S, Y) : []);
   }
