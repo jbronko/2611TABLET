@@ -95,7 +95,8 @@
   .levels button { width: 56px; padding: 0; font-size: 22px; font-weight: 800; }
   .levels .which { flex: 1; text-align: center; font-weight: 700; }
 
-  .ups { display: grid; gap: 10px; }
+  .ups { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  #upgrades .card { width: min(720px, 100%); }
   .up { border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 8px; }
   .up .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
   .up b { font-size: 18px; }
@@ -114,6 +115,7 @@
 <div class="hud" id="hud" hidden>
   <div class="chip" id="hud-level">Level 1</div>
   <div class="right">
+    <div class="chip" id="hud-weapon">Rifle</div>
     <div class="chip"><span id="hud-coins">0</span> coins</div>
     <button type="button" id="pause" aria-label="Pause">II</button>
   </div>
@@ -123,7 +125,7 @@
 <div class="layer clear" id="title">
   <div class="card">
     <h1>Storm the Shore</h1>
-    <p>Drag left and right to steer your squad up the beach. Take the gates that grow it, dodge the wire and mines, and bring enough soldiers to take the bunker.</p>
+    <p>Drag left and right to steer your squad up the beach. Your soldiers fire on their own: shoot down the squads charging at you, shoot barrels open for new weapons, and take the gates that grow your squad. Bring enough soldiers to take the bunker. No ads, no timers, nothing to buy.</p>
     <div class="stat"><span>Coins</span><span class="coins" id="t-coins">0</span></div>
     <div class="levels">
       <button type="button" id="t-prev" aria-label="Previous level">‹</button>
@@ -405,10 +407,12 @@
     let spots = G.foes.get(o);
     if (!spots) {
       spots = [];
-      const shown = Math.min(o.n, 160), perRow = Math.max(6, Math.min(16, Math.ceil(Math.sqrt(shown * 3))));
+      const shown = Math.min(o.n, 160), wide = (o.x1 - o.x0) / 2;
+      const perRow = Math.max(3, Math.min(Math.round(16 * wide), Math.ceil(Math.sqrt(shown * 3 * wide))));
       for (let i = 0; i < shown; i++) {
         const row = Math.floor(i / perRow), col = i % perRow;
-        spots.push({ x: -0.88 + 1.76 * ((col + 0.5 + (row % 2) * 0.35) / perRow) + (rnd(i, 4) - 0.5) * 0.05, z: row * 1.3 + rnd(i, 2) * 0.4, p: rnd(i, 8) * 6 });
+        const w = (o.x1 - o.x0) - 0.24;
+        spots.push({ x: o.x0 + 0.12 + w * ((col + 0.5 + (row % 2) * 0.35) / perRow) + (rnd(i, 4) - 0.5) * 0.05, z: row * 1.3 + rnd(i, 2) * 0.4, p: rnd(i, 8) * 6 });
       }
       G.foes.set(o, spots);
     }
@@ -417,10 +421,51 @@
   function drawEnemy(o) {
     const spots = foeSpots(o), shown = Math.ceil(spots.length * o.rem / o.n);
     for (let i = shown - 1; i >= 0; i--) {   // far rows first
-      const t = spots[i], p = P(t.x, 0, o.z + t.z); if (!p) continue;
-      soldier(p.x, p.y, p.s, 'foe', t.p + (G.run.phase === 'fight' && G.run.fight && G.run.fight.obj === o ? performance.now() / 60 : 0), -1, fog(p.dz));
+      const t = spots[i], p = P(t.x, 0, o.at + t.z); if (!p) continue;
+      const moving = o.awake || (G.run.phase === 'fight' && G.run.fight && G.run.fight.obj === o);
+      soldier(p.x, p.y, p.s, 'foe', t.p + (moving ? performance.now() / 70 : 0), -1, fog(p.dz));
     }
-    if (o.rem > 0) { const b = P(0, 3.4, o.z); if (b) badge(b.x, b.y, String(o.rem), '#a8322a', Math.max(12, Math.min(40, b.s * 0.9))); }
+    if (o.rem > 0) { const b = P((o.x0 + o.x1) / 2, 3.4, o.at); if (b) badge(b.x, b.y, String(o.rem), '#a8322a', Math.max(12, Math.min(40, b.s * 0.9))); }
+  }
+
+  // A stack of red drums on one half of the lane: its number is what's left to shoot, the reward floats above.
+  function drawBarrel(o) {
+    if (o.rem <= 0) return;
+    const mid = (o.x0 + o.x1) / 2, w = (o.x1 - o.x0) * 0.42;
+    for (const [dx, dz] of [[-w * 0.55, 1.2], [w * 0.55, 1.2], [0, 0]]) {
+      const a = P(mid + dx - w * 0.48, 2.3, o.z + dz), b = P(mid + dx + w * 0.48, 0, o.z + dz); if (!a || !b) continue;
+      ctx.globalAlpha = fog(a.dz);
+      const bw = b.x - a.x, bh = b.y - a.y;
+      const g = ctx.createLinearGradient(a.x, 0, b.x, 0);
+      g.addColorStop(0, '#8e1f17'); g.addColorStop(0.35, '#e0453a'); g.addColorStop(1, '#7a1a13');
+      ctx.fillStyle = g; roundRect(a.x, a.y, bw, bh, bw * 0.12); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(a.x, a.y + bh * 0.28, bw, bh * 0.05); ctx.fillRect(a.x, a.y + bh * 0.68, bw, bh * 0.05);
+      ctx.fillStyle = '#f06b5f'; ctx.beginPath(); ctx.ellipse(a.x + bw / 2, a.y, bw / 2, bw * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+      if (dz === 0) {
+        const size = Math.max(10, Math.min(90, bh * 0.45));
+        ctx.font = `900 ${size}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineWidth = size * 0.12; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.strokeText(String(o.rem), a.x + bw / 2, a.y + bh * 0.5);
+        ctx.fillStyle = '#fff'; ctx.fillText(String(o.rem), a.x + bw / 2, a.y + bh * 0.5);
+      }
+    }
+    // the reward, bobbing above
+    const r = P(mid, 3.6 + Math.sin(performance.now() / 300) * 0.15, o.z + 0.5);
+    if (r) {
+      ctx.globalAlpha = fog(r.dz);
+      const k = Math.max(10, Math.min(70, r.s * 1.1));
+      if (o.reward.kind === 'gun') drawGun(r.x, r.y, k);
+      else badge(r.x, r.y, o.reward.kind === 'men' ? `+${o.reward.n}` : `${o.reward.n} coins`, o.reward.kind === 'men' ? '#2f7d4f' : '#a8760c', Math.max(11, k * 0.55));
+    }
+    ctx.globalAlpha = 1;
+  }
+  // A plain green gun shape for weapon rewards.
+  function drawGun(x, y, k) {
+    ctx.save(); ctx.translate(x, y); ctx.fillStyle = '#6fd36a'; ctx.strokeStyle = '#2e6b2b'; ctx.lineWidth = Math.max(1.5, k * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(-k, -k * 0.18); ctx.lineTo(k * 0.75, -k * 0.18); ctx.lineTo(k * 0.75, -k * 0.05); ctx.lineTo(k, -k * 0.05); ctx.lineTo(k, k * 0.08);
+    ctx.lineTo(k * 0.1, k * 0.08); ctx.lineTo(k * 0.05, k * 0.5); ctx.lineTo(-k * 0.2, k * 0.5); ctx.lineTo(-k * 0.2, k * 0.12);
+    ctx.lineTo(-k * 0.55, k * 0.12); ctx.lineTo(-k * 0.75, k * 0.4); ctx.lineTo(-k, k * 0.4); ctx.closePath();
+    ctx.fill(); ctx.stroke(); ctx.restore();
   }
 
   function drawPickup(o) {
@@ -555,6 +600,39 @@
     return list;
   }
 
+  // Gunfire: streaks from the front of the squad to whatever it's shooting at.
+  function drawTracers() {
+    const s = G.run, a = s.aim; if (!a) return;
+    const R = S.radius(s.n), now = performance.now();
+    const shots = Math.min(10, 2 + Math.round(Math.sqrt(s.n) * 0.8));
+    ctx.lineCap = 'round';
+    for (let i = 0; i < shots; i++) {
+      const seed = Math.floor(now / 70) * 31 + i;
+      const fx0 = G.view.x + (rnd(seed, 1) - 0.5) * R * 1.6, fz0 = G.view.z + R * 2 + rnd(seed, 2) * 1.5;
+      const k = ((now / 70) % 1 + rnd(seed, 3)) % 1;          // how far along this shot is
+      const tz = a.z, tx = a.x + (rnd(seed, 4) - 0.5) * 0.25;
+      const len = 0.22 + s.weapon * 0.03;
+      const z0 = fz0 + (tz - fz0) * k, z1 = fz0 + (tz - fz0) * Math.min(1, k + len);
+      const p = P(fx0 + (tx - fx0) * k, 1.1, z0), q = P(fx0 + (tx - fx0) * Math.min(1, k + len), 1.2, z1);
+      if (!p || !q) continue;
+      ctx.strokeStyle = s.weapon >= 4 ? 'rgba(255,140,50,0.95)' : 'rgba(255,230,120,0.95)';
+      ctx.lineWidth = Math.max(2.5, p.s * (0.1 + s.weapon * 0.03));
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+      // muzzle flash at the front of the squad
+      if (k < 0.2) {
+        const m = P(fx0, 1.15, fz0);
+        if (m) { ctx.fillStyle = 'rgba(255,220,110,0.9)'; ctx.beginPath(); ctx.arc(m.x, m.y, Math.max(3, m.s * 0.18), 0, Math.PI * 2); ctx.fill(); }
+      }
+    }
+    // sparks where the shots land
+    const hit = P(a.x, 1.2, a.z);
+    if (hit && Math.random() < 0.6) {
+      ctx.fillStyle = '#ffd36a'; ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.arc(hit.x + (Math.random() - 0.5) * hit.s, hit.y + (Math.random() - 0.5) * hit.s * 0.6, Math.max(2, hit.s * 0.22), 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
   function drawFx(dt) {
     for (const f of G.puffs) {
       f.t += dt; const p = P(f.x, 0.6 + f.t, f.z); if (!p) continue;
@@ -586,11 +664,13 @@
     drawSky(); drawGround(); drawLadder();
     const s = G.run, items = sceneryItems(), cz = camZ();
     if (s) for (const o of s.objs) {
-      if (o.z + (o.len || 0) < cz + 0.6 && o.type !== 'bunker' || o.z > cz + FAR + 10) continue;
-      const fn = { gate: drawGate, enemy: drawEnemy, pickup: drawPickup, wire: drawWire, mines: drawMines, wall: drawWall, bunker: drawBunker }[o.type];
+      const z = o.type === 'enemy' ? o.at : o.z;
+      if (z + (o.len || 0) + (o.type === 'enemy' ? 12 : 0) < cz + 0.6 && o.type !== 'bunker' || z > cz + FAR + 10) continue;
+      const fn = { gate: drawGate, enemy: drawEnemy, pickup: drawPickup, wire: drawWire, mines: drawMines, wall: drawWall, bunker: drawBunker, barrel: drawBarrel }[o.type];
       if (o.type === 'enemy' && o.rem <= 0) continue;
-      items.push({ z: o.z + (o.type === 'bunker' ? 3 : o.type === 'wall' ? o.len : o.type === 'enemy' ? 8 : 0), draw: () => fn(o) });
+      items.push({ z: z + (o.type === 'bunker' ? 3 : o.type === 'wall' ? o.len : o.type === 'enemy' ? 8 : o.type === 'barrel' ? 1.2 : 0), draw: () => fn(o) });
     }
+    if (s && G.mode === 'play' && s.aim) items.push({ z: G.view.z + 0.2, draw: drawTracers });
     items.push(...drawTroops());
     items.sort((a, b) => b.z - a.z);
     for (const it of items) it.draw();
@@ -610,6 +690,7 @@
     syncTroops(1);
     G.overAt = 0;
     $('hud-level').textContent = `Level ${num} · ${G.run.lvl.title}`;
+    $('hud-weapon').textContent = S.WEAPONS[G.run.weapon];
     show('play');
   }
 
@@ -641,6 +722,20 @@
       } else if (e.kind === 'clash' || e.kind === 'assault') { shake(0.3); buzz(20); }
       else if (e.kind === 'hit') {
         if (Math.random() < 0.5) G.flashes.push({ x: G.view.x + (Math.random() - 0.5) * 1.2, z: G.view.z + 1 + Math.random() * 3, t: 0 });
+      } else if (e.kind === 'kill') {
+        if (G.puffs.length < 40) G.puffs.push({ x: e.x + (Math.random() - 0.5) * 0.4, z: e.z + Math.random(), t: 0, life: 0.45 });
+      } else if (e.kind === 'broke') {
+        for (let i = 0; i < 6; i++) G.puffs.push({ x: e.x + (Math.random() - 0.5) * 0.6, z: e.z + Math.random(), t: 0, life: 0.6 });
+        shake(0.2);
+      } else if (e.kind === 'weapon') {
+        G.floats.push({ x: G.view.x, z: G.view.z + 1, t: 0, text: e.name + '!', color: '#9ff09a' });
+        $('hud-weapon').textContent = e.name; buzz(25);
+      } else if (e.kind === 'coins') {
+        G.floats.push({ x: G.view.x, z: G.view.z + 1, t: 0, text: `+${e.n} coins`, color: '#ffe58a' });
+      } else if (e.kind === 'crash') {
+        G.floats.push({ x: G.view.x, z: G.view.z + 1, t: 0, text: 'Ouch!', color: '#ffb3a6' }); shake(0.5); buzz(40);
+      } else if (e.kind === 'charge') {
+        G.floats.push({ x: G.view.x, z: G.view.z + 6, t: 0, text: 'Incoming!', color: '#ffb3a6' });
       } else if (e.kind === 'step') {
         G.floats.push({ x: G.view.x, z: G.view.z + 2, t: 0, text: '×' + (1 + 0.5 * e.step), color: '#ffe58a' });
       } else if (e.kind === 'won' || e.kind === 'lost') { G.overAt = performance.now() + (e.kind === 'won' ? 900 : 1100); }
@@ -655,7 +750,7 @@
     const s = G.run, won = s.phase === 'won';
     S.finish(G.save, s); save();
     $('r-title').textContent = won ? 'Bunker taken!' : 'Squad lost';
-    const why = { gate: 'A bad gate took the last of them.', wire: 'The wire caught the last of them.', mines: 'The minefield took the last of them.',
+    const why = { barrel: 'The barrels were still standing when the squad ran into them.', gate: 'A bad gate took the last of them.', wire: 'The wire caught the last of them.', mines: 'The minefield took the last of them.',
       enemy: 'The enemy line held.', bunker: 'The bunker held out.' };
     const lastLoss = s.lastWhy || 'enemy';
     $('r-text').textContent = won

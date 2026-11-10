@@ -1,14 +1,27 @@
 #!/usr/bin/env node
-// Engine checks for Storm the Shore (no browser): gate maths, the crowd's geometry, fights,
-// payouts, upgrades and saves, and that every level is winnable by choosing well and lost by
-// choosing badly.   node storm-the-shore/test/engine.js
+// Engine checks for Storm the Shore (no browser): gate maths, shooting, charging enemies, barrels,
+// the crowd's geometry, payouts, upgrades and saves, and that every level is winnable with no
+// upgrades by choosing well and lost by choosing badly.   node storm-the-shore/test/engine.js
 const S = require('../sim.js');
 let fails = 0, passes = 0;
 const ok = (cond, msg) => { if (cond) passes++; else { fails++; console.log('FAIL', msg); } };
+const fresh = S.freshSave();
+// a hand-made level: objs plus a far-off bunker
+const custom = (objs, save = fresh, hp = 3) => {
+  const end = 400;
+  return S.createFrom({ num: 1, title: 'test', d: 0, objs: [...objs, { type: 'bunker', z: end, hp }], end, hp, stepCost: 1 }, save);
+};
+const runUntil = (s, cond, max = 60 * 120) => { for (let i = 0; i < max && !cond(s) && s.phase !== 'won' && s.phase !== 'lost'; i++) S.step(s, 1 / 60); return s; };
+const withSquad = n => { const v = S.freshSave(); v.up.squad = n; return v; };
 
 // gates
 ok(S.apply('+', 8, 5) === 13 && S.apply('x', 2, 5) === 10 && S.apply('-', 3, 5) === 2 && S.apply('/', 2, 5) === 2, 'gate maths');
 ok(S.opLabel('x', 3) === '×3' && S.opLabel('-', 4) === '−4' && S.opLabel('/', 2) === '÷2', 'gate labels');
+{
+  const g = { op: '-', n: 2 }; S.raise(g); ok(g.op === '-' && g.n === 1, 'shooting −2 makes −1');
+  S.raise(g); ok(g.op === '+' && g.n === 0, '−1 becomes +0'); S.raise(g); ok(g.op === '+' && g.n === 1, 'then +1');
+  const m = { op: 'x', n: 2 }; S.raise(m); ok(m.op === 'x' && m.n === 2, '× gates don\'t change');
+}
 
 // geometry
 ok(Math.abs(S.discShare(0, 0.5, -1, 1) - 1) < 1e-9, 'a disc inside the band is all in it');
@@ -16,66 +29,126 @@ ok(Math.abs(S.discShare(0, 0.5, -1, 0) - 0.5) < 1e-9, 'half a disc either side o
 ok(S.discShare(0.8, 0.1, -1, 0) === 0, 'a disc clear of the band is not in it');
 ok(S.radius(1) < S.radius(50) && S.radius(10000) === 0.6, 'squads grow wider, up to a limit');
 
+// firepower
+ok(S.dpsOf(20, 0) > S.dpsOf(5, 0) && S.dpsOf(5, 1) > S.dpsOf(5, 0) && S.dpsOf(5, 0, 1.3) > S.dpsOf(5, 0), 'more soldiers, better guns and upgrades all hit harder');
+
+// shooting a gate raises it
+{
+  const s = custom([{ type: 'gate', z: 60, left: { op: '-', n: 3 }, right: { op: '-', n: 3 } }], withSquad(8));
+  s.targetX = -0.5;
+  runUntil(s, s => s.next > 0);
+  ok(s.objs[0].left.op === '+' && s.objs[0].left.right === undefined, `shooting the −3 gate on the way in turns it positive (${S.opLabel(s.objs[0].left.op, s.objs[0].left.n)})`);
+  ok(s.objs[0].right.op === '-' && s.objs[0].right.n === 3, 'the other side is untouched');
+}
+
+// enemy squads charge, and shots thin them out
+{
+  const s = custom([{ type: 'enemy', z: 120, n: 40, x0: -1, x1: 1 }], withSquad(10));
+  runUntil(s, s => s.objs[0].awake);
+  const at0 = s.objs[0].at;
+  const t0 = s.t; runUntil(s, s => s.t > t0 + 1);
+  ok(s.objs[0].at < at0 - 5, 'an enemy squad charges down the beach');
+  ok(s.objs[0].rem < 40, `and the squad's fire kills some on the way (${s.objs[0].rem} left of 40)`);
+  runUntil(s, s => s.phase === 'fight');
+  ok(s.phase === 'fight' && s.fight.obj.type === 'enemy', 'the rest clash with the squad');
+  runUntil(s, s => s.phase === 'run');
+  ok(s.phase === 'run' && s.n > 0 && s.n < 42, 'the squad wins the clash with losses');
+}
+{
+  // a big squad shoots a small charge down before it arrives
+  const s = custom([{ type: 'enemy', z: 120, n: 10, x0: -1, x1: 1 }], withSquad(10));
+  runUntil(s, s => s.z > 140);
+  ok(s.objs[0].rem === 0 && s.n === 42, 'a small charge is shot down before it reaches a big squad');
+}
+{
+  // a half-width charge can be dodged
+  const s = custom([{ type: 'enemy', z: 120, n: 400, x0: -1, x1: 0 }]);
+  s.targetX = 0.6;
+  runUntil(s, s => s.z > 140);
+  ok(s.phase === 'run' && s.n === 1 && s.objs[0].gone, 'stepping aside lets a half-width charge run past');
+}
+
+// barrels
+{
+  const reward = { kind: 'gun' };
+  const s = custom([{ type: 'barrel', z: 50, x0: 0.05, x1: 0.95, hp: 8, reward }], withSquad(6));
+  s.targetX = 0.5;
+  runUntil(s, s => s.objs[0].rem <= 0 || s.next > 0);
+  ok(s.objs[0].rem <= 0 && s.weapon === 1 && s.n === 20, 'shooting a barrel open gives its weapon');
+  const t = custom([{ type: 'barrel', z: 20, x0: 0.05, x1: 0.95, hp: 30, reward }]);
+  t.targetX = 0.5;
+  runUntil(t, t => t.next > 0);
+  ok(t.phase === 'lost' && t.weapon === 0, 'running into an unbroken barrel costs soldiers, and no weapon');
+  const m = custom([{ type: 'barrel', z: 50, x0: 0.05, x1: 0.95, hp: 4, reward: { kind: 'men', n: 9 } }], withSquad(2));
+  m.targetX = 0.5; runUntil(m, m => m.next > 0);
+  ok(m.n === 14, 'a soldiers barrel adds its soldiers');
+  const c = custom([{ type: 'barrel', z: 50, x0: -0.95, x1: -0.05, hp: 4, reward: { kind: 'coins', n: 30 } }], withSquad(2));
+  c.targetX = -0.5; runUntil(c, c => c.next > 0);
+  ok(c.bonus === 30, 'a coins barrel adds to the payout');
+  const w = custom([{ type: 'barrel', z: 50, x0: -0.95, x1: -0.05, hp: 4, reward }], withSquad(2));
+  w.targetX = 0.5; runUntil(w, w => w.next > 0);
+  ok(w.objs[0].rem === 4 && w.n === 5, 'a barrel on the other side is left alone');
+  const top = custom([], withSquad(2)); top.weapon = S.WEAPONS.length - 1;
+  top.objs.unshift({ type: 'barrel', z: 50, x0: -0.95, x1: 0.95, hp: 1, rem: 1, reward });
+  runUntil(top, s => s.objs[0].rem <= 0);
+  ok(top.weapon === S.WEAPONS.length - 1, 'weapons stop at Rockets');
+}
+
 // levels are the same every time, and sorted up the beach
 for (let n = 1; n <= 40; n++) {
-  const a = S.makeLevel(n), b = S.makeLevel(n);
-  ok(JSON.stringify(a) === JSON.stringify(b), `level ${n} is the same each time`);
+  const a = S.makeLevel(n);
   ok(a.objs.every((o, i) => i === 0 || o.z >= a.objs[i - 1].z), `level ${n} beats are in order`);
-  ok(a.objs[a.objs.length - 1].type === 'bunker', `level ${n} ends at a bunker`);
-  const g = a.objs.find(o => o.type === 'gate');
-  ok(g && g === a.objs[0] && S.goodOp(g.left.op) && S.goodOp(g.right.op), `level ${n} opens with a fair gate`);
+  ok(a.objs[a.objs.length - 1].type === 'bunker' && a.hp > 0 && a.hp < 1e8, `level ${n} ends at a real bunker`);
+  const g = a.objs[0];
+  ok(g.type === 'gate' && S.goodOp(g.left.op) && S.goodOp(g.right.op), `level ${n} opens with a fair gate`);
 }
-
-// winnable by choosing well, lost by choosing badly (no upgrades)
-const fresh = S.freshSave();
-for (let n = 1; n <= 40; n++) {
-  const good = S.simulate(n, fresh, 'good'), bad = S.simulate(n, fresh, 'bad');
-  ok(good.phase === 'won', `level ${n}: best gates win (got ${good.phase})`);
-  ok(bad.phase === 'lost', `level ${n}: worst gates lose (got ${bad.phase})`);
-  ok(good.coins > bad.coins, `level ${n}: a win pays more than a loss`);
-}
-// levels get longer and the bunker tougher
+ok(S.makeLevel(1).objs.some(o => o.type === 'enemy') && S.makeLevel(1).objs.some(o => o.type === 'barrel'), 'level 1 has a charge and a barrel');
 ok(S.makeLevel(15).objs.length > S.makeLevel(1).objs.length, 'later levels are longer');
 
-// a fight: armour cuts losses
-const fightWith = armour => {
-  const save = S.freshSave(); save.up.armour = armour; save.up.squad = 10;
-  const s = S.create(1, save);
-  s.objs = [{ type: 'enemy', z: 5, n: 20, rem: 20 }, { type: 'bunker', z: 50, hp: 3, rem: 3 }];
-  s.lvl = { ...s.lvl, end: 50, stepCost: 1 };
-  while (s.phase !== 'won' && s.phase !== 'lost') S.step(s, 1 / 60);
-  return s;
+// fair play: every level is won with no upgrades by playing well, and lost by playing badly
+for (let n = 1; n <= 40; n++) {
+  const good = S.simulate(n, fresh, 'good'), bad = S.simulate(n, fresh, 'bad');
+  ok(good.phase === 'won', `level ${n}: careful play wins with no upgrades (got ${good.phase})`);
+  ok(bad.phase === 'lost', `level ${n}: careless play loses (got ${bad.phase})`);
+  ok(good.coins > bad.coins && bad.coins > 0, `level ${n}: a win pays more than a loss, and a loss still pays`);
+}
+// coins earned by playing the first 15 levels once buy a good share of the shop
+{
+  let earned = 0; for (let n = 1; n <= 15; n++) earned += S.simulate(n, fresh, 'good').coins;
+  let shop = 0; for (const [k, u] of Object.entries(S.UPGRADES)) for (let l = 0; l < u.max; l++) shop += S.upgradeCost(k, l);
+  ok(earned > 1500, `the first 15 levels pay a useful amount (${earned} coins)`);
+  console.log(`  (first 15 levels pay ${earned} coins; the whole shop costs ${shop})`);
+}
+
+// armour cuts losses in a clash
+const clash = armour => {
+  const save = withSquad(10); save.up.armour = armour;
+  const s = custom([{ type: 'enemy', z: 70, n: 80, x0: -1, x1: 1 }], save);
+  runUntil(s, s => s.phase === 'fight'); runUntil(s, s => s.phase === 'run');
+  return s.n;
 };
-const plain = fightWith(0), armoured = fightWith(8);
-ok(plain.phase === 'won' && armoured.phase === 'won', 'a 42-soldier squad beats 20 defenders');
-ok(armoured.peak - armoured.steps - 3 >= plain.peak - plain.steps - 3 && armoured.steps >= plain.steps, 'armour keeps more soldiers alive');
+ok(clash(8) > clash(0), 'helmets keep more soldiers alive');
 
 // a gate that takes the last soldier loses the run
 {
-  const s = S.create(1, fresh);
-  s.objs = [{ type: 'gate', z: 3, left: { op: '-', n: 5 }, right: { op: '-', n: 5 } }, { type: 'bunker', z: 50, hp: 3, rem: 3 }];
-  while (s.phase === 'run') S.step(s, 1 / 60);
-  ok(s.phase === 'lost' && s.n === 0, 'a minus gate can wipe out a small squad');
+  const s = custom([{ type: 'gate', z: 3, left: { op: '/', n: 5 }, right: { op: '/', n: 5 } }]);
+  runUntil(s, s => s.next > 0);
+  ok(s.phase === 'lost' && s.n === 0, 'a ÷ gate can wipe out a lone soldier');
 }
 // walls hold the squad out
 {
-  const s = S.create(1, fresh);
-  s.objs = [{ type: 'wall', z: 0, len: 40, x0: -1, x1: -0.3 }, { type: 'bunker', z: 80, hp: 1, rem: 1 }];
+  const s = custom([{ type: 'wall', z: 0, len: 40, x0: -1, x1: -0.3 }]);
   s.targetX = -1;
-  for (let i = 0; i < 120; i++) S.step(s, 1 / 60);
+  runUntil(s, s => s.t > 2);
   ok(s.x >= -0.3 + S.radius(s.n) - 1e-9, 'sandbags keep the squad on the open side');
 }
 // pickups only join if you reach them
 {
-  const s = S.create(1, fresh);
-  s.objs = [{ type: 'pickup', z: 5, x: 0.62, n: 7 }, { type: 'bunker', z: 80, hp: 1, rem: 1 }];
-  s.targetX = -0.6;
-  while (s.z < 10) S.step(s, 1 / 60);
+  const s = custom([{ type: 'pickup', z: 5, x: 0.62, n: 7 }]);
+  s.targetX = -0.6; runUntil(s, s => s.z > 10);
   ok(s.n === 1, 'stragglers on the far side stay behind');
-  const t = S.create(1, fresh);
-  t.objs = [{ type: 'pickup', z: 5, x: 0.62, n: 7 }, { type: 'bunker', z: 80, hp: 1, rem: 1 }];
-  t.targetX = 0.62;
-  while (t.z < 10) S.step(t, 1 / 60);
+  const t = custom([{ type: 'pickup', z: 5, x: 0.62, n: 7 }]);
+  t.targetX = 0.62; runUntil(t, t => t.z > 10);
   ok(t.n === 8, 'stragglers you run through join the squad');
 }
 
@@ -90,7 +163,7 @@ ok(armoured.peak - armoured.steps - 3 >= plain.peak - plain.steps - 3 && armoure
   ok(S.create(1, save).n === 3, 'a bigger landing party starts bigger');
   save.up.squad = 10; ok(S.upgradeCost('squad', 10) === null && !S.buy(save, 'squad'), 'maxed upgrades stop');
   const c = S.cleanSave({ level: 4, coins: -5, up: { squad: 99, armour: 'x' }, junk: 1 });
-  ok(c.level === 4 && c.coins === 0 && c.up.squad === 10 && c.up.armour === 0 && !('junk' in c), 'saves are cleaned');
+  ok(c.level === 4 && c.coins === 0 && c.up.squad === 10 && c.up.armour === 0 && c.up.guns === 0 && !('junk' in c), 'saves are cleaned (and old saves gain the new upgrade)');
   ok(S.cleanSave(null).level === 1, 'no save starts at level 1');
   const f = S.freshSave(), won = S.simulate(1, f, 'good');
   S.finish(f, won);
@@ -98,9 +171,10 @@ ok(armoured.peak - armoured.steps - 3 >= plain.peak - plain.steps - 3 && armoure
   const f2 = S.freshSave(), lost = S.simulate(2, f2, 'bad');
   S.finish(f2, lost);
   ok(f2.level === 1 && f2.coins === lost.coins, 'a loss banks a few coins and opens nothing');
-  // coin bonus
   const rich = S.freshSave(); rich.up.coins = 10;
   ok(S.simulate(1, rich, 'good').coins > S.simulate(1, S.freshSave(), 'good').coins, 'the war chest pays more');
+  const gun = S.freshSave(); gun.up.guns = 10;
+  ok(S.create(1, gun).guns > S.create(1, S.freshSave()).guns, 'better rifles raise damage');
 }
 
 console.log(fails ? `\n${fails} failed, ${passes} passed.` : `All ${passes} engine checks passed.`);

@@ -69,6 +69,15 @@ targets, lessons) and its own checks in `merit-order/test/` (not precached, not 
   always update together, and set the same number in the title screen's `#t-version` line in
   `merit-order/index.html` (`ui.js` checks they match).
 
+## Storm the Shore tests
+
+Storm the Shore (`storm-the-shore/`) is a fair-play crowd runner: coins are earned only by playing, and there are
+no ads, timers, energy or random draws. Keep it that way. Its engine is `storm-the-shore/sim.js`, and levels are calibrated by
+simulation so careful play wins every level with no upgrades:
+
+- `node storm-the-shore/test/engine.js` and `node storm-the-shore/test/ui.js` must both pass before pushing changes to it.
+- Bump `VERSION` in `storm-the-shore/sw.js` with every published change.
+
 ## Optional: also publish to claude.ai
 
 A private claude.ai artifact is handy for a quick link, but it can't be installed. Build the artifact

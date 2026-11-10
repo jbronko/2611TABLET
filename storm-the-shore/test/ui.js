@@ -81,10 +81,19 @@ const ok = (cond, msg) => { if (cond) passes++; else { fails++; console.log('FAI
 
     // play level 1 in real time, steering toward the better gates, until the result sheet shows by itself
     await page.evaluate(() => { window.__pilot = setInterval(() => { const s = StormShore.G.run; if (s && StormShore.G.mode === 'play') s.targetX = StormShore.S.autopilot(s, 'good'); }, 30); });
+    // watch the fighting: enemies shot before they reach us, and a weapon from a barrel
+    await page.evaluate(() => { window.__seen = { shotAtRange: false, aimed: false };
+      window.__watch = setInterval(() => { const s = StormShore.G.run; if (!s) return;
+        if (s.aim) __seen.aimed = true;
+        if (s.objs.some(o => o.type === 'enemy' && o.awake && !o.hit && o.rem < o.n)) __seen.shotAtRange = true; }, 20); });
     await page.waitForFunction(() => StormShore.G.run.phase === 'climb' || StormShore.G.mode === 'over', null, { timeout: 60000 });
     await shot('bunker');
     await page.waitForFunction(() => StormShore.G.mode === 'over', null, { timeout: 15000 });
     await page.evaluate(() => clearInterval(window.__pilot));
+    const seen = await page.evaluate(() => { clearInterval(window.__watch); return window.__seen; });
+    ok(seen.aimed, `${name}: the squad fires`);
+    ok(seen.shotAtRange, `${name}: charging enemies are shot down before they arrive`);
+    ok(await page.evaluate(() => StormShore.G.run.weapon) >= 1 && (await text('#hud-weapon')) !== 'Rifle', `${name}: a barrel gives a new weapon (${await text('#hud-weapon')})`);
     ok(await visible('#result') && (await text('#r-title')) === 'Bunker taken!', `${name}: level 1 played through to a win`);
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('storm-the-shore')));
     ok(saved && saved.level === 2 && saved.coins > 0, `${name}: the win is saved (level ${saved && saved.level}, ${saved && saved.coins} coins)`);
