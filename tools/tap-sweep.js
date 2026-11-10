@@ -70,6 +70,7 @@ const SEEDS = {
         while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
         S.proposal.big = true; if (S.yearReport) S.yearReport.seen = true;
         M.renderAll();
+        document.getElementById('toast').hidden = true;   // the start's "Paused" message would still be fading: a steady screen to tap
       });
     },
     // the Energy Transition at the start of year 3: a yearly report with an underwriting round
@@ -81,6 +82,7 @@ const SEEDS = {
         M.Sim.build(S, 'solar', 100); M.Sim.build(S, 'battery', 50);
         while (S.t < 120 * 288 + 2) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
         M.renderAll();
+        document.getElementById('toast').hidden = true;   // as above: no fading message before the first tap
       });
     },
   },
