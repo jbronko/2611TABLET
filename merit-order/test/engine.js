@@ -183,7 +183,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   while (!Sim.scenarioOver(a)) { const ra = Sim.step(a), rb = Sim.step(b); if (ra.c.demand !== rb.c.demand || ra.c.wind !== rb.c.wind) same = false; }
   const ev = d => d.days.map(r => r.day).join();
   check('scenario weather is the same for everyone', same && ev(a) === ev(b));
-  const scored = Sim.SCENARIOS.map(sc => { const S = Sim.createScenario(sc.id); let n = 0; while (!Sim.scenarioOver(S) && n++ < (sc.days + 2) * Sim.IPD) Sim.step(S); const r = Sim.scenarioResult(S); return { id: sc.id, ok: Sim.scenarioOver(S) && S.days[S.days.length - 1].day === sc.days - 1 && r.lines.length === 3, stars: r.stars }; });
+  const scored = Sim.SCENARIOS.map(sc => { const S = Sim.createScenario(sc.id), days = S.scenario.days; let n = 0; while (!Sim.scenarioOver(S) && n++ < (days + 2) * Sim.IPD) Sim.step(S); const r = Sim.scenarioResult(S); return { id: sc.id, ok: Sim.scenarioOver(S) && S.days[S.days.length - 1].day === days - 1 && r.lines.length === 3, stars: r.stars }; });
   check('every scenario runs to its last day and is scored', scored.every(x => x.ok), scored.map(x => `${x.id} ${x.stars}★`).join(', '));
   check('doing nothing never earns more than one star', scored.every(x => x.stars <= 1));
 }
@@ -296,6 +296,33 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   for (let k = 0; k < 2 * Sim.IPD; k++) Sim.step(S);
   const t0 = Date.now(); Sim.catchUp(S, Sim.AWAY_CAP_DAYS * Sim.IPD); const ms = Date.now() - t0;
   check('150-plant company catches up a week quickly', ms < 2000, `${ms} ms here (a tablet is a few times slower)`);
+}
+
+// 11b. Company scenarios: the portfolio comes out of the rival fleet, the timeline is the scenario's
+//      own, and the Energy Transition is untouched.
+{
+  const fleet = S => S.rivals.filter(r => !r.gone).reduce((a, r) => a + r.cap, 0) + S.plants.filter(p => !p.tunnel).reduce((a, p) => a + p.mw, 0);
+  const base = fleet(Sim.create(1)) + 0;
+  const companies = Sim.SCENARIOS.filter(sc => sc.group === 'company');
+  check('company scenarios take their plants from the rivals: the market is the same size', companies.length === 4 && companies.every(sc => Math.abs(fleet(Sim.createScenario(sc.id)) - base) < 1), companies.map(sc => fleet(Sim.createScenario(sc.id))).join(', '));
+  const run = (S, days) => { const end = S.t + days * Sim.IPD; while (S.t < end) Sim.step(S); };
+  const L = Sim.createScenario('lakeside');
+  check('a company scenario has its own years and timeline', L.scenario.days === 240 && Sim.yearsOf(L) === 4 && Sim.timelineOf(L).length === 4 && Sim.timelineOf(Sim.createScenario('energy-transition')) === Sim.TRANSITION);
+  run(L, 61);
+  check('your coal closes on the schedule', !L.plants.some(p => p.ref === 'bh1') && L.plants.some(p => p.ref === 'bh2' && p.status !== 'closed') && Sim.yearOf(L) === 1);
+  const zone = Sim.SITES.solar.find(x => x.id === 'cw-rez'), yard = Sim.SITES.battery.find(x => x.id === 'bh-yard'), ET = Sim.createScenario('energy-transition');
+  check('zones open only where the scenario says (the Energy Transition as before)', Sim.siteOpensIn(L, zone) == null && Sim.siteOpensIn(L, yard) === 2 && Sim.siteRoom(L, 'battery', 'bh-yard') > 0 && Sim.siteOpensIn(ET, zone) === 5 && Sim.siteOpensIn(Sim.create(1), zone) == null);
+  const H = Sim.createScenario('highcountry'), tunnel = () => H.plants.find(p => p.tunnel), left0 = tunnel().buildLeft, cash0 = H.cash;
+  run(H, 61);
+  check('Tunnel Two is under way, then a year late and $15M dearer', tunnel().status === 'building' && Math.abs(tunnel().buildLeft - (left0 - 61 + 60)) < 0.1 && tunnel().capital - Sim.priceOf(H, 'hydro', 1000, { site: 'tumut' }) > 14e6, `${tunnel().buildLeft.toFixed(1)} days left, cash ${Sim.fmtMoney(cash0)} → ${Sim.fmtMoney(H.cash)}`);
+  const C = Sim.createScenario('coastline'), book = () => C.contracts.filter(k => k.retail);
+  const first = book()[0];
+  run(C, 61);
+  check('the retail book renews each year at the new price', book().length === 1 && first.mw === 800 && book()[0] !== first && Math.abs(book()[0].until - 120 * Sim.IPD) <= 2, `${first.strike} → ${book()[0].strike}`);
+  const W = Sim.createScenario('wellspring');
+  run(W, 61);
+  run(W, 1); const today = W.days[W.days.length - 1];
+  check('the government pays to keep coal open', !!W.keepOpen && today.bonus >= 2 * 500000, Sim.fmtMoney(today.bonus));
 }
 
 // 11. Energy Transition: a compressed calendar, a timeline that fires once and is announced a year

@@ -292,7 +292,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const p = await page();
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
-    check('the scenarios list', (await p.$$('[data-scenario]')).length === 7);
+    check('the scenarios list, with the company scenarios in their own group', (await p.$$('[data-scenario]')).length === 11 && /Run a company/.test(await p.textContent('#i-body')));
     await shot(p, 'scenarios');
     await p.click('[data-scenario="heatwave-week"]'); await p.waitForTimeout(150);
     check('a scenario shows its three stars before starting', (await p.$$('.starlist li')).length === 3);
@@ -402,6 +402,29 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await shot(p, 'transition-refurbish');
     await p.click('[data-refurbish]'); await p.waitForTimeout(150);
     check('refurbishing restores it', (await state(p, i => MeritOrder.state.plants.find(x => x.id === i).health, id)) === 1 && !(await p.$('[data-refurbish]')));
+    await p.context().close();
+  }
+
+  // 8e. Company scenarios: a portfolio taken from the rivals, a timeline of their own, a few short years.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(150);
+    check('a company scenario explains its portfolio and stars', /all four Black Hill coal units/.test(await p.textContent('#i-body')) && (await p.$$('.starlist li')).length === 3 && /4 years of 60 days/.test(await p.textContent('#i-body')));
+    await p.click('#sc-timeline'); await p.waitForTimeout(150);
+    check('its timeline has its own years', (await p.$$('ol.timeline li')).length === 4 && /Lakeside Power: the plan/.test(await p.textContent('#i-title')));
+    await shot(p, 'company-timeline');
+    await p.click('#tl-back'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    check('it starts with the company’s plants and its own clock', /Lakeside Power · Year 1 of 4 · Jan/.test(await p.textContent('#clock')) && (await p.$$('[data-plant]')).length === 6 && /Year 2:/.test(await p.textContent('#chips')), await p.textContent('#clock'));
+    await shot(p, 'company-start');
+    await p.click('#add-plant'); await p.waitForTimeout(150);
+    const locks = (await p.$$eval('#sh-build .lock', xs => xs.map(x => x.textContent.trim()))).join('|');
+    check('long-duration storage waits for its year; offshore wind is not in this one', locks === 'Arrives in year 3', locks);
+    await p.click('#sh-build [data-close]');
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 61 * 288) M.Sim.step(S); S.yearReport.seen = true; M.renderAll(); });
+    check('your coal closes on schedule', /Year 2 of 4/.test(await p.textContent('#clock')) && await state(p, () => !MeritOrder.state.plants.some(x => x.name === 'Black Hill 1')));
     await p.context().close();
   }
 

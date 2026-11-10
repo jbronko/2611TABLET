@@ -12,8 +12,17 @@ are built, tested and published); this file is what's specific to Merit Order. C
   Standard (60-day years) or Long (90-day years), coal closing unit by unit, demand growth, offshore
   wind and long-duration storage arriving, Renewable Energy Zones with grid line limits, storage that
   wears out (refurbish), Capacity Investment Scheme underwriting rounds, a yearly report.
+- **Company scenarios** (`group: 'company'`, listed under "Run a company"): a real company's
+  portfolio under a made-up name, 4–5 years of 60 days on the same yearly machinery. Highcountry Hydro
+  (Snowy Hydro: hydro, peakers, Tunnel Two being built late and over budget), Lakeside Power (AGL:
+  all four Black Hill units closing one a year), Wellspring Energy (Origin: coal whose closure moves
+  for a government payment, gas squeezes each winter), Coastline Energy (EnergyAustralia: an 800 MW
+  retail book renewed yearly as a swap). Scenario fields: `years`, `yearDays`, `timeline` (same
+  shape as `TRANSITION`), `owns` (rivals handed to you via `takeRival`, so the market keeps its
+  size), `setup`, `sites` (which zones open in which year; unlisted ones stay shut), `emis`,
+  `rivalPlan`, `intro`. Use `yearsOf`/`timelineOf`/`siteOpensIn`, never `TRANSITION` directly.
 - **Challenges**: 30 days, a shareable code (`MO-…`), highest company value wins.
-- The career and the Energy Transition keep trading while the app is closed (up to 7 game days per
+- The career and the multi-year scenarios keep trading while the app is closed (up to 7 game days per
   absence) unless "Keep trading while I'm away" is off. New games start paused.
 
 ## Files
@@ -23,7 +32,7 @@ are built, tested and published); this file is what's specific to Merit Order. C
   `setSpeed`, `renderAll`, `save`, `meritNew`, …).
 - `test/engine.js` (engine checks), `test/ui.js` (Playwright, `--shots <dir>` saves screenshots),
   `test/balance.js` (simulated players: `node test/balance.js` career; `--scenarios`;
-  `--transition [bots] [--long]`).
+  `--transition [bots] [--long]`; `--companies [bots] [ids]`).
 
 ## Market as built
 - 5-minute intervals (288 a day). Uniform price; floor −$1,000, cap $23,200. Cumulative price
@@ -53,6 +62,9 @@ are built, tested and published); this file is what's specific to Merit Order. C
 - Scenarios: doing nothing earns at most 1 star, steady play 1–2, a good plan 3.
 - Energy Transition: doing nothing 0 stars (the region runs short); the steady and firm bots
   3 stars at both lengths with no shortfall from year 12.
+- Company scenarios: the first star is always keeping the lights on, which doing nothing fails (the
+  big portfolio then earns the most from scarcity, but 0 stars); the steady and firm bots get 2 stars,
+  and the third is set just above the steady bot. Company values run to hundreds of millions.
 - Plants pay back in weeks here, so anything that adds capital (loans, subsidies) compounds fast:
   simulate before choosing numbers.
 

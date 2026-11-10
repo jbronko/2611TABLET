@@ -340,7 +340,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 23</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 24</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -709,7 +709,8 @@
   function renderTop() {
     const dl = Sim.dateLabel(S);
     const sc = S.scenario && Sim.SCENARIOS.find(x => x.id === S.scenario.id);
-    $('clock').textContent = S.transition ? `Energy Transition · Year ${Math.min(dl.year, Sim.TRANSITION_YEARS)} of ${Sim.TRANSITION_YEARS} · ${dl.year > Sim.TRANSITION_YEARS ? 'Dec' : dl.month} · ${dl.time}`
+    const N = Sim.yearsOf(S);
+    $('clock').textContent = S.transition ? `${sc ? sc.name : 'Energy Transition'} · Year ${Math.min(dl.year, N)} of ${N} · ${dl.year > N ? 'Dec' : dl.month} · ${dl.time}`
       : `${S.challenge ? `Challenge day ${dl.day} of 30` : sc ? `${sc.name} · day ${Math.min(dl.day, sc.days)} of ${sc.days}` : `Day ${dl.day}`} · ${dl.date} · ${dl.time}`;
     $('co-name').textContent = S.company || 'Your company';
     const t = S.today;
@@ -726,7 +727,7 @@
   }
   // The next milestone of the Energy Transition, and an open underwriting round.
   function transitionChips() {
-    const y = Sim.yearOf(S) + 1, next = Sim.TRANSITION.find(e => e.year > y), out = [];
+    const y = Sim.yearOf(S) + 1, next = Sim.timelineOf(S).find(e => e.year > y), out = [];
     if (next) out.push(`<button type="button" class="chip soon" data-timeline><svg class="i"><use href="#i-flag"/></svg>Year ${next.year}: ${esc(next.text.split(/[.:](?:\s|$)/)[0])}</button>`);
     const t = S.tender, open = t && Sim.dayIndex(S) <= t.until;
     if (open && !t.accepted && !t.declined) out.push(`<button type="button" class="chip warn" data-tender><svg class="i"><use href="#i-info"/></svg>Underwriting round open: decide</button>`);
@@ -741,12 +742,13 @@
   // The year-by-year plan. From the scenario intro, st is a fresh scenario and back returns to the intro.
   function openTimeline(st = S, back) {
     const y = Sim.yearOf(st) + 1, years = [];
-    for (let k = 1; k <= Sim.TRANSITION_YEARS; k++) {
-      const ev = Sim.TRANSITION.filter(e => e.year === k), Y = st.years && st.years[k - 1];
+    const sc = Sim.scenarioOf(st), company = sc && sc.group === 'company';
+    for (let k = 1; k <= Sim.yearsOf(st); k++) {
+      const ev = Sim.timelineOf(st).filter(e => e.year === k), Y = st.years && st.years[k - 1];
       const facts = Y && k < y ? `<small>${Y.shedHours > 0.05 ? `${Y.shedHours.toFixed(1)} hours short` : 'no shortfall'} · ${Math.round(Y.clean / Math.max(1, Y.region) * 100)}% of the region from your clean plant</small>` : '';
       years.push(`<li class="${k < y ? 'done' : k === y && !back ? 'now' : ''}"><b>Year ${k}</b><span>${ev.length ? ev.map(e => esc(e.text)).join(' ') : 'Demand grows; rivals add some wind, solar and batteries.'}${facts}</span></li>`);
     }
-    info('The Energy Transition', `<p>Each year is ${st.yearDays} game days. Every year demand grows about 2%, rooftop solar spreads, rivals add a little wind, solar and storage, and the emissions target tightens${back ? '' : ` (now ${st.emisTarget} t per MWh)`}. The big steps:</p>${!back && st.yearReport ? `<button type="button" class="btn btn-quiet small" id="tl-report">Year ${st.yearReport.year} in review</button>` : ''}<ol class="timeline">${years.join('')}</ol>
+    info(company ? `${sc.name}: the plan` : 'The Energy Transition', `<p>Each year is ${st.yearDays} game days. Every year demand grows about 2%, rooftop solar spreads, rivals add a little wind, solar and storage, and the emissions target tightens${back ? '' : ` (now ${st.emisTarget} t per MWh)`}. ${company ? 'What happens when:' : 'The big steps:'}</p>${!back && st.yearReport ? `<button type="button" class="btn btn-quiet small" id="tl-report">Year ${st.yearReport.year} in review</button>` : ''}<ol class="timeline">${years.join('')}</ol>
       ${back ? '<button type="button" class="btn btn-quiet" id="tl-back" style="width:100%;margin-top:12px">Back</button>' : ''}`);
     if (back) $('tl-back').onclick = back;
     if ($('tl-report')) $('tl-report').onclick = () => yearReportOpened(false);
@@ -937,7 +939,7 @@
         <div><span>Average price</span><b>${fmtPrice(R.avgPrice)}</b></div>
         <div><span>Peak demand</span><b>${fmtMW(R.peak)}</b></div></div>
       ${R.curtailed > 1 ? `<p class="note" style="margin-top:8px">${Math.round(R.curtailed).toLocaleString()} MWh of your wind and solar were cut because a zone’s line was full.</p>` : ''}
-      <h3>If this were year ${Sim.TRANSITION_YEARS}</h3><ul class="starlist">${st.lines.map(l => `<li class="${l.ok ? 'ok' : ''}">${l.text}</li>`).join('')}</ul>
+      <h3>If this were year ${Sim.yearsOf(S)}</h3><ul class="starlist">${st.lines.map(l => `<li class="${l.ok ? 'ok' : ''}">${l.text}</li>`).join('')}</ul>
       ${R.now.length ? `<h3>This year</h3><ul class="news">${R.now.map(e => `<li class="${e.close ? 'bad' : 'info'}"><svg class="i"><use href="#i-${e.close ? 'bad' : 'info'}"/></svg><span>${esc(e.text)}</span></li>`).join('')}</ul>` : ''}
       ${R.next.length ? `<h3>Coming next year</h3><ul class="news">${R.next.map(t => `<li class="info"><svg class="i"><use href="#i-flag"/></svg><span>${esc(t)}</span></li>`).join('')}</ul>` : ''}
       <div class="field-row" style="margin-top:14px">${tender ? '<button type="button" class="btn btn-quiet" id="yr-tender" style="flex:1">See the underwriting offer</button>' : ''}<button type="button" class="btn btn-primary" id="yr-ok" style="flex:1">Carry on</button></div>`);
@@ -1008,7 +1010,7 @@
   const chosenSize = {};
   function openBuild() { renderBuild(); openSheet('build'); applyHints(); }
   function renderBuild() {
-    const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'].concat(S.transition ? ['offshore', 'ldes'] : []);
+    const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'].concat(['offshore', 'ldes'].filter(t => S.transition && (S.unlocked[t] || Sim.timelineOf(S).some(e => e.unlocks === t))));
     $('tech-grid').innerHTML = order.map(t => {
       const T = TECH[t], unlocked = !!S.unlocked[t];
       const size = chosenSize[t] || T.sizes[0], site = Sim.siteFor(S, t, size), st = site && Sim.siteOf(t, site);
@@ -1029,7 +1031,7 @@
           <dt>Upkeep</dt><dd>${fmtMoney(Sim.upkeepFor(S, t, size, mwh))}/day</dd><dt>Emissions</dt><dd>${T.emis ? `${T.emis} t/MWh` : 'None'}</dd></dl>
         <button type="button" class="btn btn-primary" data-build="${t}" ${borrow ? `data-borrow="${borrow}"` : ''} ${why && !borrow ? 'disabled' : ''}>${label}</button>
         <button type="button" class="btn btn-quiet" data-design="${t}">Custom size and site</button>`
-        : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>${T.transition ? `Arrives in year ${(Sim.TRANSITION.find(e => e.unlocks === t) || {}).year}` : `Unlock: ${goal ? goal.text.toLowerCase() : 'later'}`}</div>`}
+        : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>${T.transition ? `Arrives in year ${(Sim.timelineOf(S).find(e => e.unlocks === t) || {}).year}` : `Unlock: ${goal ? goal.text.toLowerCase() : 'later'}`}</div>`}
       </div>`;
     }).join('');
   }
@@ -1110,11 +1112,11 @@
   function renderDesign(all) {
     const t = design.tech, T = TECH[t];
     if (all) {
-      $('dz-sites').innerHTML = Sim.SITES[t].filter(st => st.opens == null || S.transition).map(st => {
+      $('dz-sites').innerHTML = Sim.SITES[t].filter(st => Sim.siteOpensIn(S, st) != null).map(st => {
         const room = Sim.siteRoom(S, t, st.id), full = t === 'hydro' ? !room : room < T.range[0];
-        const shut = st.opens != null && Sim.yearOf(S) + 1 < st.opens;
+        const opens = Sim.siteOpensIn(S, st), shut = Sim.yearOf(S) + 1 < opens;
         const detail = t === 'hydro' ? `${st.reservoir.toLocaleString()} MWh reservoir · ${st.mw[0]}–${st.mw[1]} MW · ×${st.mlf.toFixed(2)}${full ? ' · already built' : ''}`
-          : `${resText(t, st)}loss factor ×${st.mlf.toFixed(2)} · ${shut ? `opens in year ${st.opens}` : full ? 'no room left' : `${fmtMW(room)} free`}${lineText(t, st)}`;
+          : `${resText(t, st)}loss factor ×${st.mlf.toFixed(2)} · ${shut ? `opens in year ${opens}` : full ? 'no room left' : `${fmtMW(room)} free`}${lineText(t, st)}`;
         return `<button type="button" class="site" data-site="${st.id}" aria-pressed="${st.id === design.site}" ${full ? 'disabled' : ''}><b>${st.name}</b><span>${st.blurb}</span><small>${detail}</small></button>`;
       }).join('');
       const L = designLimits();
@@ -1557,6 +1559,7 @@
       <p><b style="color:var(--ink)">Money:</b> you can go overdrawn, but the bank charges interest every day, and if you owe more than your limit it sells your plant, most valuable first. Lose everything and the company is wound up.</p>
       <p><b style="color:var(--ink)">Scenarios</b> are short, hand-made situations (a heatwave week, a coal closure, a gas squeeze) with three stars to win. Challenges are 30-day races against friends with share codes.</p>
       <p><b style="color:var(--ink)">Energy Transition</b> is a 20-year scenario (60- or 90-day years, your choice) that keeps trading while you're away: coal closes, demand grows, new technology arrives, and the government's Capacity Investment Scheme can underwrite what you build. Each new year opens with a report on the last one.</p>
+      <p><b style="color:var(--ink)">Company scenarios</b> (Highcountry Hydro, Lakeside Power, Wellspring Energy, Coastline Energy) hand you a portfolio like a real company's, under a made-up name, for 4 or 5 fast years. Each has its own timeline: coal closures, a late tunnel, a government deal or a book of retail customers.</p>
       <p><b style="color:var(--ink)">How plants behave.</b> Coal always runs its minimum (45%) and moves only 5% each 5 minutes. Gas costs money to start and then runs a minimum time. Batteries can only sell what they've stored. Band prices you change apply from tomorrow; MW changes apply now. A plant's page shows what's holding it back under <b style="color:var(--ink)">Right now</b>, and its bid table shows what each band is running.</p>
       <p><b style="color:var(--ink)">Bank loans</b> (Menu → Bank loans) lend up to ${Math.round(Sim.LOAN_LTV * 100)}% of your company’s value after debts, more when you buy a plant you’re offered, at about 7% a year and more the more you owe. You repay a share every day. Short of cash to build? The build button offers to borrow the difference.</p>
       <p><b style="color:var(--ink)">While you're away</b> the market keeps trading for up to ${Sim.AWAY_CAP_DAYS} game days. At 1× a game day takes 6 minutes. To have the game wait for you instead, turn off <b style="color:var(--ink)">Keep trading while I’m away</b> in the menu.</p>
@@ -1650,10 +1653,10 @@
   function openScenarios() {
     store.scenarios ||= {};
     const act = store.scenario, actSc = act && Sim.SCENARIOS.find(x => x.id === act.scenario.id);
-    info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Scenarios only run while the app is open, except the 20-year Energy Transition, which keeps trading while you're away.</p>
-      ${actSc ? `<h3>Your current scenario</h3><p>${actSc.name} · ${actSc.transition ? `year ${Math.min(Sim.TRANSITION_YEARS, Sim.yearOf(act) + 1)} of ${Sim.TRANSITION_YEARS}` : `day ${Math.min(actSc.days, Sim.dayIndex(act) + 1)} of ${actSc.days}`}</p><button type="button" class="btn btn-primary" id="sc-resume" style="width:100%">Carry on</button>` : ''}
-      <div class="sc-grid">${Sim.SCENARIOS.map(sc => { const b = store.scenarios[sc.id];
-        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.transition ? `${Sim.TRANSITION_YEARS} years` : `${sc.days} days`}${b ? ` · best ${fmtMoney(b.value)}${b.length && sc.lengths ? ` (${sc.lengths[b.length].name})` : ''}` : ''}</small></button>`; }).join('')}</div>`);
+    info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Scenarios only run while the app is open, except the multi-year ones (the company scenarios and the 20-year Energy Transition), which keep trading while you're away.</p>
+      ${actSc ? `<h3>Your current scenario</h3><p>${actSc.name} · ${actSc.transition ? `year ${Math.min(Sim.yearsOf(act), Sim.yearOf(act) + 1)} of ${Sim.yearsOf(act)}` : `day ${Math.min(actSc.days, Sim.dayIndex(act) + 1)} of ${actSc.days}`}</p><button type="button" class="btn btn-primary" id="sc-resume" style="width:100%">Carry on</button>` : ''}
+      ${['', 'company'].map(g => `${g ? '<h3>Run a company</h3><p class="note">Take over a portfolio like a real company’s (the names are made up) for a few fast years.</p>' : ''}<div class="sc-grid">${Sim.SCENARIOS.filter(sc => (sc.group || '') === g).map(sc => { const b = store.scenarios[sc.id];
+        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.transition ? `${sc.years || Sim.TRANSITION_YEARS} years` : `${sc.days} days`}${b ? ` · best ${fmtMoney(b.value)}${b.length && sc.lengths ? ` (${sc.lengths[b.length].name})` : ''}` : ''}</small></button>`; }).join('')}</div>`).join('')}`);
     if (actSc) $('sc-resume').onclick = () => startScenario(null);
     $('i-body').querySelectorAll('[data-scenario]').forEach(b => b.onclick = () => scenarioIntro(b.dataset.scenario));
   }
@@ -1666,8 +1669,8 @@
     const L = sc.lengths && (sc.lengths[scLen] || sc.lengths.standard);
     const picker = sc.lengths ? `<h3>Length</h3><div class="diff-grid" role="radiogroup">${Object.entries(sc.lengths).map(([k, v]) => `<button type="button" class="diff" data-len="${k}" aria-pressed="${v === L}"><b>${v.name}: ${v.yearDays}-day years</b><span>${(Sim.TRANSITION_YEARS * v.yearDays).toLocaleString()} game days. ${LEN_BLURB[k] || ''}</span></button>`).join('')}</div>` : '';
     info(sc.name, `<p>${sc.blurb}</p>${picker}<h3>Stars</h3><ul class="starlist">${Sim.starText(sc, scLen).map(t => `<li>${t}</li>`).join('')}</ul>
-      ${sc.transition ? `<p>Coal closes unit by unit, demand grows with electric cars, data centres and electric heating, offshore wind and long-duration storage arrive, and the government underwrites new plant. <button type="button" class="btn btn-quiet small" id="sc-timeline">See the timeline</button></p>` : ''}
-      <p class="note">${sc.transition ? `${Sim.TRANSITION_YEARS} years; ${idle ? 'keeps trading while you’re away (you can turn that off in the menu)' : 'waits for you while you’re away'}` : `${sc.days} game days`}${b ? ` · your best: ${bestText(sc, b)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
+      ${sc.transition ? `<p>${sc.intro || 'Coal closes unit by unit, demand grows with electric cars, data centres and electric heating, offshore wind and long-duration storage arrive, and the government underwrites new plant.'} <button type="button" class="btn btn-quiet small" id="sc-timeline">See the timeline</button></p>` : ''}
+      <p class="note">${sc.transition ? `${sc.years || Sim.TRANSITION_YEARS} years of ${(L || sc).yearDays} days; ${idle ? 'keeps trading while you’re away (you can turn that off in the menu)' : 'waits for you while you’re away'}` : `${sc.days} game days`}${b ? ` · your best: ${bestText(sc, b)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
       <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-back" style="flex:1">All scenarios</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Start</button></div>`);
     $('sc-back').onclick = openScenarios;
     if ($('sc-timeline')) $('sc-timeline').onclick = () => openTimeline(Sim.createScenario(id, { length: scLen }), () => scenarioIntro(id));
@@ -1681,7 +1684,7 @@
     let rep = null;
     if (id == null) {
       S = Sim.migrate(store.scenario);
-      if (S.transition && idle) {   // the 20-year scenario keeps trading while you're away
+      if (S.transition && idle) {   // multi-year scenarios keep trading while you're away
         const away = Math.floor((Date.now() - (store.scenarioSeen || Date.now())) / MS_PER_INTERVAL);
         if (away >= 12) rep = Sim.catchUp(S, Math.min(away, (S.scenario.days * Sim.IPD) - S.t + Sim.IPD));
       }

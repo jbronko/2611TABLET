@@ -151,12 +151,27 @@ if (require.main === module && process.argv[2] === '--transition') {
     }, { length: long ? 'long' : 'standard' });
     console.log(`  ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} value ${Sim.fmtMoney(r.value)} final-year shortfall ${r.finalShed.toFixed(0)} MWh, clean share ${(r.cleanShare * 100).toFixed(0)}%${r.bust ? ' BUST' : ''}`);
   }
+} else if (require.main === module && process.argv[2] === '--companies') {
+  // node merit-order/test/balance.js --companies [strategies] [scenario ids]
+  // Company scenarios (a few 60-day years with a real company's portfolio). Targets: idle at most
+  // 1 star, steady 1-2, firm 2-3.
+  const kinds = (process.argv[3] || 'idle,steady,firm').split(',');
+  const ids = process.argv[4] ? process.argv[4].split(',') : Sim.SCENARIOS.filter(sc => sc.group === 'company').map(sc => sc.id);
+  for (const id of ids) {
+    const sc = Sim.SCENARIOS.find(x => x.id === id);
+    console.log(`${sc.name} (${sc.years} years)`);
+    for (const kind of kinds) {
+      const yrs = [];
+      const r = runScenario(kind, id, (S, d) => { const Y = S.years[d / S.yearDays - 1]; yrs.push(`${Sim.fmtMoney(Y.value)}/${Y.shedHours.toFixed(0)}h/${Math.round(Y.clean / Math.max(1, Y.energy) * 100)}%`); });
+      console.log(`  ${kind.padEnd(7)} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}  value ${Sim.fmtMoney(r.value).padStart(7)}  profit ${Sim.fmtMoney(r.profit).padStart(7)}  worst year ${Sim.fmtMoney(r.minYearProfit)}  final short ${r.finalShed.toFixed(0)} MWh  own clean ${(r.ownClean * 100).toFixed(0)}%${r.tunnelOn ? '  tunnel on' : ''}${r.bust ? '  BUST' : ''}  [${yrs.join(' ')}]`);
+    }
+  }
 } else if (require.main === module && process.argv[2] === '--scenarios') {
   // node merit-order/test/balance.js --scenarios [strategies]
   // Targets: idle at most 1 star, steady 1-2, savvy 2-3.
   const kinds = (process.argv[3] || 'idle,steady,savvy').split(',');
   for (const sc of Sim.SCENARIOS) {
-    if (sc.transition) continue;   // the 20-year scenario has its own mode: --transition
+    if (sc.transition) continue;   // the 20-year scenario has its own mode (--transition), the companies too (--companies)
     console.log(`${sc.name} (${sc.days} days)`);
     for (const kind of kinds) {
       const r = runScenario(kind, sc.id);
