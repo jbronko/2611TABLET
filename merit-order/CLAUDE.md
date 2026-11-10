@@ -49,6 +49,11 @@ are built, tested and published); this file is what's specific to Merit Order. C
   - `emis`, `emisFine`, `firm` (the first star's MW of your own firm plant), `rivalPlan`, `report`,
     `intro`
   - Use `yearsOf`/`timelineOf`/`siteOpensIn`, never `TRANSITION` directly.
+- **Restarting and switching scenarios:** only one scenario runs at a time (`store.scenario`). The
+  menu's "Restart this scenario" and Start on another scenario's intro both ask first
+  (`confirmLose`, naming the game in progress and its worth) and then begin fresh with
+  `startScenario`. The menu's "Start a new company" deletes the career, so it is shown only in the
+  career.
 - **Challenges**: 30 days, a shareable code (`MO-…`), highest company value wins.
 - The career and the multi-year scenarios keep trading while the app is closed (up to 7 game days per
   absence) unless "Keep trading while I'm away" is off. New games start paused.

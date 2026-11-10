@@ -45,6 +45,8 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   };
   const shot = async (p, name) => { if (SHOTS) await p.screenshot({ path: path.join(SHOTS, `${name}.png`) }); };
   const state = (p, fn, arg) => p.evaluate(fn, arg);
+  // Start from a scenario's intro, confirming if a game in progress would end
+  const scGo = async p => { await p.click('#sc-go'); await p.waitForTimeout(200); if (await p.$('#cl-yes')) { await p.click('#cl-yes'); await p.waitForTimeout(200); } };
   const newCompany = async (p, diff = 'relaxed') => {
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(500);
     await p.click('#t-continue'); await p.click(`[data-diff="${diff}"]`); await p.click('#diff-go'); await p.waitForTimeout(200);
@@ -300,7 +302,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await shot(p, 'scenarios');
     await p.click('[data-scenario="heatwave-week"]'); await p.waitForTimeout(150);
     check('a scenario shows its three stars before starting', (await p.$$('.starlist li')).length === 3);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     check('it starts with its own plants and date', /Heatwave Week · day 1 of 10 · 15 Jan/.test(await p.textContent('#clock')) && (await p.$$('[data-plant]')).length === 2 && await p.$eval('#mission', x => x.hidden));
     check('a new scenario starts paused', (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
     await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 10 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.setSpeed(16); });
@@ -334,7 +336,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#sc-timeline'); await p.waitForTimeout(150);
     check('the Energy Transition shows its 20-year timeline before you start', (await p.$$('ol.timeline li')).length === 20 && /Each year is 60 game days/.test(await p.textContent('#i-body')));
     await p.click('#tl-back'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     check('it starts in year 1 with the next milestone showing', /Year 1 of 20 · Jan/.test(await p.textContent('#clock')) && /Year 2:/.test(await p.textContent('#chips')));
     await p.click('#add-plant'); await p.waitForTimeout(150);
     check('offshore wind and long-duration storage wait for their year', (await p.$$eval('#sh-build .lock', xs => xs.map(x => x.textContent))).filter(t => /Arrives in year [46]/.test(t)).length === 2);
@@ -395,7 +397,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="energy-transition"]'); await p.waitForTimeout(150);
     await p.click('[data-len="long"]'); await p.waitForTimeout(100);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     const ff = days => state(p, d => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < d * 288 + 1) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } if (S.yearReport) S.yearReport.seen = true; M.renderAll(); }, days);
     await ff(89); const dec = await p.textContent('#clock');
     await ff(90);
@@ -420,7 +422,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     check('its timeline has its own years', (await p.$$('ol.timeline li')).length === 4 && /Lakeside Power: the plan/.test(await p.textContent('#i-title')));
     await shot(p, 'company-timeline');
     await p.click('#tl-back'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     check('it starts with the company’s plants and its own clock', /Lakeside Power · Year 1 of 4 · Jan/.test(await p.textContent('#clock')) && (await p.$$('[data-plant]')).length === 6 && /Year 2:/.test(await p.textContent('#chips')), await p.textContent('#clock'));
     await shot(p, 'company-start');
     await p.click('#add-plant'); await p.waitForTimeout(150);
@@ -441,7 +443,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="coastline"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     await p.click('[data-speed="32"]'); await p.waitForTimeout(100);
     check('a 32× speed', (await p.$eval('[data-speed="32"]', x => x.getAttribute('aria-pressed'))) === 'true');
     // just before day 50, when the customers' renewal comes up
@@ -484,7 +486,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     // the final year with a shortfall past the standard: the chip says the star is lost
     await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 288 + 5) M.Sim.step(S);
       S.years[4] = { ...S.years[0], shed: 300, shedHours: 2, region: 3e6, days: 20 }; S.t = 250 * 288 + 5; M.renderAll(); });
@@ -509,7 +511,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="coastline"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     await p.click('#open-menu'); await p.waitForTimeout(150);
     await p.click('#m-autopause'); await p.waitForTimeout(100);
     check('"Pause for decisions" can be turned off', (await p.$eval('#m-autopause', x => x.getAttribute('aria-checked'))) === 'false');
@@ -562,7 +564,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     // a proposal with an impossible hurdle, a day after it was announced
     const propose = hurdle => state(p, h => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.proposal = null;
       for (const d of S.days.slice(-15)) d.avg = 400;
@@ -616,13 +618,70 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8n. Restart a scenario, and switch to another: both ask first, and the new game shares nothing
+  //     with the old one (date, cash, plants, news, contracts, decisions, proposals, pop-ups).
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
+    await scGo(p);
+    // a few weeks in: a decision waiting, a rival proposal open, contracts signed
+    const busy = () => state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.cash = 5e7;
+      while (S.t < 62 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal && S.t < 60 * 288) S.proposal = null; }
+      for (const d of S.days.slice(-15)) d.avg = 400; while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
+      M.Sim.signContract(S, 0); if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.save();
+      return { t: S.t, cash: S.cash }; });
+    const old = await busy();
+    const fresh = id => state(p, id => { const S = MeritOrder.state; return S.scenario.id === id && MeritOrder.Sim.dayIndex(S) === 0 && !S.choice && !S.proposal && !S.contracts.length
+      && !S.news.some(n => /Tunnel Two: the boring|plans a|You sold/.test(n.text)) && S.plants.length === MeritOrder.Sim.createScenario(id).plants.length; }, id);
+    await p.click('#open-menu'); await p.waitForTimeout(150);
+    check('the menu offers Restart in a scenario, and not "Start a new company"', !(await p.$eval('#m-restart', x => x.hidden)) && await p.$eval('#m-reset', x => x.hidden));
+    await p.click('#m-restart'); await p.waitForTimeout(200);
+    check('Restart asks first, saying what will be lost', /Restart Highcountry Hydro\?/.test(await p.textContent('#i-title')) && /year 2 of 5.*progress will be lost/.test(await p.textContent('#i-body')));
+    await p.click('#cl-no'); await p.waitForTimeout(200);
+    check('…Cancel keeps the game as it was', await state(p, o => MeritOrder.state.t === o.t && MeritOrder.state.scenario.id === 'highcountry', old) && await p.$eval('#sh-info', x => x.hidden));
+    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-restart'); await p.waitForTimeout(200);
+    await p.click('#cl-yes'); await p.waitForTimeout(400);
+    check('…Restart starts it again from the beginning, with nothing left over', await fresh('highcountry') && /Year 1 of 5 · Jan/.test(await p.textContent('#clock')) && !/Decision|plans a/.test(await p.textContent('#chips')));
+    // switching to another scenario
+    await busy();
+    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="wellspring"]'); await p.waitForTimeout(200);
+    await p.click('#sc-go'); await p.waitForTimeout(200);
+    check('choosing another scenario asks first, naming the game that will end', /Start Wellspring Energy\?/.test(await p.textContent('#i-title')) && /Highcountry Hydro: year 2 of 5/.test(await p.textContent('#i-body')));
+    await p.click('#cl-no'); await p.waitForTimeout(200);
+    check('…Cancel goes back to its intro, and the game is untouched', /Wellspring Energy/.test(await p.textContent('#i-title')) && !!(await p.$('#sc-go')) && await state(p, () => MeritOrder.state.scenario.id === 'highcountry' && MeritOrder.Sim.dayIndex(MeritOrder.state) > 60));
+    await p.click('#sc-go'); await p.waitForTimeout(200); await p.click('#cl-yes'); await p.waitForTimeout(400);
+    const cards = await p.$$eval('[data-plant] .name', xs => xs.map(x => x.textContent));
+    check('…Start gives a fresh game of the new scenario: its own plants on screen, no old chips or pop-ups', await fresh('wellspring') && cards.join('|') === 'Black Hill 3|Black Hill 4|Tallawang Gas|Mulga Creek Peaker'
+      && /Wellspring Energy · Year 1 of 4/.test(await p.textContent('#clock')) && !/Decision|plans a|Tunnel/.test(await p.textContent('#chips')) && await p.$eval('#sh-info', x => x.hidden), cards.join('|'));
+    // the same while the game is running fast, with a decision and a proposal open
+    await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 61 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.setSpeed(64); });
+    await p.waitForTimeout(300);
+    for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(200);
+    await p.click('#sc-go'); await p.waitForTimeout(200); await p.click('#cl-yes'); await p.waitForTimeout(400);
+    check('…switching while it runs at 64× starts the new one fresh and paused', await fresh('lakeside') && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    // the career keeps its own "Start a new company"
+    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-title'); await p.waitForTimeout(300);
+    await p.click('#t-continue'); await p.waitForTimeout(300);
+    if (await p.$('[data-diff="standard"]')) { await p.click('[data-diff="standard"]'); await p.waitForTimeout(100); await p.click('#diff-go').catch(() => {}); await p.waitForTimeout(400); }
+    await p.evaluate(() => MeritOrder.setSpeed(0));
+    for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    await p.click('#open-menu'); await p.waitForTimeout(150);
+    check('in the career, the menu has "Start a new company" and no Restart', await state(p, () => !MeritOrder.state.scenario) && !(await p.$eval('#m-reset', x => x.hidden)) && await p.$eval('#m-restart', x => x.hidden));
+    await p.context().close();
+  }
+
   // 8i. 64x: offered, and really twice as fast as 32x (the loop's per-frame cap doesn't hold it back).
   {
     const p = await page();
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="first-light"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     const rate = async sp => { await p.click(`[data-speed="${sp}"]`); await p.waitForTimeout(300); const t0 = await state(p, () => MeritOrder.state.t); await p.waitForTimeout(2000); return (await state(p, () => MeritOrder.state.t)) - t0; };
     const r32 = await rate(32), r64 = await rate(64);
     check('a 64× speed, twice as fast as 32×', (await p.$eval('[data-speed="64"]', x => x.getAttribute('aria-pressed'))) === 'true' && r64 >= r32 * 1.6 && r64 >= 80, `${r32} intervals in 2 s at 32×, ${r64} at 64×`);
@@ -635,7 +694,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="first-light"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     await p.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException('full', 'QuotaExceededError'); }; MeritOrder.save(); });
     await p.waitForTimeout(150);
     check('a refused save shows a warning instead of failing silently', /Couldn’t save your game/.test(await p.textContent('#toast')) && !(await p.$eval('#toast', x => x.hidden)));
@@ -651,7 +710,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.cash = 2e8;
       while (S.t < 61 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal) S.proposal = null; }
       for (const d of S.days.slice(-15)) d.avg = 400;
@@ -673,7 +732,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
-    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await scGo(p); await p.waitForTimeout(300);
     await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0);
       while (S.t < 66 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
       if (S.yearReport) S.yearReport.seen = true; M.save(); });

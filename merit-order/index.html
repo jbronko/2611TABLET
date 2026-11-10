@@ -348,7 +348,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 33</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 34</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -461,6 +461,7 @@
     <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive (year reports always pause)</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-idle" role="switch" aria-checked="true"><span>Keep trading while I’m away<small>Up to 7 game days each time you leave: your company and the Energy Transition</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
+    <button type="button" class="switch-row danger" id="m-restart" hidden><span>Restart this scenario</span></button>
     <button type="button" class="switch-row" id="m-title"><span>Title screen</span></button>
     <button type="button" class="switch-row danger" id="m-reset"><span>Start a new company</span></button>
   </div>
@@ -1544,6 +1545,7 @@
     $('m-idle').setAttribute('aria-checked', String(idle));
     $('m-loans-n').textContent = S.loans.length ? `${fmtMoney(Sim.debt(S))} owed` : '';
     $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario; $('m-tour').hidden = !!(S.scenario || S.challenge); $('m-timeline').hidden = !S.transition;
+    $('m-restart').hidden = !S.scenario; $('m-reset').hidden = !!(S.scenario || S.challenge);
     $('m-scenarios-n').textContent = `${starTotal()} of ${Sim.SCENARIOS.length * 3} ★`;
     openSheet('menu');
   };
@@ -1716,6 +1718,23 @@
     $('rename-ok').onclick = () => { S.company = $('rename-in').value.trim() || 'Your company'; save(); renderTop(); closeSheets(); };
   };
   $('m-title').onclick = () => { save(); closeSheets(); showTitle(); };
+  // Before a scenario's progress is lost: say what's at stake, and offer Cancel.
+  function scenarioProgress(st) {
+    const sc = Sim.SCENARIOS.find(x => x.id === st.scenario.id);
+    const when = st.transition ? `year ${Math.min(Sim.yearsOf(st), Sim.yearOf(st) + 1)} of ${Sim.yearsOf(st)}` : `day ${Math.min(sc.days, Sim.dayIndex(st) + 1)} of ${sc.days}`;
+    return { sc, text: `${sc.name}: ${when}, worth ${fmtMoney(Sim.companyValue(st))}` };
+  }
+  function confirmLose(title, text, yes, then, back) {
+    info(title, `<p>${text}</p>
+      <div class="field-row" style="margin-top:14px"><button type="button" class="btn btn-quiet" id="cl-no" style="flex:1">Cancel</button><button type="button" class="btn btn-quiet danger" id="cl-yes" style="flex:1">${yes}</button></div>`);
+    $('cl-no').onclick = back || closeSheets;
+    $('cl-yes').onclick = then;
+  }
+  $('m-restart').onclick = () => {
+    if (!S.scenario) return;
+    const { sc, text } = scenarioProgress(S), length = S.scenario.length;
+    confirmLose(`Restart ${sc.name}?`, `${esc(text)}. That progress will be lost, and you'll start again from the beginning.`, 'Restart', () => startScenario(sc.id, length));
+  };
   $('m-reset').onclick = () => {
     info('Start a new company?', `<p>This deletes ${esc(S.company || 'your company')} and everything it owns. Challenge results are kept.</p><button type="button" class="btn btn-primary" id="reset-ok" style="width:100%">Delete and start again</button>`);
     $('reset-ok').onclick = () => chooseDifficulty(d => { delete store.career; delete store.careerSeen; persist(); closeSheets(); startCareer(true, d); });
@@ -1830,7 +1849,13 @@
     $('sc-back').onclick = openScenarios;
     if ($('sc-timeline')) $('sc-timeline').onclick = () => openTimeline(Sim.createScenario(id, { length: scLen }), () => scenarioIntro(id));
     $('i-body').querySelectorAll('[data-len]').forEach(x => x.onclick = () => scenarioIntro(id, x.dataset.len));
-    $('sc-go').onclick = () => startScenario(id, scLen);
+    $('sc-go').onclick = () => {
+      const act = store.scenario;
+      if (!act || act.ended) { startScenario(id, scLen); return; }
+      const { text } = scenarioProgress(act), same = act.scenario.id === id;
+      confirmLose(same ? `Restart ${sc.name}?` : `Start ${sc.name}?`, `You have a game going: ${esc(text)}. ${same ? 'Starting again' : 'Starting this one'} ends it: its progress will be lost, and you'd have to start it again.`,
+        same ? 'Restart' : 'Start', () => startScenario(id, scLen), () => scenarioIntro(id));
+    };
   }
   function startScenario(id, length) {
     if (id == null && !store.scenario) { toast('That scenario has finished.'); return; }
