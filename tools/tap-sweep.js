@@ -230,9 +230,15 @@ let taps = 0, statesSeen = 0;
     try { s = await open(seed, steps); } catch (e) { note('unreachable', seed + t.sel, `${where(seed, steps, t)}: couldn't replay the taps that lead here (${e.message.split('\n')[0]})`); return null; }
     const { ctx, page, errors } = s;
     try {
-      const sig1 = await page.evaluate(() => __sweep.sig());
-      await page.waitForTimeout(350);
-      const sig2 = await page.evaluate(() => __sweep.sig());
+      // wait for a steady screen (a sheet still sliding in, a number still counting): two matching
+      // fingerprints in a row, trying a few times, so a busy machine doesn't make a tap look dead
+      let sig1 = await page.evaluate(() => __sweep.sig()), sig2;
+      for (let k = 0; k < 4; k++) {
+        await page.waitForTimeout(350);
+        sig2 = await page.evaluate(() => __sweep.sig());
+        if (sig2.text === sig1.text && sig2.taps === sig1.taps && sig2.states === sig1.states && sig2.store === sig1.store) break;
+        if (k < 3) sig1 = sig2;
+      }
       const cover = await page.evaluate(sel => { const el = document.querySelector(sel); if (el) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); return __sweep.cover(sel); }, t.sel);
       if (cover) { note('blocked', t.sel + cover, `${where(seed, steps, t)} [${t.sel}]: ${cover === 'off-screen' ? 'off the screen' : `covered by ${cover}`}`); return null; }
       const before = errors.length;
