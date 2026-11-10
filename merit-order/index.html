@@ -284,6 +284,7 @@
   table.res th { color: var(--ink-2); font-weight: 650; font-size: 12.5px; }
   .code { font: 800 22px/1.2 var(--font); font-stretch: 75%; letter-spacing: 0.06em; padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line-2); text-align: center; user-select: all; -webkit-user-select: all; }
   input[type=text] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px; min-height: 48px; padding: 0 14px; width: 100%; }
+  input[type=text][aria-invalid="true"] { border: 2px solid var(--bad); }
   .field-row { display: flex; gap: 8px; } .field-row input { flex: 1; min-width: 0; }
 
   @keyframes fade { from { opacity: 0; } }
@@ -1701,9 +1702,11 @@
       ${tables || '<p class="note">Results you add appear here, ranked.</p>'}`);
     if (ch) $('ch-resume').onclick = () => startChallenge(null);
     $('ch-new').onclick = () => startChallenge((Math.random() * 2 ** 31) >>> 0);
-    $('ch-join').onclick = () => { const s = parseChallenge($('ch-code').value); if (s == null) return toast('That code doesn’t look right. It starts with MO-.'); startChallenge(s); };
+    // a code that doesn't check out: say so, and mark the box so it's clear what to fix
+    const badCode = (id, msg) => { const el = $(id); el.setAttribute('aria-invalid', 'true'); el.focus(); el.oninput = () => el.removeAttribute('aria-invalid'); toast(msg); };
+    $('ch-join').onclick = () => { const s = parseChallenge($('ch-code').value); if (s == null) return badCode('ch-code', 'That code doesn’t look right. It starts with MO-.'); startChallenge(s); };
     $('res-add').onclick = () => {
-      const r = parseResult($('res-code').value); if (!r) return toast('That result code doesn’t check out. Copy it again.');
+      const r = parseResult($('res-code').value); if (!r) return badCode('res-code', 'That result code doesn’t check out. Copy it again.');
       (store.results[r.seed] ||= []).push({ name: $('res-name').value.trim() || 'Friend', value: r.value, emis: r.emis }); persist(); openChallenges();
     };
   }
