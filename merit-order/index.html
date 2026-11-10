@@ -341,7 +341,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 26</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 27</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -486,7 +486,12 @@
   const KEY = 'merit-order';
   let store = {};
   try { store = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { store = {}; }
-  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {} };
+  // A save that storage refuses (full or blocked) is said once, so progress is never lost silently.
+  let saveWarned = false;
+  const persist = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(store)); }
+    catch { if (!saveWarned) { saveWarned = true; toast('Couldn’t save your game: this browser’s storage is full or blocked.'); } }
+  };
   function pack(S) {
     const copy = { ...S, last: undefined };
     copy.days = S.days.map((d, i) => i < S.days.length - 2 ? { ...d, priceSorted: undefined, price: undefined, demand: undefined, mine: undefined } : d);

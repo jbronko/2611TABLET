@@ -473,6 +473,21 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8h. A save that storage refuses says so (once), and play carries on.
+  {
+    const p = await page();
+    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-scenario="first-light"]'); await p.waitForTimeout(150);
+    await p.click('#sc-go'); await p.waitForTimeout(300);
+    await p.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException('full', 'QuotaExceededError'); }; MeritOrder.save(); });
+    await p.waitForTimeout(150);
+    check('a refused save shows a warning instead of failing silently', /Couldn’t save your game/.test(await p.textContent('#toast')) && !(await p.$eval('#toast', x => x.hidden)));
+    await p.click('[data-speed="16"]'); await p.waitForTimeout(600);
+    check('…and the game carries on', await state(p, () => MeritOrder.state.t > 5));
+    await p.context().close();
+  }
+
   // 8g. Company scenarios saved and reloaded: a decision waiting and a rival proposal open come back
   //     as chips that still work; trading while away past a decision's deadline takes its default.
   {
