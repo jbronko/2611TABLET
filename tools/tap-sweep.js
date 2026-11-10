@@ -37,6 +37,14 @@ const ALLOW = {
 
 // Prepared starting points beyond a fresh page, so the sweep reaches deeper screens.
 const SEEDS = {
+  'storm-the-shore': {
+    // level 1 won: the result sheet with Next, Retry, Upgrades and Menu
+    won: async p => { await p.evaluate(() => { StormShore.startLevel(1); StormShore.finishNow('good'); }); },
+    // level 2 lost: the result sheet with Try again
+    lost: async p => { await p.evaluate(() => { StormShore.G.save.level = 2; StormShore.startLevel(2); StormShore.finishNow('bad'); }); },
+    // plenty of coins and a few levels open: every upgrade affordable, level arrows both ways
+    rich: async p => { await p.evaluate(() => { const g = StormShore.G; g.save.coins = 5000; g.save.level = 4; g.pick = 2; StormShore.save(); StormShore.show('title'); }); },
+  },
   'merit-order': {
     // a company with one of every plant, a few days in, paused
     company: async p => {

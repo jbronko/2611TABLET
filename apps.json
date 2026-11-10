@@ -18,5 +18,10 @@
     "slug": "merit-order",
     "name": "Merit Order",
     "description": "A power-plant tycoon in an NEM-style electricity market: build plants, bid into the merit order and keep the lights on."
+  },
+  {
+    "slug": "storm-the-shore",
+    "name": "Storm the Shore",
+    "description": "Lead your landing squad up the beach: pick the right gates, grow your crowd and take the bunker."
   }
 ]

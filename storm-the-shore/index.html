@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Storm the Shore</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#faf6f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#22211d" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  /* Theme tokens: light values on :root, dark values in the two blocks below.
+     Style everything through these tokens so both themes stay readable. */
+  :root {
+    --bg: #faf6f0; --panel: #ffffff; --ink: #1b2328; --muted: #5d6970; --line: #d7dde0;
+    --accent: #c8a76a; --on-accent: #2a2112;
+    --good: #2f7d4f; --bad: #b3402e; --coin: #a8760c;
+    --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #22211d; --panel: #1b2226; --ink: #e3e9ec; --muted: #9aa8af; --line: #2f3a40;
+      --on-accent: #2a2112; --good: #6fc48f; --bad: #f08a76; --coin: #e8b84a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #22211d; --panel: #1b2226; --ink: #e3e9ec; --muted: #9aa8af; --line: #2f3a40;
+    --on-accent: #2a2112; --good: #6fc48f; --bad: #f08a76; --coin: #e8b84a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; overscroll-behavior: none; overflow: hidden; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.45 var(--font-body);
+    -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  button { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  button {
+    font: inherit; color: inherit; cursor: pointer; border-radius: 12px;
+    min-height: 48px; padding: 0 18px; border: 1px solid var(--line); background: var(--panel);
+  }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 800; }
+
+  /* The battlefield fills the screen; menus float over it. */
+  #field { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; background: #87a9c0; }
+
+  .hud {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 5; pointer-events: none;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .chip {
+    background: rgba(20, 24, 20, 0.62); color: #fff; border-radius: 999px; padding: 8px 16px;
+    font-weight: 700; font-size: 16px; line-height: 1.3; white-space: nowrap;
+  }
+  .hud .right { display: flex; gap: 10px; align-items: center; }
+  #pause { pointer-events: auto; width: 56px; min-height: 48px; padding: 0; border-radius: 999px; border: 0;
+    background: rgba(20, 24, 20, 0.62); color: #fff; font-size: 20px; font-weight: 900; letter-spacing: 1px; }
+
+  /* Menus: a fixed layer over the whole screen with a card in the middle. */
+  .layer {
+    position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; overflow-y: auto;
+    padding-block: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    background: rgba(10, 16, 22, 0.35);
+  }
+  .layer.clear { background: linear-gradient(rgba(10, 16, 22, 0) 30%, rgba(10, 16, 22, 0.45)); }
+  .card {
+    width: min(460px, 100%); background: var(--panel); color: var(--ink); border-radius: 20px;
+    padding: 22px; display: grid; gap: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  }
+  .card h1, .card h2 { margin: 0; line-height: 1.1; }
+  .card h1 { font-size: clamp(30px, 5vw, 42px); letter-spacing: -0.5px; }
+  .card h2 { font-size: 26px; }
+  .card p { margin: 0; color: var(--muted); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > button { flex: 1 1 120px; }
+  .big { min-height: 60px; font-size: 20px; }
+  .coins { color: var(--coin); font-weight: 800; }
+  .stat { display: flex; justify-content: space-between; gap: 12px; font-weight: 700; }
+  .updates { margin: 0; text-align: center; }
+  .updates button { background: transparent; border-color: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+  .levels { display: flex; align-items: center; gap: 10px; }
+  .levels button { width: 56px; padding: 0; font-size: 22px; font-weight: 800; }
+  .levels .which { flex: 1; text-align: center; font-weight: 700; }
+
+  .ups { display: grid; gap: 10px; }
+  .up { border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 8px; }
+  .up .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .up b { font-size: 18px; }
+  .up small { color: var(--muted); font-size: 14px; }
+  .pips { display: flex; gap: 4px; }
+  .pips i { flex: 1; height: 8px; border-radius: 4px; background: var(--line); }
+  .pips i.on { background: var(--accent); }
+  .up .buy { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .up .buy span { color: var(--muted); font-size: 15px; }
+  .up .buy button { min-width: 150px; font-weight: 800; }
+</style>
+</head>
+<body>
+<canvas id="field" aria-label="The beach. Drag left or right to steer your squad."></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="chip" id="hud-level">Level 1</div>
+  <div class="right">
+    <div class="chip"><span id="hud-coins">0</span> coins</div>
+    <button type="button" id="pause" aria-label="Pause">II</button>
+  </div>
+</div>
+
+<!-- Title -->
+<div class="layer clear" id="title">
+  <div class="card">
+    <h1>Storm the Shore</h1>
+    <p>Drag left and right to steer your squad up the beach. Take the gates that grow it, dodge the wire and mines, and bring enough soldiers to take the bunker.</p>
+    <div class="stat"><span>Coins</span><span class="coins" id="t-coins">0</span></div>
+    <div class="levels">
+      <button type="button" id="t-prev" aria-label="Previous level">‹</button>
+      <div class="which" id="t-which">Level 1</div>
+      <button type="button" id="t-next" aria-label="Next level">›</button>
+    </div>
+    <button type="button" class="primary big" id="t-play">Play</button>
+    <button type="button" id="t-upgrades">Upgrades</button>
+    <p class="updates"><button type="button" data-check-updates>Check for updates</button></p>
+  </div>
+</div>
+
+<!-- Paused -->
+<div class="layer" id="paused" hidden>
+  <div class="card">
+    <h2>Paused</h2>
+    <p id="p-info"></p>
+    <button type="button" class="primary big" id="p-resume">Resume</button>
+    <div class="row">
+      <button type="button" id="p-restart">Restart level</button>
+      <button type="button" id="p-menu">Menu</button>
+    </div>
+  </div>
+</div>
+
+<!-- Result -->
+<div class="layer" id="result" hidden>
+  <div class="card">
+    <h2 id="r-title">Bunker taken!</h2>
+    <p id="r-text"></p>
+    <div class="stat"><span>Coins earned</span><span class="coins" id="r-coins">+0</span></div>
+    <button type="button" class="primary big" id="r-go">Next level</button>
+    <div class="row">
+      <button type="button" id="r-retry">Retry</button>
+      <button type="button" id="r-upgrades">Upgrades</button>
+      <button type="button" id="r-menu">Menu</button>
+    </div>
+  </div>
+</div>
+
+<!-- Upgrades -->
+<div class="layer" id="upgrades" hidden>
+  <div class="card">
+    <h2>Upgrades</h2>
+    <div class="stat"><span>Coins</span><span class="coins" id="u-coins">0</span></div>
+    <div class="ups" id="u-list"></div>
+    <button type="button" class="primary" id="u-done">Done</button>
+  </div>
+</div>
+
+<script src="sim.js"></script>
+<script>
+(() => {
+  'use strict';
+  const S = Shore;
+  const $ = id => document.getElementById(id);
+
+  // ---- saved progress (one key for this app: every app on the site shares one origin) ----
+  const load = () => { try { return S.cleanSave(JSON.parse(localStorage.getItem(S.STORE))); } catch { return S.freshSave(); } };
+  const save = () => { try { localStorage.setItem(S.STORE, JSON.stringify(G.save)); } catch {} };
+
+  const G = {
+    save: load(),
+    mode: 'title',        // title | play | paused | over
+    pick: 1,              // level chosen on the title screen
+    run: null,
+    view: { z: 0, x: 0, shake: 0 },
+    troops: [], foes: new Map(), puffs: [], floats: [], flashes: [],
+    after: null,          // where the upgrades sheet returns to
+  };
+  G.pick = G.save.level;
+  window.appUpdates = { beforeRestart: save };
+
+  // ---- canvas and camera ----
+  const cv = $('field'), ctx = cv.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  const LW = 5;          // world units from the lane centre to its edge (lane x = 1)
+  const CAM_BACK = 9;  // camera distance behind the squad
+  const CAM_H = 7.5;      // camera height
+  const FAR = 170;
+  let fx = 1, fy = 1, hor = 0;
+  function resize() {
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    hor = H * (W > H ? 0.2 : 0.24);
+    fx = Math.min(W * 0.78, H * 1.15) * CAM_BACK / (2 * LW);
+    fy = (H * (W > H ? 0.74 : 0.7) - hor) * CAM_BACK / CAM_H;
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // world (lane x, height y, distance z) → screen; returns null behind the camera
+  const camZ = () => G.view.z - CAM_BACK;
+  function P(x, y, z) {
+    const dz = z - camZ();
+    if (dz < 0.6) return null;
+    return { x: W / 2 + ((x - G.view.camX) * LW) * fx / dz + G.view.shakeX, y: hor + (CAM_H - y) * fy / dz, s: fx / dz, sy: fy / dz, dz };
+  }
+  const fog = dz => Math.max(0, Math.min(1, (FAR - dz) / 40));
+
+  // ---- palette (the battlefield keeps its colours in both themes) ----
+  const C = {
+    skyTop: '#9cb7c9', skyLow: '#e7d7bd', smoke: 'rgba(90,90,95,0.18)', cliff: '#8d8a73', cliff2: '#a29e82',
+    sand: '#d8c08f', sand2: '#cdb27d', wet: '#b79f72', mat: '#b89a66', mat2: '#a88a58', matEdge: '#6f5a37',
+    sea: '#3f7891', sea2: '#5b93aa', foam: '#e9f1f1',
+    us: '#5d6b33', usDark: '#3c4620', usHelm: '#4a5527', skin: '#e2b48c', boots: '#2b2418',
+    foe: '#6e7178', foeDark: '#45484e', foeHelm: '#3a3d42',
+    good: '#2f8fd6', goodEdge: '#1d5f94', bad: '#d4553d', badEdge: '#8e2e1f',
+    wire: '#3a3530', mine: '#2f2c27', bag: '#b7a172', bagDark: '#8d7a50', concrete: '#9a9a92', concreteDark: '#6c6c66',
+  };
+
+  // ---- helpers ----
+  const rnd = (i, k = 0) => { const t = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return t - Math.floor(t); };
+  function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+  function badge(x, y, text, bg, size) {
+    ctx.font = `900 ${size}px system-ui, sans-serif`;
+    const w = ctx.measureText(text).width + size * 0.9, h = size * 1.35;
+    roundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.fillStyle = bg; ctx.fill();
+    ctx.lineWidth = Math.max(1.5, size * 0.08); ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + size * 0.04);
+  }
+
+  // A soldier, standing at screen (x, y) feet, scale k (pixels per world unit). facing: 1 away from us, -1 towards us.
+  function soldier(x, y, k, kind, phase, facing, alpha = 1) {
+    const h = k * 1.2; if (h < 1.2) return;
+    const body = kind === 'us' ? C.us : C.foe, dark = kind === 'us' ? C.usDark : C.foeDark, helm = kind === 'us' ? C.usHelm : C.foeHelm;
+    ctx.globalAlpha = alpha;
+    if (h < 5) { ctx.fillStyle = body; ctx.fillRect(x - h * 0.18, y - h, h * 0.36, h); ctx.globalAlpha = 1; return; }
+    const sw = Math.sin(phase) * h * 0.09;
+    // legs
+    ctx.strokeStyle = dark; ctx.lineWidth = h * 0.13; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - h * 0.07, y - h * 0.42); ctx.lineTo(x - h * 0.08 + sw, y - h * 0.04);
+    ctx.moveTo(x + h * 0.07, y - h * 0.42); ctx.lineTo(x + h * 0.08 - sw, y - h * 0.04); ctx.stroke();
+    // body
+    ctx.fillStyle = body; roundRect(x - h * 0.17, y - h * 0.78, h * 0.34, h * 0.42, h * 0.1); ctx.fill();
+    // pack (seen from behind) or face (seen from the front)
+    if (facing > 0) { ctx.fillStyle = dark; roundRect(x - h * 0.12, y - h * 0.74, h * 0.24, h * 0.22, h * 0.05); ctx.fill(); }
+    // rifle
+    ctx.strokeStyle = '#3b2d1d'; ctx.lineWidth = Math.max(1, h * 0.05);
+    ctx.beginPath(); ctx.moveTo(x + h * 0.18, y - h * 0.4); ctx.lineTo(x + h * 0.3, y - h * 0.95); ctx.stroke();
+    // head + helmet
+    ctx.fillStyle = C.skin; ctx.beginPath(); ctx.arc(x, y - h * 0.86, h * 0.12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = helm; ctx.beginPath(); ctx.ellipse(x, y - h * (facing > 0 ? 0.88 : 0.92), h * 0.17, h * (facing > 0 ? 0.13 : 0.09), 0, Math.PI, 0); ctx.fill();
+    ctx.fillRect(x - h * 0.19, y - h * (facing > 0 ? 0.885 : 0.925), h * 0.38, h * 0.035);
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- the squad: each soldier eases toward its place in a sunflower spiral ----
+  const GOLD = 2.39996;
+  function syncTroops(dt) {
+    const s = G.run; if (!s) return;
+    const n = Math.min(s.n, 320), R = S.radius(s.n);
+    while (G.troops.length > n) {
+      const t = G.troops.pop();
+      // soldiers left on the bonus steps just stay there; others go down in a puff of sand
+      if (s.phase !== 'climb' && s.phase !== 'won' && G.puffs.length < 24)
+        G.puffs.push({ x: s.x + t.x, z: G.view.z + t.z, t: 0, life: 0.45 + Math.random() * 0.25 });
+    }
+    while (G.troops.length < n) G.troops.push({ x: (Math.random() - 0.5) * 0.1, z: (Math.random() - 0.5) * 0.5, p: Math.random() * 6 });
+    const k = Math.min(1, dt * 7);
+    G.troops.forEach((t, i) => {
+      const r = R * Math.sqrt((i + 0.5) / n), a = i * GOLD;
+      t.x += (r * Math.cos(a) - t.x) * k;
+      t.z += (r * Math.sin(a) * LW * 0.8 - t.z) * k;
+      t.p += dt * 13;
+    });
+  }
+
+  // ---- drawing ----
+  function drawSky() {
+    const g = ctx.createLinearGradient(0, 0, 0, hor);
+    g.addColorStop(0, C.skyTop); g.addColorStop(1, C.skyLow);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, hor + 2);
+    // smoke drifting over the cliffs
+    for (let i = 0; i < 6; i++) {
+      const x = ((i * 0.23 + performance.now() / 90000) % 1.2 - 0.1) * W;
+      ctx.fillStyle = C.smoke; ctx.beginPath(); ctx.ellipse(x, hor * (0.45 + 0.08 * (i % 3)), W * 0.12, hor * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // cliffs and dunes on the horizon
+    ctx.fillStyle = C.cliff2; ctx.beginPath(); ctx.moveTo(0, hor);
+    for (let i = 0; i <= 24; i++) ctx.lineTo(i / 24 * W, hor - H * 0.05 - rnd(i, 3) * H * 0.04);
+    ctx.lineTo(W, hor); ctx.fill();
+    ctx.fillStyle = C.cliff; ctx.beginPath(); ctx.moveTo(0, hor + 1);
+    for (let i = 0; i <= 16; i++) ctx.lineTo(i / 16 * W, hor - H * 0.02 - rnd(i, 9) * H * 0.025);
+    ctx.lineTo(W, hor + 1); ctx.fill();
+  }
+
+  function drawGround() {
+    const s = G.run;
+    // sand everywhere below the horizon
+    const g = ctx.createLinearGradient(0, hor, 0, H);
+    g.addColorStop(0, C.sand2); g.addColorStop(1, C.sand);
+    ctx.fillStyle = g; ctx.fillRect(0, hor, W, H - hor);
+    const cz = camZ();
+    // the sea behind the waterline (z < 0)
+    if (cz < 0) {
+      const w = P(0, 0, 0.001);
+      const y = w ? w.y : hor;
+      ctx.fillStyle = C.wet; ctx.fillRect(0, y - 6, W, 14);
+      const sg = ctx.createLinearGradient(0, y, 0, H); sg.addColorStop(0, C.sea2); sg.addColorStop(1, C.sea);
+      ctx.fillStyle = sg; ctx.fillRect(0, y, W, H - y);
+      ctx.strokeStyle = C.foam; ctx.lineWidth = 3; ctx.beginPath();
+      for (let i = 0; i <= 40; i++) ctx.lineTo(i / 40 * W, y + Math.sin(i * 0.9 + performance.now() / 400) * 3);
+      ctx.stroke();
+    }
+    // the landing mat up the beach: planks across the lane
+    const z0 = Math.max(0, Math.floor(cz / 4) * 4 - 4), z1 = Math.min(cz + FAR, (s ? s.lvl.end : 400) + 70);
+    for (let z = z1; z > z0; z -= 4) {
+      const near = Math.max(z - 4, 0, cz + 0.61);
+      const a = P(-1, 0, z), b = P(1, 0, z), c = P(1, 0, near), d = P(-1, 0, near);
+      if (!a || !c) continue;
+      ctx.globalAlpha = fog(a.dz);
+      ctx.fillStyle = (z / 4) % 2 ? C.mat : C.mat2;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.fill();
+      ctx.strokeStyle = C.matEdge; ctx.lineWidth = Math.max(1, a.s * 0.08);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(d.x, d.y); ctx.moveTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Scenery beside the lane: craters, steel hedgehogs and the odd post. Same place every visit.
+  function sceneryItems() {
+    const out = [], cz = camZ();
+    for (let i = Math.max(0, Math.floor(cz / 9)); i * 9 < cz + FAR; i++) {
+      for (const side of [-1, 1]) {
+        const r = rnd(i, side + 5);
+        const x = side * (1.35 + rnd(i, side + 7) * 1.6), z = i * 9 + rnd(i, side) * 6;
+        out.push({ z, draw: () => {
+          const p = P(x, 0, z); if (!p) return;
+          ctx.globalAlpha = fog(p.dz);
+          if (r < 0.45) {        // crater
+            ctx.fillStyle = 'rgba(80,64,40,0.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.s * 1.6, p.sy * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+          } else if (r < 0.85) { // steel hedgehog
+            const k = p.s * 1.1; ctx.strokeStyle = '#4a4540'; ctx.lineWidth = Math.max(1, k * 0.16); ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(p.x - k, p.y); ctx.lineTo(p.x + k * 0.8, p.y - k * 1.4);
+            ctx.moveTo(p.x + k, p.y); ctx.lineTo(p.x - k * 0.8, p.y - k * 1.4);
+            ctx.moveTo(p.x, p.y + k * 0.1); ctx.lineTo(p.x, p.y - k * 1.5); ctx.stroke();
+          } else {               // a post with a sign
+            const k = p.s; ctx.fillStyle = '#5a4630'; ctx.fillRect(p.x - k * 0.08, p.y - k * 2, k * 0.16, k * 2);
+            ctx.fillStyle = '#e8dcc0'; ctx.fillRect(p.x - k * 0.5, p.y - k * 2, k, k * 0.5);
+          }
+          ctx.globalAlpha = 1;
+        } });
+      }
+    }
+    return out;
+  }
+
+  function drawGate(o) {
+    const passed = G.run && G.run.next > G.run.objs.indexOf(o);
+    for (const [side, g] of [['left', o.left], ['right', o.right]]) {
+      const x0 = side === 'left' ? -0.97 : 0.03, x1 = side === 'left' ? -0.03 : 0.97;
+      const a = P(x0, 3.2, o.z), b = P(x1, 0, o.z); if (!a || !b) return;
+      const good = S.goodOp(g.op);
+      let alpha = fog(a.dz) * (passed ? (o.hit === side ? 0.25 : 0.55) : 0.82);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = good ? C.good : C.bad;
+      ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      ctx.globalAlpha = fog(a.dz);
+      ctx.fillStyle = good ? C.goodEdge : C.badEdge;
+      const post = Math.max(2, a.s * 0.18);
+      ctx.fillRect(a.x - post / 2, a.y - post, post, b.y - a.y + post); ctx.fillRect(b.x - post / 2, a.y - post, post, b.y - a.y + post);
+      ctx.fillRect(a.x, a.y - post, b.x - a.x, post);
+      if (!(passed && o.hit === side)) {
+        const size = Math.max(8, Math.min(120, a.s * 1.5));
+        ctx.font = `900 ${size}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineWidth = size * 0.12; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineJoin = 'round';
+        const t = S.opLabel(g.op, g.n), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+        ctx.strokeText(t, cx, cy); ctx.fillStyle = '#fff'; ctx.fillText(t, cx, cy);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // The enemy line: rows of soldiers across the lane, facing us.
+  function foeSpots(o) {
+    let spots = G.foes.get(o);
+    if (!spots) {
+      spots = [];
+      const shown = Math.min(o.n, 160), perRow = Math.max(6, Math.min(16, Math.ceil(Math.sqrt(shown * 3))));
+      for (let i = 0; i < shown; i++) {
+        const row = Math.floor(i / perRow), col = i % perRow;
+        spots.push({ x: -0.88 + 1.76 * ((col + 0.5 + (row % 2) * 0.35) / perRow) + (rnd(i, 4) - 0.5) * 0.05, z: row * 1.3 + rnd(i, 2) * 0.4, p: rnd(i, 8) * 6 });
+      }
+      G.foes.set(o, spots);
+    }
+    return spots;
+  }
+  function drawEnemy(o) {
+    const spots = foeSpots(o), shown = Math.ceil(spots.length * o.rem / o.n);
+    for (let i = shown - 1; i >= 0; i--) {   // far rows first
+      const t = spots[i], p = P(t.x, 0, o.z + t.z); if (!p) continue;
+      soldier(p.x, p.y, p.s, 'foe', t.p + (G.run.phase === 'fight' && G.run.fight && G.run.fight.obj === o ? performance.now() / 60 : 0), -1, fog(p.dz));
+    }
+    if (o.rem > 0) { const b = P(0, 3.4, o.z); if (b) badge(b.x, b.y, String(o.rem), '#a8322a', Math.max(12, Math.min(40, b.s * 0.9))); }
+  }
+
+  function drawPickup(o) {
+    if (o.hit) return;
+    const shown = Math.min(o.n, 18);
+    for (let i = shown - 1; i >= 0; i--) {
+      const r = 0.06 * Math.sqrt(i + 0.5), a = i * GOLD;
+      const p = P(o.x + r * Math.cos(a), 0, o.z + r * Math.sin(a) * 3); if (!p) continue;
+      soldier(p.x, p.y, p.s, 'us', performance.now() / 200 + i, -1, fog(p.dz));
+    }
+    const b = P(o.x, 2.8, o.z); if (b) badge(b.x, b.y, '+' + o.n, '#2f7d4f', Math.max(12, Math.min(36, b.s * 0.8)));
+  }
+
+  function drawWire(o) {
+    const step = 0.16, n = Math.max(1, Math.round((o.x1 - o.x0) / step));
+    ctx.strokeStyle = C.wire;
+    for (let i = 0; i <= n; i++) {
+      const x = o.x0 + (o.x1 - o.x0) * i / n, p = P(x, 0, o.z), q = P(x, 1.1, o.z); if (!p) continue;
+      ctx.globalAlpha = fog(p.dz); ctx.lineWidth = Math.max(1, p.s * 0.12);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    }
+    // coils
+    ctx.lineWidth = 1.2;
+    for (const h of [0.35, 0.75]) {
+      ctx.beginPath();
+      for (let i = 0; i <= n * 4; i++) {
+        const x = o.x0 + (o.x1 - o.x0) * i / (n * 4), p = P(x, h + Math.sin(i * 1.6) * 0.18, o.z + Math.cos(i * 1.6) * 0.3); if (!p) continue;
+        i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMines(o) {
+    for (const m of o.mines) {
+      const p = P(m.x, 0, o.z + m.dz); if (!p) continue;
+      ctx.globalAlpha = fog(p.dz);
+      ctx.fillStyle = 'rgba(70,55,35,0.35)'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.s * 0.75, p.sy * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = C.mine; ctx.beginPath(); ctx.ellipse(p.x, p.y - p.s * 0.08, p.s * 0.42, p.sy * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c23b2a'; ctx.beginPath(); ctx.arc(p.x, p.y - p.s * 0.2, Math.max(1, p.s * 0.08), 0, Math.PI * 2); ctx.fill();
+      // a warning flag at the end of the field
+    }
+    const f = P(o.x0 < -0.99 ? o.x1 : o.x0, 0, o.z - 1);
+    if (f) {
+      ctx.globalAlpha = fog(f.dz); ctx.fillStyle = '#5a4630'; ctx.fillRect(f.x - f.s * 0.05, f.y - f.s * 1.6, f.s * 0.1, f.s * 1.6);
+      ctx.fillStyle = '#e0c23a'; ctx.beginPath(); ctx.moveTo(f.x, f.y - f.s * 1.6); ctx.lineTo(f.x + f.s * 0.6, f.y - f.s * 1.4); ctx.lineTo(f.x, f.y - f.s * 1.2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawWall(o) {
+    for (let z = o.z + o.len; z >= o.z; z -= 2) {
+      const a = P(o.x0, 1.4, z), b = P(o.x1, 0, z); if (!a || !b) continue;
+      ctx.globalAlpha = fog(a.dz);
+      const rows = 3, hgt = (b.y - a.y) / rows;
+      for (let r = 0; r < rows; r++) {
+        const bags = Math.max(2, Math.round((b.x - a.x) / Math.max(4, a.s * 0.9)));
+        for (let i = 0; i < bags; i++) {
+          const w = (b.x - a.x) / bags, x = a.x + i * w + (r % 2 ? w / 2 : 0);
+          if (x + w > b.x + 1) continue;
+          ctx.fillStyle = (i + r) % 2 ? C.bag : C.bagDark;
+          roundRect(x, a.y + r * hgt, w - 1, hgt - 1, hgt * 0.4); ctx.fill();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBunker(o) {
+    const taken = o.rem <= 0;
+    const hgt = taken ? 1.1 : 4.2;
+    const a = P(-0.8, hgt, o.z + 3), b = P(0.8, 0, o.z + 3), f = P(-0.8, hgt, o.z), g = P(0.8, 0, o.z);
+    if (!a || !f) return;
+    ctx.globalAlpha = fog(a.dz);
+    if (taken) {
+      // knocked flat: a heap of broken concrete the squad climbs over
+      for (let i = 0; i < 14; i++) {
+        const p = P(-0.8 + 1.6 * rnd(i, 21), 0, o.z + 3 * rnd(i, 22)); if (!p) continue;
+        ctx.fillStyle = i % 2 ? C.concrete : C.concreteDark;
+        roundRect(p.x - p.s * 0.6, p.y - p.s * (0.4 + rnd(i, 23) * 0.6), p.s * 1.2, p.s * 0.8, p.s * 0.15); ctx.fill();
+      }
+      const sm = P(0, 2.5 + Math.sin(performance.now() / 700) * 0.3, o.z + 1.5);
+      if (sm) { ctx.fillStyle = 'rgba(120,118,112,0.35)'; ctx.beginPath(); ctx.ellipse(sm.x, sm.y, sm.s * 2.2, sm.s * 1.2, 0, 0, Math.PI * 2); ctx.fill(); }
+    } else {
+      ctx.fillStyle = C.concrete; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, a.y); ctx.lineTo(g.x, f.y); ctx.lineTo(f.x, f.y); ctx.fill();
+      ctx.fillStyle = C.concreteDark; ctx.fillRect(f.x, f.y, g.x - f.x, g.y - f.y);
+      ctx.fillStyle = '#1d1d1b'; ctx.fillRect(f.x + (g.x - f.x) * 0.2, f.y + (g.y - f.y) * 0.3, (g.x - f.x) * 0.6, (g.y - f.y) * 0.12);
+      // muzzle flashes from the slit while it's under attack
+      if (G.run.phase === 'fight' && G.run.fight && G.run.fight.obj === o && Math.random() < 0.5) {
+        ctx.fillStyle = '#ffe58a'; ctx.beginPath();
+        ctx.arc(f.x + (g.x - f.x) * (0.25 + Math.random() * 0.5), f.y + (g.y - f.y) * 0.36, f.s * 0.2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // flag: theirs until taken, then ours
+    const top = P(0.55, hgt + 3.3, o.z + 1.5), base = P(0.55, hgt, o.z + 1.5);
+    if (top && base) {
+      ctx.strokeStyle = '#333'; ctx.lineWidth = Math.max(1, top.s * 0.08); ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+      const wave = Math.sin(performance.now() / 250) * top.s * 0.15;
+      ctx.fillStyle = taken ? '#2f8fd6' : '#a8322a';
+      ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(top.x + top.s * 1.6, top.y + top.s * 0.3 + wave); ctx.lineTo(top.x, top.y + top.s * 0.9); ctx.fill();
+    }
+    if (!taken) { const c = P(0, 6, o.z); if (c) badge(c.x, c.y, String(o.rem), '#4b4b48', Math.max(14, Math.min(44, c.s * 1.0))); }
+    ctx.globalAlpha = 1;
+  }
+
+  // The bonus steps past the bunker, flat on the sand: spare soldiers climb them for more coins.
+  function drawLadder() {
+    const s = G.run; if (!s) return;
+    const o = s.objs[s.objs.length - 1];
+    for (let i = S.LADDER_STEPS; i >= 1; i--) {
+      const z = o.z + 6 + i * 5, p = P(-0.9, 0, z), q = P(0.9, 0, z + 4), r = P(0.9, 0, z), t = P(-0.9, 0, z + 4);
+      if (!p || !q) continue;
+      ctx.globalAlpha = fog(p.dz);
+      const reached = s.steps >= i;
+      ctx.fillStyle = `hsl(${200 - i * 22}, ${reached ? 80 : 45}%, ${reached ? 55 : 64}%)`;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(r.x, r.y); ctx.lineTo(q.x, q.y); ctx.lineTo(t.x, t.y); ctx.fill();
+      const size = Math.max(8, Math.min(60, (p.y - q.y) * 0.8)), m = P(0, 0, z + 2);
+      ctx.font = `900 ${size}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+      ctx.fillText('×' + (1 + 0.5 * i), m.x, m.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawTroops() {
+    const s = G.run; if (!s) return [];
+    const list = G.troops.map(t => ({ z: G.view.z + t.z, draw: () => {
+      const p = P(G.view.x + t.x, 0, G.view.z + t.z); if (!p) return;
+      ctx.fillStyle = 'rgba(40,30,15,0.25)'; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.s * 0.35, p.sy * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+      soldier(p.x, p.y, p.s, 'us', G.mode === 'play' ? t.p : t.p * 0.1, 1);
+    } }));
+    return list;
+  }
+
+  function drawFx(dt) {
+    for (const f of G.puffs) {
+      f.t += dt; const p = P(f.x, 0.6 + f.t, f.z); if (!p) continue;
+      const k = f.t / f.life; ctx.globalAlpha = Math.max(0, 1 - k) * 0.7;
+      ctx.fillStyle = '#d9d2c4'; ctx.beginPath(); ctx.arc(p.x, p.y, Math.min(22, p.s * (0.15 + k * 0.35)), 0, Math.PI * 2); ctx.fill();
+    }
+    G.puffs = G.puffs.filter(f => f.t < f.life);
+    for (const f of G.flashes) {
+      f.t += dt; const p = P(f.x, 0.9, f.z); if (!p) continue;
+      ctx.globalAlpha = Math.max(0, 1 - f.t / 0.12); ctx.fillStyle = '#ffe58a';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.s * 0.25, 0, Math.PI * 2); ctx.fill();
+    }
+    G.flashes = G.flashes.filter(f => f.t < 0.12);
+    ctx.globalAlpha = 1;
+    for (const f of G.floats) {
+      f.t += dt; const p = P(f.x, 3 + f.t * 2.5, f.z); if (!p) continue;
+      ctx.globalAlpha = Math.max(0, 1 - f.t / 1.1);
+      const size = Math.max(16, Math.min(64, p.s * 1.2));
+      ctx.font = `900 ${size}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = size * 0.14; ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.strokeText(f.text, p.x, p.y);
+      ctx.fillStyle = f.color; ctx.fillText(f.text, p.x, p.y);
+    }
+    G.floats = G.floats.filter(f => f.t < 1.1);
+    ctx.globalAlpha = 1;
+  }
+
+  function draw(dt) {
+    ctx.clearRect(0, 0, W, H);
+    drawSky(); drawGround(); drawLadder();
+    const s = G.run, items = sceneryItems(), cz = camZ();
+    if (s) for (const o of s.objs) {
+      if (o.z + (o.len || 0) < cz + 0.6 && o.type !== 'bunker' || o.z > cz + FAR + 10) continue;
+      const fn = { gate: drawGate, enemy: drawEnemy, pickup: drawPickup, wire: drawWire, mines: drawMines, wall: drawWall, bunker: drawBunker }[o.type];
+      if (o.type === 'enemy' && o.rem <= 0) continue;
+      items.push({ z: o.z + (o.type === 'bunker' ? 3 : o.type === 'wall' ? o.len : o.type === 'enemy' ? 8 : 0), draw: () => fn(o) });
+    }
+    items.push(...drawTroops());
+    items.sort((a, b) => b.z - a.z);
+    for (const it of items) it.draw();
+    drawFx(dt);
+    // the squad's number, over its head
+    if (s && G.mode !== 'title' && s.n > 0) {
+      const p = P(G.view.x, 3.6, G.view.z + 0.5);
+      if (p) badge(p.x, p.y - S.radius(s.n) * 6, String(s.n), '#2a5aa8', Math.max(18, Math.min(42, p.s * 0.9)));
+    }
+  }
+
+  // ---- running a level ----
+  function startLevel(num) {
+    G.run = S.create(num, G.save);
+    G.troops = []; G.foes = new Map(); G.puffs = []; G.floats = []; G.flashes = [];
+    G.view = { z: 0, x: 0, camX: 0, shake: 0, shakeX: 0 };
+    syncTroops(1);
+    G.overAt = 0;
+    $('hud-level').textContent = `Level ${num} · ${G.run.lvl.title}`;
+    show('play');
+  }
+
+  function show(mode) {
+    G.mode = mode;
+    $('title').hidden = mode !== 'title';
+    $('paused').hidden = mode !== 'paused';
+    $('result').hidden = mode !== 'over';
+    $('upgrades').hidden = mode !== 'upgrades';
+    $('hud').hidden = !(mode === 'play' || mode === 'paused');
+    $('hud-coins').textContent = G.save.coins;
+    if (mode === 'title') renderTitle();
+    if (mode === 'upgrades') renderUpgrades();
+    if (mode === 'paused') $('p-info').textContent = `Level ${G.run.num}: ${G.run.n} soldiers on the beach.`;
+  }
+
+  function handleEvents() {
+    const s = G.run;
+    for (const e of s.events) {
+      if (e.kind === 'gate') {
+        const good = e.after >= e.before;
+        G.floats.push({ x: G.view.x, z: G.view.z + 1, t: 0, text: S.opLabel(e.op, e.a), color: good ? '#bfe6ff' : '#ffb3a6' });
+        if (!good) shake(0.25);
+      } else if (e.kind === 'pickup') {
+        G.floats.push({ x: G.view.x, z: G.view.z + 1, t: 0, text: '+' + e.n, color: '#c8f5c0' });
+      } else if (e.kind === 'loss' && (e.why === 'wire' || e.why === 'mines')) {
+        G.floats.push({ x: G.view.x, z: G.view.z + 1, t: 0, text: '−' + e.n, color: '#ffb3a6' });
+        shake(e.why === 'mines' ? 0.5 : 0.25); buzz(30);
+      } else if (e.kind === 'clash' || e.kind === 'assault') { shake(0.3); buzz(20); }
+      else if (e.kind === 'hit') {
+        if (Math.random() < 0.5) G.flashes.push({ x: G.view.x + (Math.random() - 0.5) * 1.2, z: G.view.z + 1 + Math.random() * 3, t: 0 });
+      } else if (e.kind === 'step') {
+        G.floats.push({ x: G.view.x, z: G.view.z + 2, t: 0, text: '×' + (1 + 0.5 * e.step), color: '#ffe58a' });
+      } else if (e.kind === 'won' || e.kind === 'lost') { G.overAt = performance.now() + (e.kind === 'won' ? 900 : 1100); }
+    }
+    s.events.length = 0;
+  }
+
+  function shake(k) { G.view.shake = Math.max(G.view.shake, k); }
+  function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch {} }
+
+  function finishRun() {
+    const s = G.run, won = s.phase === 'won';
+    S.finish(G.save, s); save();
+    $('r-title').textContent = won ? 'Bunker taken!' : 'Squad lost';
+    const why = { gate: 'A bad gate took the last of them.', wire: 'The wire caught the last of them.', mines: 'The minefield took the last of them.',
+      enemy: 'The enemy line held.', bunker: 'The bunker held out.' };
+    const lastLoss = s.lastWhy || 'enemy';
+    $('r-text').textContent = won
+      ? (s.steps ? `${s.steps} step${s.steps > 1 ? 's' : ''} up: ×${1 + 0.5 * s.steps} coins. ` : '') + (s.num >= G.save.level - 1 ? `Level ${s.num + 1} is open.` : '')
+      : `${why[lastLoss]} You kept the coins from the way up. Upgrades help with the hard ones.`;
+    $('r-coins').textContent = `+${s.coins}`;
+    $('r-go').textContent = won ? `Next: level ${s.num + 1}` : 'Try again';
+    $('r-retry').hidden = !won;
+    G.pick = won ? s.num + 1 : s.num;
+    show('over');
+  }
+
+  // ---- the frame loop ----
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const s = G.run;
+    if (s && G.mode === 'play') {
+      for (let t = dt; t > 1e-6; t -= 1 / 120) {
+        const h = Math.min(1 / 120, t);
+        const before = s.n;
+        S.step(s, h);
+        if (s.n < before) { const lastLoss = s.events.filter(e => e.kind === 'loss').pop(); if (lastLoss) s.lastWhy = lastLoss.why; }
+        handleEvents();
+      }
+      if (G.overAt && now >= G.overAt) { G.overAt = 0; finishRun(); }
+    }
+    if (s) {
+      // the camera follows the squad (and walks it up the steps after the bunker)
+      const b = s.objs[s.objs.length - 1];
+      const target = s.phase === 'climb' || (s.phase === 'won' && s.steps) ? b.z + 6 + Math.max(1, s.steps) * 5 + 2 : s.phase === 'fight' && s.fight && s.fight.obj.type === 'bunker' ? b.z - 2.5 : s.z;
+      G.view.z += (target - G.view.z) * Math.min(1, dt * (s.phase === 'run' ? 30 : 4));
+      const tx = s.phase === 'climb' || s.phase === 'won' ? 0 : s.x;
+      G.view.x += (tx - G.view.x) * Math.min(1, dt * 12);
+      G.view.camX += (G.view.x * 0.35 - G.view.camX) * Math.min(1, dt * 4);
+      G.view.shake = Math.max(0, G.view.shake - dt * 1.5);
+      G.view.shakeX = G.view.shake ? Math.sin(now / 25) * G.view.shake * 14 : 0;
+      syncTroops(dt);
+    }
+    draw(dt);
+    requestAnimationFrame(frame);
+  }
+
+  // ---- steering: drag anywhere; the squad follows your finger across the lane ----
+  let drag = null;
+  cv.addEventListener('pointerdown', e => {
+    if (G.mode !== 'play' || !G.run) return;
+    cv.setPointerCapture(e.pointerId);
+    drag = { id: e.pointerId, x0: e.clientX, t0: G.run.targetX };
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag || drag.id !== e.pointerId || !G.run) return;
+    const lanePx = LW * fx / CAM_BACK;   // half a lane, in pixels, where the squad stands
+    G.run.targetX = Math.max(-1, Math.min(1, drag.t0 + (e.clientX - drag.x0) / lanePx * 1.15));
+  });
+  const endDrag = e => { if (drag && drag.id === e.pointerId) drag = null; };
+  cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+  addEventListener('keydown', e => {
+    if (G.mode !== 'play' || !G.run) return;
+    if (e.key === 'ArrowLeft') G.run.targetX = Math.max(-1, G.run.targetX - 0.25);
+    if (e.key === 'ArrowRight') G.run.targetX = Math.min(1, G.run.targetX + 0.25);
+    if (e.key === 'Escape') show('paused');
+  });
+
+  // ---- menus ----
+  function renderTitle() {
+    G.pick = Math.max(1, Math.min(G.save.level, G.pick));
+    $('t-coins').textContent = G.save.coins;
+    const spec = S.levelSpec(G.pick);
+    $('t-which').textContent = `Level ${G.pick} · ${spec.title}`;
+    $('t-prev').disabled = G.pick <= 1;
+    $('t-next').disabled = G.pick >= G.save.level;
+    $('t-play').textContent = G.pick < G.save.level ? `Replay level ${G.pick}` : `Play level ${G.pick}`;
+    // the scenery behind the menu: the chosen level, waiting at the waterline
+    if (!G.run || G.run.num !== G.pick || G.run.phase !== 'run' || G.run.z > 0) {
+      G.run = S.create(G.pick, G.save); G.troops = []; G.foes = new Map();
+      G.view = { z: 0, x: 0, camX: 0, shake: 0, shakeX: 0 }; syncTroops(1);
+    }
+  }
+  function renderUpgrades() {
+    $('u-coins').textContent = G.save.coins;
+    const list = $('u-list'); list.textContent = '';
+    for (const [key, u] of Object.entries(S.UPGRADES)) {
+      const lvl = G.save.up[key], cost = S.upgradeCost(key, lvl);
+      const div = document.createElement('div'); div.className = 'up';
+      const now = u.show(u.value(lvl)), next = lvl < u.max ? u.show(u.value(lvl + 1)) : null;
+      div.innerHTML = `<div class="top"><b></b><small></small></div><div class="pips">${'<i></i>'.repeat(u.max)}</div><div class="buy"><span></span><button type="button"></button></div>`;
+      div.querySelector('b').textContent = u.name;
+      div.querySelector('small').textContent = u.blurb;
+      [...div.querySelectorAll('.pips i')].forEach((p, i) => p.classList.toggle('on', i < lvl));
+      div.querySelector('.buy span').textContent = next ? `${now} → ${next}` : now;
+      const btn = div.querySelector('.buy button');
+      btn.dataset.up = key;
+      btn.textContent = cost == null ? 'Maxed' : `Buy · ${cost} coins`;
+      btn.disabled = cost == null || G.save.coins < cost;
+      btn.className = cost != null && G.save.coins >= cost ? 'primary' : '';
+      btn.onclick = () => { if (S.buy(G.save, key)) { save(); renderUpgrades(); } };
+      list.appendChild(div);
+    }
+  }
+  const openUpgrades = from => { G.after = from; show('upgrades'); };
+
+  $('t-play').onclick = () => startLevel(G.pick);
+  $('t-prev').onclick = () => { G.pick--; renderTitle(); };
+  $('t-next').onclick = () => { G.pick++; renderTitle(); };
+  $('t-upgrades').onclick = () => openUpgrades('title');
+  $('pause').onclick = () => { drag = null; show('paused'); };
+  $('p-resume').onclick = () => { last = performance.now(); show('play'); };
+  $('p-restart').onclick = () => startLevel(G.run.num);
+  $('p-menu').onclick = () => { G.pick = G.run.num; G.run = null; show('title'); };
+  $('r-go').onclick = () => startLevel(G.pick);
+  $('r-retry').onclick = () => startLevel(G.run.num);
+  $('r-upgrades').onclick = () => openUpgrades('over');
+  $('r-menu').onclick = () => { G.run = null; show('title'); };
+  $('u-done').onclick = () => show(G.after === 'over' ? 'over' : 'title');
+
+  document.addEventListener('visibilitychange', () => { if (document.hidden && G.mode === 'play') show('paused'); });
+
+  // For tests: play the current level to its end with the autopilot ('good' or 'bad').
+  window.StormShore = {
+    G, S, startLevel, save, show,
+    finishNow(mode = 'good') {
+      const s = G.run;
+      for (let i = 0; i < 60 * 600 && s.phase !== 'won' && s.phase !== 'lost'; i++) {
+        s.targetX = S.autopilot(s, mode); S.step(s, 1 / 60);
+        const l = s.events.filter(e => e.kind === 'loss').pop(); if (l) s.lastWhy = l.why;
+        s.events.length = 0;
+      }
+      G.overAt = 0; finishRun();
+    },
+  };
+
+  show('title');
+  requestAnimationFrame(frame);
+})();
+</script>
+<!-- App updates: the same block in every app (copy it from _template/index.html). It registers the
+     service worker, shows a bar with Restart when a new version has downloaded, re-checks when the
+     app comes back to the front, and any button with data-check-updates checks straight away.
+     To save before a restart, set window.appUpdates = { beforeRestart: () => save() } before this. -->
+<div class="app-update" id="app-update" role="status" aria-live="polite" hidden>
+  <span id="app-update-text"></span>
+  <button type="button" id="app-update-go" hidden>Restart</button>
+  <button type="button" id="app-update-x" aria-label="Close">✕</button>
+</div>
+<style>
+  .app-update { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 1000;
+    display: flex; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); padding: 6px 6px 6px 18px; border-radius: 999px;
+    background: rgba(18, 24, 30, 0.95); color: #fff; font: 600 15px/1.3 system-ui, sans-serif; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35); }
+  .app-update[hidden] { display: none; }
+  .app-update button { min-height: 44px; margin: 0; border: 0; border-radius: 999px; font: inherit; cursor: pointer; }
+  #app-update-go { padding: 0 20px; background: #fff; color: #12181e; }
+  #app-update-x { width: 44px; padding: 0; background: transparent; color: rgba(255, 255, 255, 0.7); font-size: 17px; }
+</style>
+<script>
+(() => {
+  const bar = document.getElementById('app-update'), text = document.getElementById('app-update-text'), go = document.getElementById('app-update-go');
+  let ready = false, timer = 0, lastCheck = Date.now();
+  const show = (msg, restart) => {
+    text.textContent = msg; go.hidden = !restart; bar.hidden = false;
+    clearTimeout(timer); if (!restart) timer = setTimeout(() => { bar.hidden = true; }, 4000);
+  };
+  const api = window.appUpdates = Object.assign(window.appUpdates || {}, {
+    check: async () => { show('Updates need the app to be opened from the web.'); return 'none'; },
+    restart() { try { if (api.beforeRestart) api.beforeRestart(); } catch {} location.reload(); },
+  });
+  go.onclick = () => api.restart();
+  document.getElementById('app-update-x').onclick = () => { bar.hidden = true; };
+  document.addEventListener('click', e => { if (e.target.closest('[data-check-updates]')) api.check(); });
+  const sw = 'serviceWorker' in navigator && /^https?:$/.test(location.protocol) ? navigator.serviceWorker : null;
+  if (!sw) return;
+  window.addEventListener('load', () => { sw.register('sw.js').catch(() => { /* The app still works online without it. */ }); });
+  // A new version has downloaded and taken over: offer a restart. (The very first install doesn't count.)
+  let controlled = !!sw.controller;
+  sw.addEventListener('controllerchange', () => {
+    if (!controlled) { controlled = true; return; }
+    if (!ready) { ready = true; show('A new version is ready.', true); }
+  });
+  // This app's installed version, from its cache name (<slug>-v<N>).
+  const version = async () => {
+    const slug = location.pathname.split('/').filter(x => x && !x.includes('.')).pop();
+    const ns = (await caches.keys()).map(k => (k.match(new RegExp(`^${slug}-v(\\d+)$`)) || [])[1]).filter(Boolean).map(Number);
+    return ns.length ? Math.max(...ns) : null;
+  };
+  // Look again when the app comes back to the front, at most every 30 minutes.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || Date.now() - lastCheck < 30 * 60 * 1000) return;
+    lastCheck = Date.now();
+    sw.getRegistration().then(r => r && r.update()).catch(() => {});
+  });
+  api.check = async () => {
+    if (ready) { show('A new version is ready.', true); return 'ready'; }
+    show('Checking for updates…');
+    try {
+      const reg = await sw.getRegistration();
+      if (!reg) { show('Updates start once the app has loaded online.'); return 'none'; }
+      await reg.update(); lastCheck = Date.now();
+      if (ready) return 'ready';
+      if (reg.installing || reg.waiting) { show('Downloading the new version…'); return 'downloading'; }
+      const v = await version().catch(() => null);
+      show(`You have the latest version${v ? ` (version ${v})` : ''}.`); return 'latest';
+    } catch { show('Couldn’t check for updates. Are you online?'); return 'offline'; }
+  };
+})();
+</script>
+</body>
+</html>

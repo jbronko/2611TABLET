@@ -1,0 +1,17 @@
+{
+  "name": "Storm the Shore",
+  "short_name": "Storm the Shore",
+  "description": "Lead your landing squad up the beach: pick the right gates, grow your crowd and take the bunker.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#faf6f0",
+  "theme_color": "#c8a76a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
