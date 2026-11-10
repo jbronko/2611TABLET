@@ -224,13 +224,14 @@ const Sim = (() => {
   }
   function freshDay() {
     return { price: [], demand: [], mine: [], revenue: 0, costs: 0, fcas: 0, energy: 0, regionEnergy: 0, emis: 0, maxP: null, minP: null,
-      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0, certs: 0, starts: 0, clean: 0, cis: 0, loanInterest: 0, retail: 0, keepPay: 0, overruns: 0, rivalBuilt: 0, rivalShelved: 0 };
+      upkeep: 0, penalties: 0, bonus: 0, contracts: 0, repairs: 0, interest: 0, capPay: 0, fcasRaise: 0, fcasLower: 0, certs: 0, starts: 0, clean: 0, cis: 0, loanInterest: 0, retail: 0, keepPay: 0, overruns: 0, rivalBuilt: 0, rivalShelved: 0, capPays: { 150: 0, 300: 0, 1000: 0 } };
   }
   // Older saves: fill in fields added since they were made.
   function migrate(S) {
     S.contracts ||= []; S.difficulty ||= 'standard';
     if (!S.contractOffers) makeContractOffers(S);
     for (const k of ['contracts', 'repairs', 'interest', 'capPay', 'fcasRaise', 'fcasLower', 'certs', 'starts', 'clean', 'cis', 'loanInterest', 'retail', 'keepPay', 'overruns', 'rivalBuilt', 'rivalShelved']) S.today[k] ??= 0;
+    S.today.capPays ||= { 150: 0, 300: 0, 1000: 0 };
     S.loans ||= [];
     for (const p of S.plants) {
       p.life ||= freshLife(); p.capital ??= p.value || 0; p.life.certs ??= 0; p.life.starts ??= 0;
@@ -796,6 +797,7 @@ const Sim = (() => {
     d.certs += certs; d.starts += starts;
     d.revenue += rev; d.costs += cost; d.fcas += fcasRev; d.fcasRaise += fcasR; d.fcasLower += fcasL; d.emis += emis; d.contracts += hedge;
     d.capPay += Math.max(0, res.price - 300) * H;
+    for (const k of CAP_STRIKES) d.capPays[k] += Math.max(0, res.price - k) * H;
     d.energy += Math.max(0, mine) * H; d.regionEnergy += c.demand * H;
     for (const b of supply) if (b.owner === 'player' && b.out > 0 && !T[b.tech].emis) d.clean += b.out * H;   // wind, solar, storage, hydro
     d.price.push(res.price); d.demand.push(c.demand); d.mine.push(Math.max(0, mine));
@@ -828,7 +830,7 @@ const Sim = (() => {
     // contracts that have run their term end
     for (const k of S.contracts) if (S.t >= k.until) addNews(S, k.pnl >= 0 ? 'good' : 'bad', k.retail
       ? `Your customers' year is over: supplying ${fmtMW(k.mw)} at ${fmtPrice(k.strike)}/MWh ${k.pnl >= 0 ? 'made' : 'cost'} you ${fmtMoney(Math.abs(k.pnl))} against the market.`
-      : `Your ${k.mw} MW ${k.type === 'swap' ? `swap at ${fmtPrice(k.strike)}` : '$300 cap'} has ended. It ${k.pnl >= 0 ? 'made' : 'cost'} you ${fmtMoney(Math.abs(k.pnl))} overall.`);
+      : `Your ${k.mw} MW ${k.type === 'swap' ? `swap at ${fmtPrice(k.strike)}` : `${fmtPrice(k.strike)} cap`} has ended. It ${k.pnl >= 0 ? 'made' : 'cost'} you ${fmtMoney(Math.abs(k.pnl))} overall.`);
     if (S.contracts.length) S.contracts = S.contracts.filter(k => S.t < k.until);
     if (S.obligation && S.t >= S.obligation.to) settleObligation(S);
     return S.last;
@@ -879,7 +881,7 @@ const Sim = (() => {
     const priceSorted = [...d.price].sort((a, b) => a - b);
     const avg = d.price.reduce((a, b) => a + b, 0) / Math.max(1, d.price.length);
     const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, fcasRaise: d.fcasRaise, fcasLower: d.fcasLower, certs: d.certs, starts: d.starts, clean: d.clean, cis: d.cis, region: d.regionEnergy, contracts: d.contracts, repairs: d.repairs, interest: d.interest, loanInterest: d.loanInterest || 0, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
-      avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus, retail: d.retail, keepPay: d.keepPay, overruns: d.overruns };
+      avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus, retail: d.retail, keepPay: d.keepPay, overruns: d.overruns, capPays: d.capPays };
     S.days.push(rec);
     if (S.days.length > 3) { const old = S.days[S.days.length - 4]; delete old.price; delete old.demand; delete old.mine; }
     if (S.days.length > 60) S.days.shift();
@@ -1059,8 +1061,17 @@ const Sim = (() => {
 
   // ---- contracts with retailers ----
   // Swap: each interval you receive (strike − spot) × MW, so you pay when spot is above the strike.
-  // Cap:  you're paid a premium every day and pay (spot − $300) × MW whenever spot is above $300.
+  // Cap:  you're paid a premium every day and pay (spot − strike) × MW whenever spot is above the
+  //       strike. Each release has a $300 cap and one at $150 or $1,000 (in turn): the lower the
+  //       strike, the bigger the premium and the more often it pays out.
   const CONTRACT_DAYS = 7;
+  const CAP_STRIKES = [150, 300, 1000];
+  const CAP_START = { 150: 60, 300: 25, 1000: 6 }, CAP_MARGIN = { 150: 5, 300: 3, 1000: 1.5 };   // $/MW/day before there's history; the seller's margin
+  // $/MW/day a cap at this strike would have paid out lately (older day records only have the $300 one)
+  function capRiskOf(last, k) {
+    const v = last.map(d => d.capPays ? d.capPays[k] : k === 300 ? d.capPay : null).filter(x => x != null);
+    return v.length ? v.reduce((a, b) => a + (b || 0), 0) / v.length : CAP_START[k];
+  }
   function contractRoom(S) {
     const owned = S.plants.reduce((a, p) => a + (p.status === 'building' ? 0 : p.mw), 0);
     const used = S.contracts.reduce((a, k) => a + k.mw, 0);
@@ -1069,7 +1080,6 @@ const Sim = (() => {
   function makeContractOffers(S) {
     const last = S.days.slice(-14);
     const avg = last.length ? last.reduce((a, d) => a + d.avg, 0) / last.length : 105;
-    const capRisk = last.length ? last.reduce((a, d) => a + (d.capPay || 0), 0) / last.length : 25;   // $/MW/day the cap would have paid out
     const r = [rnd(S, P), rnd(S, P), rnd(S, P)];
     const size = v => Math.max(10, Math.round(v / 10) * 10);
     const owned = S.plants.reduce((a, p) => a + p.mw, 0);
@@ -1077,8 +1087,10 @@ const Sim = (() => {
     S.contractOffers = [
       { type: 'swap', mw: size(Math.max(20, owned * 0.2)), strike: Math.round(avg * (0.92 + 0.16 * r[0])), days: CONTRACT_DAYS },
       { type: 'swap', mw: size(Math.max(30, owned * 0.4)), strike: Math.round(avg * (0.85 + 0.16 * r[1])), days: CONTRACT_DAYS },
-      { type: 'cap', mw: size(Math.max(20, firmMW * 0.6, owned * 0.15)), strike: 300, days: CONTRACT_DAYS, perMW: Math.round((capRisk * (1 + 0.3 * r[2]) + 3) * 10) / 10 },
     ];
+    // the $300 cap, and one at $150 or $1,000 in turn (by release, so no extra random numbers)
+    const capMW = size(Math.max(20, firmMW * 0.6, owned * 0.15)), alt = Math.floor(dayIndex(S) / 3) % 2 ? 1000 : 150;
+    for (const [k, rr] of [[300, r[2]], [alt, 1 - r[2]]]) S.contractOffers.push({ type: 'cap', mw: capMW, strike: k, days: CONTRACT_DAYS, perMW: Math.round((capRiskOf(last, k) * (1 + 0.3 * rr) + CAP_MARGIN[k]) * 10) / 10 });
     for (const o of S.contractOffers) if (o.type === 'cap') o.premium = Math.round(o.perMW * o.mw);
   }
   function signContract(S, i) {
@@ -1089,7 +1101,7 @@ const Sim = (() => {
     S.contractOffers.splice(i, 1);
     addNews(S, 'info', o.type === 'swap'
       ? `You sold a ${o.mw} MW swap at ${fmtPrice(o.strike)}/MWh for ${o.days} days. You now earn that price on ${o.mw} MW whatever the market does, as long as you can supply it.`
-      : `You sold a ${o.mw} MW $300 cap for ${fmtMoney(o.premium)} a day. You pay out whenever the price goes above $300.`);
+      : `You sold a ${o.mw} MW ${fmtPrice(o.strike)} cap for ${fmtMoney(o.premium)} a day. You pay out whenever the price goes above ${fmtPrice(o.strike)}.`);
     checkMissions(S);
     return { ok: true };
   }
@@ -1961,7 +1973,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, RELIABILITY, starText, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

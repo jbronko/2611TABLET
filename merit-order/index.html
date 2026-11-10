@@ -348,7 +348,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 32</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 33</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -1104,7 +1104,7 @@
   }
   function contractsReleased() {
     autoPauseNow();
-    const line = o => o.type === 'swap' ? `<b>Swap</b> · ${fmtMW(o.mw)} at ${fmtPrice(o.strike)}/MWh for ${o.days} days` : `<b>Cap</b> · ${fmtMW(o.mw)} above $300 · paid ${fmtMoney(o.premium)} a day for ${o.days} days`;
+    const line = o => o.type === 'swap' ? `<b>Swap</b> · ${fmtMW(o.mw)} at ${fmtPrice(o.strike)}/MWh for ${o.days} days` : `<b>Cap</b> · ${fmtMW(o.mw)} above ${fmtPrice(o.strike)} · paid ${fmtMoney(o.premium)} a day for ${o.days} days`;
     info('New contracts on offer', `<p>Retailers have released new contracts. They're on offer for the next 3 days.</p>
       <ul class="news">${S.contractOffers.map(o => `<li class="info"><svg class="i"><use href="#i-info"/></svg><span>${line(o)}</span></li>`).join('')}</ul>
       <div class="field-row" style="margin-top:14px"><button type="button" class="btn btn-quiet" id="nc-play" style="flex:1">Keep playing</button><button type="button" class="btn btn-primary" id="nc-view" style="flex:1">View contracts</button></div>`);
@@ -1562,18 +1562,20 @@
     if (k.retail) return `<span class="tag swap">Retail</span><b class="num">Your customers: ${fmtMW(k.mw)} at ${fmtPrice(k.strike)}/MWh</b>`;
     return k.type === 'swap'
       ? `<span class="tag swap">Swap</span><b class="num">${fmtMW(k.mw)} at ${fmtPrice(k.strike)}/MWh</b>`
-      : `<span class="tag cap">Cap</span><b class="num">${fmtMW(k.mw)} above $300 · ${fmtMoney(k.premium)}/day</b>`;
+      : `<span class="tag cap">Cap</span><b class="num">${fmtMW(k.mw)} above ${fmtPrice(k.strike)} · ${fmtMoney(k.premium)}/day</b>`;
   }
   function daysLeft(k) { const d = (k.until - S.t) / IPD; return d < 1 ? 'Ends within a day' : `${Math.ceil(d)} days left`; }
   function openContracts() {
-    const room = Sim.contractRoom(S), avg = recent('avg', 7), capPay = recent('capPay', 14);
+    const room = Sim.contractRoom(S), avg = recent('avg', 7);
+    // what a cap at this strike would have paid out per MW per day over the last two weeks
+    const capPaid = k => { const v = S.days.slice(-14).map(d => d.capPays ? d.capPays[k] : k === 300 ? d.capPay : null).filter(x => x != null); return v.length ? v.reduce((a, b) => a + (b || 0), 0) / v.length : null; };
     const active = S.contracts.map(k => `<div class="deal"><div>${dealText(k)}</div><b class="num ${k.pnl >= 0 ? 'up' : 'down'}">${k.pnl >= 0 ? '+' : '−'}${fmtMoney(Math.abs(k.pnl))}</b>
-      <p>${daysLeft(k)}. ${k.retail ? 'Your customers pay this price all year. Whenever the market is dearer you pay the difference; when it is cheaper you keep it.' : k.type === 'swap' ? 'You settle the difference between the strike and the spot price every five minutes.' : 'You pay out whenever the price is above $300.'}</p></div>`).join('');
+      <p>${daysLeft(k)}. ${k.retail ? 'Your customers pay this price all year. Whenever the market is dearer you pay the difference; when it is cheaper you keep it.' : k.type === 'swap' ? 'You settle the difference between the strike and the spot price every five minutes.' : `You pay out whenever the price is above ${fmtPrice(k.strike)}.`}</p></div>`).join('');
     const offers = S.contractOffers.map((o, i) => `<div class="deal"><div>${dealText(o)}</div>
       <button type="button" class="btn ${o.mw > room ? 'btn-quiet' : 'btn-primary'} small" data-sign="${i}" ${o.mw > room ? 'disabled' : ''}>${o.mw > room ? 'Too big' : 'Sign'}</button>
       <p>${o.type === 'swap'
         ? `For ${o.days} days you get ${fmtPrice(o.strike)}/MWh on ${fmtMW(o.mw)}, whatever the market does: when the price is above the strike you pay the difference, when it's below you're paid it. It runs day and night, so it suits plant that does too.${avg != null ? ` The price has averaged ${fmtPrice(avg)} this week.` : ''}`
-        : `You're paid ${fmtMoney(o.premium)} a day for ${o.days} days and pay (price − $300) × ${fmtMW(o.mw)} whenever the price is above $300: at the ${fmtPrice(CAP)} cap that's ${fmtMoney((CAP - 300) * o.mw)} an hour.${capPay != null ? ` Over the last two weeks a cap like this paid out about ${fmtMoney(capPay * o.mw)} a day.` : ''}`}</p></div>`).join('');
+        : `You're paid ${fmtMoney(o.premium)} a day for ${o.days} days and pay (price − ${fmtPrice(o.strike)}) × ${fmtMW(o.mw)} whenever the price is above ${fmtPrice(o.strike)}: at the ${fmtPrice(CAP)} cap that's ${fmtMoney((CAP - o.strike) * o.mw)} an hour.${capPaid(o.strike) != null ? ` Over the last two weeks a cap like this paid out about ${fmtMoney(capPaid(o.strike) * o.mw)} a day.` : ''} ${o.strike < 300 ? 'A low strike: a bigger premium, but it pays out on any dear evening.' : o.strike > 300 ? 'A high strike: a small premium, and it only pays out in real spikes, but then heavily.' : 'The standard strike.'}`}</p></div>`).join('');
     info('Contracts', `<p>Retailers buy contracts to fix their costs. Selling one smooths your income, but only plant that is running when it counts can back it up.</p>
       <h3>Your contracts</h3>${active || '<p class="note">None yet.</p>'}
       <h3>On offer</h3>${offers || '<p class="note">Nothing right now.</p>'}
@@ -1695,7 +1697,7 @@
       <p><b style="color:var(--ink)">Batteries and hydro</b> charge when power is cheap and sell into the peak.</p>
       <p><b style="color:var(--ink)">Frequency control</b> has two markets. <b style="color:var(--ink)">Raise</b> pays batteries, hydro and gas peakers to keep spare capacity ready to add output in seconds; more is needed when the interconnector is out. <b style="color:var(--ink)">Lower</b> pays plants that are running to be ready to cut output (and batteries to charge harder); more is needed when the sun is high. Each plant has a switch for each.</p>
       <p><b style="color:var(--ink)">The dashed line on the price chart is the forecast</b> for the next six hours, worked out from today's weather and offers. Surprises like breakdowns aren't in it.</p>
-      <p><b style="color:var(--ink)">Contracts</b> trade some upside for certainty. A swap fixes the price you get on part of your output; a cap pays you a premium every day but you pay out when prices spike above $300, so only sell caps you can cover with plant that will be running.</p>
+      <p><b style="color:var(--ink)">Contracts</b> trade some upside for certainty. A swap fixes the price you get on part of your output; a cap pays you a premium every day but you pay out when prices go above its strike ($150, $300 or $1,000: the lower the strike, the bigger the premium and the more often it pays out), so only sell caps you can cover with plant that will be running.</p>
       <p><b style="color:var(--ink)">Sites and loss factors:</b> choose where to build. Far-off sites often have better sun or wind, but a lower loss factor: at ×0.90 each MWh is paid 90% of the price. Each site's network can take only so many MW, and each pumped hydro valley holds one scheme with a fixed reservoir. Tap <b style="color:var(--ink)">Custom size and site</b> to set the exact MW, and MWh for batteries.</p>
       <p><b style="color:var(--ink)">Upgrades:</b> every plant has one. Open the plant to see it. It costs money and takes the plant offline for a while.</p>
       <p><b style="color:var(--ink)">The rules:</b> plants take days to build and connect; coal must give 5 days' notice to close; the market operator may ask you to promise reserve before a heatwave and fines you if you can't deliver; and every 30 days your emissions are checked against a target that tightens each year.</p>

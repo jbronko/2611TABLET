@@ -403,6 +403,24 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('…and the Energy Transition’s first star shows its lights-on part', EP.length === 1 && EP[0].ok && /year 20/.test(EP[0].detail));
 }
 
+// 11e. Caps at three strikes: each release has a $300 cap and one at $150 or $1,000 in turn, priced
+//      from what each would have paid out lately; a cap only pays out above its own strike.
+{
+  const S = Sim.create(2), releases = [];
+  for (let d = 0; d < 20; d++) for (let k = 0; k < Sim.IPD; k++) { Sim.step(S); if (S.offer) Sim.declineOffer(S); if (releases[releases.length - 1] !== S.contractOffers) releases.push(S.contractOffers); }
+  const caps = releases.slice(1).map(r => r.filter(o => o.type === 'cap'));
+  const alts = caps.map(c => c.find(o => o.strike !== 300).strike);
+  check('each release offers a $300 cap and one at $150 or $1,000, in turn', caps.every(c => c.length === 2 && c[0].strike === 300) && alts.every((k, i) => k === (i % 2 ? alts[1] : alts[0])) && new Set(alts).size === 2, alts.join(','));
+  check('…priced in strike order: the lower the strike, the bigger the premium', caps.slice(2).every(c => { const [a, b] = c; return b.strike === 150 ? b.perMW > a.perMW : b.perMW < a.perMW; }),
+    caps.slice(2).map(c => c.map(o => `$${o.strike}:${o.perMW}`).join('/')).join(' '));
+  const rec = S.days[S.days.length - 1];
+  check('…and the day records what a cap at each strike would have paid', rec.capPays[150] >= rec.capPays[300] && rec.capPays[300] >= rec.capPays[1000] && Math.abs(rec.capPays[300] - rec.capPay) < 1e-6);
+  // one interval of a $1,000 cap: the premium's slice, less only what the price went above $1,000
+  S.contracts = [{ type: 'cap', mw: 10, strike: 1000, premium: 288, until: S.t + 10 * Sim.IPD, pnl: 0 }];
+  const res = Sim.step(S).res, expect = 288 / Sim.IPD - Math.max(0, res.price - 1000) * 10 * Sim.H;
+  check('a cap pays out only above its own strike', Math.abs(S.contracts[0].pnl - expect) < 1e-6, `price $${Math.round(res.price)}, pnl ${S.contracts[0].pnl.toFixed(2)}`);
+}
+
 // 11d. Reserve promises: judged on the lowest ready capacity in the window, with a result to show.
 {
   const promise = mw => {

@@ -602,6 +602,20 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8m. Caps at different strikes: the sheet offers a $300 cap and one at $150 or $1,000; signing it works.
+  {
+    const p = await page();
+    await newCompany(p);
+    await p.click('#open-contracts'); await p.waitForTimeout(200);
+    const body = await p.textContent('#i-body');
+    const strikes = await state(p, () => MeritOrder.state.contractOffers.filter(o => o.type === 'cap').map(o => o.strike));
+    check('the contracts sheet offers caps at two strikes', strikes.length === 2 && strikes[0] === 300 && [150, 1000].includes(strikes[1]) && /above \$300/.test(body) && /(A low strike|A high strike)/.test(body), strikes.join(', '));
+    await p.click('[data-sign="3"]'); await p.waitForTimeout(200);
+    check('…and the other strike can be signed', await state(p, k => MeritOrder.state.contracts.some(c => c.type === 'cap' && c.strike === k), strikes[1]) && new RegExp(`above \\$${strikes[1] === 150 ? '150' : '1(,000|k)'}`).test(await p.textContent('#i-body')));
+    await shot(p, 'caps');
+    await p.context().close();
+  }
+
   // 8i. 64x: offered, and really twice as fast as 32x (the loop's per-frame cap doesn't hold it back).
   {
     const p = await page();

@@ -67,7 +67,9 @@ are built, tested and published); this file is what's specific to Merit Order. C
   threshold: past it the administered price cap ($600) applies until the week's sum falls back.
 - Sites have loss factors (offers rank at price ÷ MLF, revenue × MLF) and room; hydro valleys are
   fixed reservoirs, one plant each. Zones in the transition have line limits (curtailment).
-- Frequency control: Raise and Lower markets. Contracts: swaps and caps, released every few days.
+- Frequency control: Raise and Lower markets. Contracts: swaps and caps, released every 3 days. Each
+  release has a $300 cap and one at $150 or $1,000 in turn (`CAP_STRIKES`), each priced from what it
+  would have paid out over two weeks (`d.capPays`) plus a margin.
 - Wind and solar earn a $10 certificate per MWh. The interconnector imports/exports in priced steps.
 - **Bid stacks**: 10 bands per plant. New band prices apply from tomorrow; MW rebids apply now.
   Presets: Cover costs (and start-ups for gas), Peaks only, Ladder, Custom. Plants offer the slice

@@ -12,6 +12,8 @@
 // capgambler (sells every cap), reckless (builds big on no cash, signs everything).
 // Targets after the last rebalance (Standard, day 120): steady about $20-30M (about $26M now), idle about $4.5M,
 // capseller about steady, capgambler and reckless usually bust.
+// Caps at three strikes (v33): Standard day 120, seeds 1-4: steady $28.6M (unchanged), capseller $37.1M
+// (was $34.6M with only $300 caps), capgambler and reckless bust 4/4.
 const Sim = require(require('path').join(__dirname, '..', 'sim.js'));
 const { IPD, TECH } = Sim;
 const owned = (S, f = () => true) => S.plants.filter(f).reduce((a, p) => a + p.mw, 0);
