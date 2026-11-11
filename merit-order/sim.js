@@ -268,6 +268,10 @@ const Sim = (() => {
       const kept = (S.keepOpen && S.keepOpen.refs) || [];
       S.closeAt = Object.fromEntries(Object.entries(sc.closes).filter(([ref]) => !kept.includes(ref) && S.plants.some(p => p.ref === ref)));
     }
+    for (const r of S.rivals || []) {
+      const m = /^Rival (battery|peaker) (\d+)$/.exec(r.name || '');
+      if (m) r.name = rivalName(S, DEVELOPERS[(+m[2] - 1) % DEVELOPERS.length], m[1], r);
+    }
     S.v = 3;
     return S;
   }
@@ -709,6 +713,44 @@ const Sim = (() => {
   }
 
   // ---- one dispatch interval ----
+  // ---- why prices spiked: the day's first price of SPIKE or more gets a news line with reasons ----
+  const SPIKE = 1000;
+  // Up to three reasons, the rarer and more telling first: units broken down, the interconnector out,
+  // a heatwave or cold snap, still wind, dear gas; then imports at their limit (true at most evening
+  // peaks) and sunset only to fill in.
+  function spikeReasons(S, c, supply) {
+    const out = [], ev = k => activeEvent(S, k);
+    const down = S.rivals.filter(r => !r.gone && r.out > 0 && ['coal', 'ccgt', 'peaker'].includes(r.tech)).map(r => ({ name: r.name, mw: r.cap }))
+      .concat(S.plants.filter(p => p.status === 'outage').map(p => ({ name: p.name, mw: p.mw, mine: true })));
+    if (down.length === 1) out.push(`${down[0].mine ? 'your ' : ''}${down[0].name} (${fmtMW(down[0].mw)}) was broken down`);
+    else if (down.length > 1) {
+      const mine = down.find(x => x.mine);
+      out.push(`${down.length} units were broken down (${fmtMW(down.reduce((a, x) => a + x.mw, 0))}${mine ? `, one of them your ${mine.name}` : ''})`);
+    }
+    if (c.linkOut) out.push('the interconnector was out');
+    if (ev('heatwave')) out.push(`the heatwave pushed demand to ${fmtMW(c.demand)}`);
+    else if (ev('cold')) out.push(`the cold snap pushed demand to ${fmtMW(c.demand)}`);
+    if (ev('still') || c.wind < 0.08) out.push('wind was nearly still');
+    if (ev('gascrunch')) out.push('gas was dear');
+    const imp = supply.filter(b => b.ref && b.ref.id === 'imp');
+    if (out.length < 3 && !c.linkOut && imp.length && imp.every(b => b.out >= b.mw - 0.5)) out.push('imports were at their limit');
+    if (out.length < 2 && c.sun < 0.02 && c.h >= 16) out.push('the sun had set');
+    return out.slice(0, 3);
+  }
+  const listText = a => a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
+  // Who set the price: the dearest offer that ran (none if supply ran out, or a buyer's bid set it).
+  function priceSetter(supply, res) {
+    if (res.shortfall >= 1) return '';
+    let top = null;
+    for (const b of supply) if (b.out > 0.01 && (!top || b.price > top.price || (b.price === top.price && b.out > top.out))) top = b;
+    if (!top || top.price < res.price - 0.5) return '';
+    return top.owner === 'player' ? `Your ${top.ref.name} set the price.` : top.ref.id === 'imp' ? 'Imports set the price.'
+      : top.ref.id === 'dsp' ? 'Demand response (customers paid to cut back) set the price.' : `${top.ref.name} set the price.`;
+  }
+  function spikeNews(S, c, supply, res) {
+    const why = spikeReasons(S, c, supply), set = priceSetter(supply, res), head = `Prices hit ${fmtPrice(res.price)}/MWh at ${clock(c.h)}`;
+    return `${why.length ? `${head}: ${listText(why)}.` : `${head} as demand outran the cheaper offers.`}${set ? ` ${set}` : ''}`;
+  }
   function step(S) {
     if (S.t % IPD === 0 && S.t > 0) endOfDay(S);
     stepWeather(S);
@@ -811,8 +853,12 @@ const Sim = (() => {
     }
     if (res.shortfall >= 1) {   // a real shortfall (a rounding-sized one doesn't count)
       d.shed = (d.shed || 0) + res.shortfall * H; d.shedN = (d.shedN || 0) + 1;
-      if (!d.shedNews) { d.shedNews = true; addNews(S, 'bad', `Supply ran short at ${clock(c.h)}. The operator cut ${fmtMW(res.shortfall)} of customers and the price hit the cap.`); }
-    }
+      if (!d.shedNews) {
+        d.shedNews = true; d.spikeNews = true;   // this line says why, so no separate spike line
+        const why = spikeReasons(S, c, supply);
+        addNews(S, 'bad', `Supply ran short at ${clock(c.h)}${why.length ? `: ${listText(why)}` : ''}. The operator cut ${fmtMW(res.shortfall)} of customers and the price hit the cap.`);
+      }
+    } else if (res.price >= SPIKE && !d.spikeNews) { d.spikeNews = true; addNews(S, 'info', spikeNews(S, c, supply, res)); }
 
     // construction, outages
     for (const p of S.plants) {
@@ -974,6 +1020,10 @@ const Sim = (() => {
     // scenario they announce a project first and decide later; the Energy Transition follows its plan.
     if (isCompany(S)) { rivalProjects(S); if (dayIndex(S) % 5 === 0 && S.days.length >= 15) rivalProposal(S); }
     else if (dayIndex(S) % 15 === 0 && S.days.length >= 15 && !S.transition) rivalInvestment(S);
+    // every site full for what you can build: say so once (again if room frees up and fills again)
+    const full = regionFull(S);
+    if (full && !S.fullSaid) addNews(S, 'info', fullNote(S));
+    S.fullSaid = full;
     // a rival coal unit announces its closure on day 40 and closes on day 70
     if (dayIndex(S) === 40 && !S.challenge && !S.scenario) { const r = S.rivals.find(x => x.id === 'bh1'); r.closing = 70; addNews(S, 'info', 'Black Hill 1 will close for good in 30 days. That leaves a gap in the evening peak.'); }
     makeOffers(S);
@@ -1120,6 +1170,12 @@ const Sim = (() => {
     return out;
   }
 
+  // "Tasman Power peaker", or "Tasman Power peaker 2" if that's taken
+  function rivalName(S, dev, kind, self) {
+    let name = `${dev} ${kind}`;
+    for (let k = 2; S.rivals.some(x => x !== self && x.name === name); k++) name = `${dev} ${kind} ${k}`;
+    return name;
+  }
   function rivalInvestment(S) {
     const last = S.days.slice(-15);
     const avg = last.reduce((a, d) => a + d.avg, 0) / last.length;
@@ -1127,12 +1183,13 @@ const Sim = (() => {
     if (avg <= D.rivalAt) return;
     const n = (S.rivalBuilds = (S.rivalBuilds || 0) + 1);
     const mw = Math.round(Math.min(D.rivalMax, (avg - D.rivalAt) * 3 + 150) / 50) * 50;
-    const battery = n % 2 === 0;
+    const battery = n % 2 === 0, dev = DEVELOPERS[(n - 1) % DEVELOPERS.length];
+    const name = rivalName(S, dev, battery ? 'battery' : 'peaker');
     const r = battery
-      ? { id: `rb${n}`, name: `Rival battery ${n}`, tech: 'battery', cap: mw, hours: 2, soc: mw }
-      : { id: `rp${n}`, name: `Rival peaker ${n}`, tech: 'peaker', cap: mw, bands: [[0.6, 320], [0.4, 520]], out: 0 };
+      ? { id: `rb${n}`, name, tech: 'battery', cap: mw, hours: 2, soc: mw }
+      : { id: `rp${n}`, name, tech: 'peaker', cap: mw, bands: [[0.6, 320], [0.4, 520]], out: 0 };
     S.rivals.push(r);
-    addNews(S, 'info', `Prices have averaged ${fmtPrice(avg)}/MWh lately, so a rival has built a ${fmtMW(mw)} ${battery ? 'battery' : 'gas peaker'}. Competition is coming.`);
+    addNews(S, 'info', `Prices have averaged ${fmtPrice(avg)}/MWh lately, so ${dev} has built a ${fmtMW(mw)} ${battery ? 'battery' : 'gas peaker'}. Competition is coming.`);
   }
 
   function emissionsCheck(S) {
@@ -1282,6 +1339,25 @@ const Sim = (() => {
     const refund = Math.round(p.value * 0.4);
     S.cash += refund; p.status = 'closed'; S.plants = S.plants.filter(x => x !== p); retireRecord(S, p, refund);
     addNews(S, 'info', `You sold ${p.name} for ${fmtMoney(refund)}.`);
+  }
+
+  // ---- every site full ----
+  // The technologies you could build here (wind and solar farms, storage, gas; coal is only bought).
+  const buildable = S => Object.keys(TECH).filter(t => !TECH[t].buyOnly && (!TECH[t].transition || S.transition));
+  const roomFor = (S, t) => !!siteFor(S, t, TECH[t].range[0]);
+  // True when no site has room for even the smallest plant of anything you've unlocked.
+  function regionFull(S) { const open = buildable(S).filter(t => S.unlocked[t]); return open.length > 0 && open.every(t => !roomFor(S, t)); }
+  // What to say then: what's left to unlock, when new sites open, and how to grow from here.
+  function fullNote(S) {
+    const year = yearOf(S) + 1, more = [];
+    for (const t of buildable(S).filter(t => !S.unlocked[t] && roomFor(S, t))) {
+      const g = GOALS.find(x => x.unlock === t), e = timelineOf(S).find(x => x.unlocks === t);
+      if (g) more.push(`Unlock ${TECH[t].name.toLowerCase()} (${g.text[0].toLowerCase()}${g.text.slice(1)}) to build more.`);
+      else if (S.transition && e) more.push(`${TECH[t].name} arrives in year ${e.year}.`);
+    }
+    const next = Math.min(...buildable(S).filter(t => S.unlocked[t]).flatMap(t => (SITES[t] || []).map(st => siteOpensIn(S, st))).filter(y => y != null && y > year));
+    if (S.transition && isFinite(next)) more.push(`New sites open in year ${next}.`);
+    return `Every site in the region is full${more.length ? ' for the plants you can build' : ''}. ${more.join(' ')}${more.length ? ' ' : ''}To grow from here, upgrade your plants, or sell old ones to make room for bigger and better ones.`;
   }
 
   // ---- goals ----
@@ -1987,7 +2063,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, rivalInvestment, regionFull, fullNote, spikeNews, SPIKE, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

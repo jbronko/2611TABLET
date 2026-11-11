@@ -98,6 +98,18 @@ are built, tested and published); this file is what's specific to Merit Order. C
   release has a $300 cap and one at $150 or $1,000 in turn (`CAP_STRIKES`), each priced from what it
   would have paid out over two weeks (`d.capPays`) plus a margin.
 - Wind and solar earn a $10 certificate per MWh. The interconnector imports/exports in priced steps.
+- **Why prices spiked:** a day's first interval at $1,000 or more (`SPIKE`) gets a news line from
+  `spikeNews`.
+  - It gives up to three reasons, rarer ones first: units broken down, the interconnector out, a
+    heatwave or cold snap, still wind, dear gas. Imports at their limit and sunset only fill in.
+  - It ends with who set the price (often your own plant).
+  - A shortfall's line carries the same reasons instead, so there's one line for that moment.
+  - Spikes happen on 5–10% of career days.
+- **Rival builds in the career** (`rivalInvestment`) take developers' names (`DEVELOPERS`,
+  `rivalName`), like the company scenarios' rivals. `migrate` renames old saves' "Rival peaker N".
+- **Every site full** (`regionFull`, `fullNote`): when no site has room for the smallest plant of
+  anything unlocked, the news says so once (`S.fullSaid`) and the build sheet shows it. The note
+  says what's left to unlock, when new sites open, and how to grow from here.
 - **Bid stacks**: 10 bands per plant. New band prices apply from tomorrow; MW rebids apply now.
   Presets: Cover costs (and start-ups for gas), Peaks only, Ladder, Custom. Plants offer the slice
   of their stack they can reach this interval (`offerSlice` in `sim.js`): below it they must run.

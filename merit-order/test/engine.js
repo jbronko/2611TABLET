@@ -642,5 +642,63 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     offers.map(b => `${Math.round(b.mw)}@${b.offer ?? b.price}`).join(', '));
 }
 
+// Rival builds take developers' names; a note when every site is full; why prices spiked.
+{
+  const R = Sim.create(9);
+  for (let i = 0; i < 15; i++) R.days.push({ day: i, avg: 400 });
+  Sim.rivalInvestment(R); Sim.rivalInvestment(R);
+  const built = R.rivals.slice(-2).map(r => r.name);
+  check('rival builds take developers’ names, as in the company scenarios', built.join('|') === 'Tasman Power peaker|Red Gum Energy battery' && /so Red Gum Energy has built a .* battery/.test(R.news[0].text), built.join('|'));
+  R.rivalBuilds = 8; Sim.rivalInvestment(R);   // the ninth: Tasman Power's turn again
+  check('…and a name already taken gets a number', R.rivals[R.rivals.length - 1].name === 'Tasman Power peaker 2', R.rivals[R.rivals.length - 1].name);
+  const O = Sim.create(10);
+  O.rivals.push({ id: 'rp3', name: 'Rival peaker 3', tech: 'peaker', cap: 200, bands: [[1, 320]], out: 0 }, { id: 'rb4', name: 'Rival battery 4', tech: 'battery', cap: 100, hours: 2, soc: 0 });
+  Sim.migrate(O);
+  check('old saves’ "Rival peaker 3" gets a developer’s name too', O.rivals.slice(-2).map(r => r.name).join('|') === 'Southern Cross Renewables peaker|Granite Peak Energy battery', O.rivals.slice(-2).map(r => r.name).join('|'));
+
+  // every site taken: the region is full, the news says so once, and selling a plant frees room
+  const fill = (S, t) => { const T = Sim.TECH[t];
+    for (const st of Sim.SITES[t]) { let room; while ((room = Sim.siteRoom(S, t, st.id)) >= (t === 'hydro' ? 1 : T.range[0])) if (!Sim.build(S, t, t === 'hydro' ? st.mw[0] : Math.min(room, T.range[1]), { site: st.id }).ok) break; } };
+  const F = Sim.create(11, { cash: 1e10 });
+  for (const t of ['wind', 'ccgt', 'hydro']) F.unlocked[t] = true;
+  check('a new company’s region has room', !Sim.regionFull(F));
+  for (const t of ['solar', 'wind', 'battery', 'peaker', 'hydro']) fill(F, t);
+  check('with every site taken, the region is full', Sim.regionFull(F));
+  for (let k = 0; k < Sim.IPD + 1; k++) { Sim.step(F); if (F.offer) Sim.declineOffer(F); }
+  const fullNews = () => F.news.filter(n => /^Every site in the region is full\./.test(n.text));
+  check('…the news says so, with how to grow from here', fullNews().length === 1 && /upgrade your plants, or sell old ones to make room/.test(fullNews()[0].text), F.news.slice(0, 3).map(n => n.text).join(' / '));
+  for (let k = 0; k < Sim.IPD; k++) { Sim.step(F); if (F.offer) Sim.declineOffer(F); }
+  check('…once, not every day', fullNews().length === 1);
+  Sim.retire(F, F.plants.find(p => p.tech === 'solar'));
+  check('…and selling a plant frees room', !Sim.regionFull(F));
+  const L = Sim.create(12, { cash: 1e10 });   // wind, gas and hydro still locked
+  for (const t of ['solar', 'battery', 'peaker']) fill(L, t);
+  const ln = Sim.fullNote(L);
+  check('with technology still locked, the note says how to unlock it', Sim.regionFull(L) && /^Every site in the region is full for the plants you can build\. Unlock wind farm \(make \$10k profit in one day\) to build more\./.test(ln) && /Unlock pumped hydro \(own 500 MW of plant\)/.test(ln), ln);
+
+  // why prices spiked: a unit down, the interconnector out, a heatwave, and your peaker setting the price
+  const K = Sim.create(13), bh = K.rivals.find(r => r.tech === 'coal');
+  bh.out = 3; K.events.push({ key: 'heatwave', left: 2 }, { key: 'linktrip', left: 1 });
+  const supply = [{ owner: 'player', ref: { name: 'Coastal Peakers' }, price: 14000, mw: 100, out: 60 }, { owner: 'rival', ref: { id: 'x', name: 'Redbank peaker' }, price: 500, mw: 100, out: 100 }];
+  const sn = Sim.spikeNews(K, { h: 18 + 5 / 60, demand: 8100, wind: 0.3, sun: 0, linkOut: true }, supply, { price: 14000, shortfall: 0 });
+  check('a spike says why: the unit down, the interconnector, the heatwave, and who set the price',
+    sn === `Prices hit $14k/MWh at 6:05 pm: ${bh.name} (660 MW) was broken down, the interconnector was out and the heatwave pushed demand to 8.1 GW. Your Coastal Peakers set the price.`, sn);
+  const K2 = Sim.create(14);
+  const calmNews = Sim.spikeNews(K2, { h: 12, demand: 5000, wind: 0.5, sun: 0.8, linkOut: false }, [supply[1]], { price: 1200, shortfall: 0 });
+  check('…and with nothing special going on, says so plainly', /^Prices hit \$1\.2k\/MWh at 12:00 pm as demand outran the cheaper offers\./.test(calmNews), calmNews);
+  // in play: a spike day has one line saying why (or the shortfall line, with reasons); a calm day none
+  const C = Sim.createScenario('coastline');
+  let spikeDay = null, calm = null;
+  for (let k = 0; k < 40 * Sim.IPD && spikeDay == null; k++) {
+    Sim.step(C); if (C.offer) Sim.declineOffer(C); if (C.choice) Sim.choose(C, Sim.choiceView(C).deflt);
+    const r = C.days[C.days.length - 1];
+    if (r && C.t % Sim.IPD === 1) { if (r.max >= Sim.SPIKE) spikeDay = r.day; else if (!r.shed && calm == null) calm = r.day; }
+  }
+  const on = day => C.news.filter(n => Math.floor(n.t / Sim.IPD) === day && /^(Prices hit|Supply ran short)/.test(n.text));
+  check('in play, a day with a spike has one line saying why', spikeDay != null && on(spikeDay).length >= 1 && on(spikeDay).filter(n => /^Prices hit/.test(n.text)).length <= 1 && on(spikeDay).every(n => /(: .+\.|as demand outran)/.test(n.text)),
+    spikeDay != null ? on(spikeDay).map(n => n.text).join(' / ') : 'no spike');
+  check('…and a calm day has none', calm != null && on(calm).length === 0);
+}
+
 console.log(fails ? `\n${fails} check(s) failed` : '\nAll engine checks passed');
 process.exit(fails ? 1 : 0);

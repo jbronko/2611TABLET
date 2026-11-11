@@ -223,6 +223,7 @@
   .sheet h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); font-stretch: 110%; }
   .sheet p { margin: 0 0 10px; color: var(--ink-2); }
   .tech-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .build-full { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink); font-size: 14.5px; }
   .card { text-align: left; border-radius: 14px; padding: 14px; background: var(--panel-2); border: 1px solid var(--line); display: grid; gap: 10px; align-content: start; transition: transform 0.12s ease; }
   .card .head { display: flex; gap: 10px; align-items: center; }
   .card .head b { font-size: 16px; }
@@ -354,7 +355,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 37</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 38</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -436,6 +437,7 @@
 <div class="backdrop" id="sh-build" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="b-title">
   <div class="sheet-head"><h2 id="b-title">Build a plant</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button></div>
   <p>Building costs are scaled down so your company grows in days, not decades. Plants start trading as soon as they connect.</p>
+  <p class="build-full" id="build-full" hidden></p>
   <div class="tech-grid" id="tech-grid"></div>
 </section></div>
 
@@ -1206,6 +1208,9 @@
   function openBuild() { renderBuild(); openSheet('build'); applyHints(); }
   function renderBuild() {
     const order = ['solar', 'wind', 'battery', 'peaker', 'ccgt', 'hydro'].concat(['offshore', 'ldes'].filter(t => S.transition && (S.unlocked[t] || Sim.timelineOf(S).some(e => e.unlocks === t))));
+    // every site full for what you can build: say so above the cards, and what's next
+    $('build-full').hidden = !Sim.regionFull(S);
+    if (Sim.regionFull(S)) $('build-full').textContent = Sim.fullNote(S);
     $('tech-grid').innerHTML = order.map(t => {
       const T = TECH[t], unlocked = !!S.unlocked[t];
       const size = chosenSize[t] || T.sizes[0], site = Sim.siteFor(S, t, size), st = site && Sim.siteOf(t, site);
@@ -1226,7 +1231,7 @@
           <dt>Upkeep</dt><dd>${fmtMoney(Sim.upkeepFor(S, t, size, mwh))}/day</dd><dt>Emissions</dt><dd>${T.emis ? `${T.emis} t/MWh` : 'None'}</dd></dl>
         <button type="button" class="btn btn-primary" data-build="${t}" ${borrow ? `data-borrow="${borrow}"` : ''} ${why && !borrow ? 'disabled' : ''}>${label}</button>
         <button type="button" class="btn btn-quiet" data-design="${t}">Custom size and site</button>`
-        : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>${T.transition ? `Arrives in year ${(Sim.timelineOf(S).find(e => e.unlocks === t) || {}).year}` : `Unlock: ${goal ? goal.text.toLowerCase() : 'later'}`}</div>`}
+        : `<div class="lock"><svg class="i"><use href="#i-lock"/></svg>${T.transition ? `Arrives in year ${(Sim.timelineOf(S).find(e => e.unlocks === t) || {}).year}` : `Unlock: ${goal ? goal.text[0].toLowerCase() + goal.text.slice(1) : 'later'}`}</div>`}
       </div>`;
     }).join('');
   }

@@ -788,6 +788,30 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8o. Every site full: the build sheet says so and what's next. A price spike: the news says why.
+  {
+    const p = await page();
+    await newCompany(p, 'standard');
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); M.Sim.skipTour(S); S.cash = 1e10;
+      for (const t of ['wind', 'ccgt', 'hydro']) S.unlocked[t] = true;
+      for (const t of ['solar', 'wind', 'battery', 'peaker', 'hydro']) { const T = M.Sim.TECH[t];
+        for (const st of M.Sim.SITES[t]) { let room; while ((room = M.Sim.siteRoom(S, t, st.id)) >= (t === 'hydro' ? 1 : T.range[0])) if (!M.Sim.build(S, t, t === 'hydro' ? st.mw[0] : Math.min(room, T.range[1]), { site: st.id }).ok) break; } }
+      M.renderAll(); });
+    for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    await p.click('#add-plant'); await p.waitForTimeout(250);
+    check('with every site taken, the build sheet says the region is full and how to grow', !(await p.$eval('#build-full', x => x.hidden)) && /^Every site in the region is full\. To grow from here, upgrade your plants/.test(await p.textContent('#build-full')), await p.textContent('#build-full'));
+    await shot(p, 'build-full');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    // a squeeze at the evening peak: every coal unit down, the interconnector out, a heatwave
+    await state(p, () => { const M = MeritOrder, S = M.state; for (const r of S.rivals) if (r.tech === 'coal') r.out = 3;
+      S.events.push({ key: 'heatwave', left: 2 }, { key: 'linktrip', left: 2 });
+      const end = S.t + 288; while (S.t < end && !S.news.some(n => /^(Prices hit|Supply ran short)/.test(n.text))) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
+      M.renderAll(); });
+    const news = await p.textContent('#news');
+    check('a price spike gets a news line saying why', /(Prices hit .* at .*: |Supply ran short at .*: ).*(were broken down|was broken down).*interconnector was out/.test(news), news.slice(0, 220));
+    await p.context().close();
+  }
+
   // 8i. 64x: offered, and really twice as fast as 32x (the loop's per-frame cap doesn't hold it back).
   {
     const p = await page();
