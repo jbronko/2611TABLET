@@ -152,6 +152,7 @@ if (require.main === module && process.argv[2] === '--transition') {
   // node merit-order/test/balance.js --transition [strategies] [--long]
   // Targets: idle 0 stars and the region runs short without the player; players who keep building
   // firm and clean plant reach 3, and still have places to build after year 10.
+  // v35 (lights-on limit per star), Standard: idle 0 (696 h short in year 20), steady 3 ($5.6B), firm 3 ($3.4B), both 0 h short.
   // Last run: Standard steady 3 ($5.6B), firm 3 ($3.4B); Long steady 3 ($8.7B), firm 3 ($5.2B), idle 0.
   const long = process.argv.includes('--long');
   const kinds = (process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : 'idle,steady,firm').split(',');
@@ -175,6 +176,9 @@ if (require.main === module && process.argv[2] === '--transition') {
   // handsoff $911M 0★, steady $1.09B ★★, gouge $637M, quitcoal $685M, close BH4 early $1.12B; Wellspring
   // handsoff $1.26B 0★, steady $1.27B ★★, gouge $639M, quitcoal $814M, close on schedule $1.12B; Coastline
   // handsoff $436M 0★, steady $657M ★★, gouge $241M, quitcoal $632M, hold $604M, raise $704M ★★★.
+  // v35, a lights-on limit per star (48 h / 12 h / none short in the final year): values and stars as
+  // above, except Coastline raise $704M ★★ (12 MWh short in year 4 misses "no shortfall at all").
+  // Handsoff still 0★ everywhere (short of its own firm plant), steady, firm, buyer, quitcoal ★★.
   const kinds = (process.argv[3] || 'handsoff,steady,firm,gouge,quitcoal,buyer').split(',');
   const ids = process.argv[4] ? process.argv[4].split(',') : Sim.SCENARIOS.filter(sc => sc.group === 'company').map(sc => sc.id);
   const line = (label, r, yrs) => console.log(`  ${label.padEnd(16)} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}  value ${Sim.fmtMoney(r.value).padStart(7)}  worst year ${Sim.fmtMoney(r.minYearProfit).padStart(7)}  final short ${r.finalShed.toFixed(0).padStart(6)} MWh  own firm ${String(Math.round(r.ownFirm)).padStart(5)}/${r.firm}  own clean ${(r.ownClean * 100).toFixed(0)}%${r.tunnelOn ? '  tunnel on' : ''}${r.bust ? '  BUST' : ''}  [${yrs.join(' ')}]`);
