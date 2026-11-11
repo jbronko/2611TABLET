@@ -354,7 +354,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 36</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 37</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -464,7 +464,7 @@
     <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Timeline</span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
     <button type="button" class="switch-row" id="m-loans"><span>Bank loans</span><span class="num" id="m-loans-n"></span></button>
-    <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive (year reports always pause)</small></span><span class="switch"></span></button>
+    <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive (year reports and scenario decisions always pause)</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-idle" role="switch" aria-checked="true"><span>Keep trading while I’m away<small>Up to 7 game days each time you leave: your company and the Energy Transition</small></span><span class="switch"></span></button>
     <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
     <button type="button" class="switch-row danger" id="m-restart" hidden><span>Restart this scenario</span></button>
@@ -2000,6 +2000,9 @@
         if (S.yearReport.tender) seenTender = S.tender;   // its underwriting offer is in the report
         yearReportOpened(speed > 0);   // year reports always pause, even with "Pause for decisions" off
       }
+      // A scenario decision always opens and pauses too. One that came up behind another pop-up (the
+      // year report, or a plant sheet left open) opens as soon as that closes, paused or not.
+      if (S.choice && S.choice !== seenChoice && !openId && !S.ended) { seenChoice = S.choice; choiceOpened(speed > 0); }
       if (speed > 0 && !S.ended && !(openId && openId !== 'plant')) {
         acc += dt * 1000 * speed;
         let n = 0;
@@ -2032,11 +2035,7 @@
             if (autoPause && R.big) { proposalResultOpened(true); break; }
             toast(R.built ? `${R.dev} is going ahead: its ${fmtMW(R.mw)} ${RIVAL_KIND[R.tech]} starts in ${R.startsIn} days.` : `${R.dev} shelved its ${fmtMW(R.mw)} ${RIVAL_KIND[R.tech]}: prices stayed below its hurdle.`);
           }
-          if (S.choice && S.choice !== seenChoice && !openId) {
-            seenChoice = S.choice;
-            if (autoPause) { choiceOpened(true); break; }
-            toast('A decision is waiting: tap its chip.');
-          }
+          if (S.choice && S.choice !== seenChoice && !openId) { seenChoice = S.choice; choiceOpened(true); break; }   // decisions always pause
           if (S.proposal && S.proposal !== seenProposal && !openId) {
             seenProposal = S.proposal;
             if (S.proposal.big) { if (autoPause) { proposalOpened(true); break; } toast(`${S.proposal.dev} plans a ${fmtMW(S.proposal.mw)} plant: tap its chip.`); }

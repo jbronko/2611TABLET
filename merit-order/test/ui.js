@@ -544,6 +544,45 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#m-timeline'); await p.waitForTimeout(200);
     const tl = await p.textContent('#i-body');
     check('the timeline’s past years show clean output the way the stars count it', /% of your output clean/.test(tl) && !/of the region from your clean plant/.test(tl) && !!(await p.$('#tl-report')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    // scenario decisions always pause too: the second retail renewal (day 111), still with pausing off
+    await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 110 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal) S.proposal = null; }
+      if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.setSpeed(16); });
+    title = '';
+    for (let k = 0; k < 10 && title !== 'Your customers renew in 10 days'; k++) { await p.waitForTimeout(300); title = await p.textContent('#i-title'); }
+    check('with "Pause for decisions" off, a scenario decision still opens and pauses', title === 'Your customers renew in 10 days' && !(await p.$eval('#sh-info', x => x.hidden)) && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await p.click('[data-choose="low"]'); await p.waitForTimeout(200);
+    check('…choosing applies it and picks up the speed again', await state(p, () => MeritOrder.state.chosen.price === 'low' && !MeritOrder.state.choice) && (await p.$eval('[data-speed="16"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await p.context().close();
+  }
+  // A decision that comes with the new year waits behind the year report, then opens and pauses:
+  // with the clock running (Wellspring's deal) and with it paused (Highcountry's Tunnel Two).
+  {
+    const p = await page();
+    await wipe(p);
+    const startOff = async id => {
+      if (await state(p, () => MeritOrder.scene()) === 'app') { await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-scenarios'); } else await p.click('#t-scenarios');
+      await p.waitForTimeout(200); await p.click(`[data-scenario="${id}"]`); await p.waitForTimeout(150); await scGo(p); await p.waitForTimeout(300);
+      if ((await p.$eval('#m-autopause', x => x.getAttribute('aria-checked'))) === 'true') { await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-autopause'); await p.waitForTimeout(100); await p.click('#sh-menu [data-close]'); await p.waitForTimeout(150); }
+    };
+    const waitTitle = async want => { let t = ''; for (let k = 0; k < 12 && t !== want; k++) { await p.waitForTimeout(250); t = await p.textContent('#i-title'); } return t; };
+    const speedIs = async v => (await p.$eval(`[data-speed="${v}"]`, x => x.getAttribute('aria-pressed'))) === 'true';
+    await startOff('wellspring');
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 60 * 288 - 3) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal) S.proposal = null; } M.renderAll(); M.setSpeed(16); });
+    check('Wellspring, pausing off: the year report opens first', (await waitTitle('Year 1 in review')) === 'Year 1 in review' && await speedIs(0));
+    await p.click('#yr-ok'); await p.waitForTimeout(200);
+    check('…then the government’s deal opens, paused', (await waitTitle('The government’s deal')) === 'The government’s deal' && await speedIs(0));
+    await p.click('#ch-later'); await p.waitForTimeout(200);
+    check('…"Decide later" picks up the speed again and leaves the chip', await speedIs(16) && /Decision: The government’s deal/.test(await p.textContent('#chips')), (await p.textContent('#chips')).slice(0, 120));
+    await p.evaluate(() => MeritOrder.setSpeed(0));
+    await startOff('highcountry');
+    // the new year arrives while the clock is paused (as after a reload): report, then the decision
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 60 * 288 + 1) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal) S.proposal = null; } M.renderAll(); });
+    check('Highcountry, paused: the year report opens', (await waitTitle('Year 1 in review')) === 'Year 1 in review');
+    await p.click('#yr-ok'); await p.waitForTimeout(200);
+    check('…then Tunnel Two’s decision opens even though the clock is paused', (await waitTitle('Tunnel Two: the boring machine is stuck')) === 'Tunnel Two: the boring machine is stuck' && await speedIs(0));
+    await p.click('[data-choose="wait"]'); await p.waitForTimeout(200);
+    check('…and choosing leaves the clock paused', await speedIs(0) && await state(p, () => MeritOrder.state.chosen.tbm === 'wait'));
     await p.context().close();
   }
 
@@ -652,6 +691,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
       M.Sim.signContract(S, 0); if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.save(); });
     const at = () => state(p, () => { const S = MeritOrder.state; return { id: S.scenario && S.scenario.id, t: S.t, cash: Math.round(S.cash), plants: S.plants.length }; });
     const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+    await p.waitForTimeout(200); await p.click('#ch-later');   // Tunnel Two's decision opens (always): leave it for later
     const hc = await at();
     const fresh = id => state(p, id => { const S = MeritOrder.state; return S.scenario.id === id && MeritOrder.Sim.dayIndex(S) === 0 && !S.choice && !S.proposal && !S.contracts.length
       && !S.news.some(n => /Tunnel Two: the boring|plans a|You sold/.test(n.text)) && S.plants.length === MeritOrder.Sim.createScenario(id).plants.length; }, id);

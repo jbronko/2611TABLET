@@ -70,8 +70,10 @@ const SEEDS = {
         while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
         S.proposal.big = true; if (S.yearReport) S.yearReport.seen = true;
         M.renderAll();
-        document.getElementById('toast').hidden = true;   // the start's "Paused" message would still be fading: a steady screen to tap
       });
+      // the decision opens by itself (decisions always do): leave it for later, so its chip is there
+      await p.waitForTimeout(200); await p.click('#ch-later');
+      await p.evaluate(() => { document.getElementById('toast').hidden = true; });   // the start's "Paused" message would still be fading: a steady screen to tap
     },
     // the Energy Transition at the start of year 3: a yearly report with an underwriting round
     transition: async p => {

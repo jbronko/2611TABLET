@@ -41,8 +41,11 @@ are built, tested and published); this file is what's specific to Merit Order. C
     `valuePart(v)`, `cleanPart(share, region)`, `profitPart`; the star needs every part.
   - Compound stars list their parts (a third element in `stars`), shown ✓/✗ on the end screen and
     in the year report; stars are won in order, and the screen says so. In the final year a chip
-    tracks the hours short against the three limits (its pop-up lists them). Year reports always
-    pause, even with "Pause for decisions" off.
+    tracks the hours short against the three limits (its pop-up lists them).
+  - Year reports and scenario decisions always pause, even with "Pause for decisions" off. A
+    decision that arrives with the year report opens when the report closes, even if the clock is
+    paused. That check runs every frame, not just while the clock runs. Rival plans, their results
+    and reserve results follow the setting.
   - Closure badges from `closes` (copied to `S.closeAt`; `closesIn`).
 - **Scenario fields:**
   - `years`, `yearDays`, `timeline` (same shape as `TRANSITION`)
