@@ -505,7 +505,9 @@ const Sim = (() => {
     if (T.kind !== 'thermal') return T.vc;
     return T.vc * (p.tech === 'coal' ? 1 : S.fuelMult) * (p.upg && p.tech === 'ccgt' ? 0.88 : 1);
   }
-  const emisOf = p => TECH[p.tech].emis * (p.upg && p.tech === 'ccgt' ? 0.88 : 1);
+  // (storage has no emis of its own: without the || 0 a battery's output made the totals NaN, which
+  // silently switched off emissions fines and broke challenge result codes)
+  const emisOf = p => (TECH[p.tech].emis || 0) * (p.upg && p.tech === 'ccgt' ? 0.88 : 1);
 
   // forecast: plan ahead ignoring ramp limits (pre-dispatch looks hours ahead, not 5 minutes)
   function buildBids(S, c, forecast) {
@@ -739,11 +741,15 @@ const Sim = (() => {
   }
   const listText = a => a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
   // Who set the price: the dearest offer that ran (none if supply ran out, or a buyer's bid set it).
-  function priceSetter(supply, res) {
-    if (res.shortfall >= 1) return '';
+  function topBand(supply, res) {
+    if (res.shortfall >= 1) return null;
     let top = null;
     for (const b of supply) if (b.out > 0.01 && (!top || b.price > top.price || (b.price === top.price && b.out > top.out))) top = b;
-    if (!top || top.price < res.price - 0.5) return '';
+    return top && top.price >= res.price - 0.5 ? top : null;
+  }
+  function priceSetter(supply, res) {
+    const top = topBand(supply, res);
+    if (!top) return '';
     return top.owner === 'player' ? `Your ${top.ref.name} set the price.` : top.ref.id === 'imp' ? 'Imports set the price.'
       : top.ref.id === 'dsp' ? 'Demand response (customers paid to cut back) set the price.' : `${top.ref.name} set the price.`;
   }
@@ -840,6 +846,15 @@ const Sim = (() => {
     d.revenue += rev; d.costs += cost; d.fcas += fcasRev; d.fcasRaise += fcasR; d.fcasLower += fcasL; d.emis += emis; d.contracts += hedge;
     d.capPay += Math.max(0, res.price - 300) * H;
     for (const k of CAP_STRIKES) d.capPays[k] += Math.max(0, res.price - k) * H;
+    if (careerOn(S)) {   // awards: how often your offer set the price, and the dearest price you sold into
+      const M = (S.month ||= freshMonth()), R = (S.records ||= {});
+      M.n++; const top = topBand(supply, res); if (top && top.owner === 'player') M.setN++;
+      if (mine > 0.5) {
+        const day = dayIndex(S);
+        if (mine >= SURF_MW && (!M.top || res.price > M.top.price)) M.top = { price: res.price, day, h: c.h, mw: mine };
+        if (!R.price || res.price > R.price.v) R.price = { v: res.price, day, h: c.h };
+      }
+    }
     d.energy += Math.max(0, mine) * H; d.regionEnergy += c.demand * H;
     for (const b of supply) if (b.owner === 'player' && b.out > 0 && !T[b.tech].emis) d.clean += b.out * H;   // wind, solar, storage, hydro
     d.price.push(res.price); d.demand.push(c.demand); d.mine.push(Math.max(0, mine));
@@ -902,8 +917,12 @@ const Sim = (() => {
     if (short > 1) {
       const pen = Math.round(short / o.mw * o.payment * 3 * diff(S).penalty);
       S.cash -= pen; S.today.penalties += pen; S.reserveResult.penalty = pen;
+      if (S.month) S.month.missed++;
+      (S.reserveTally ||= { kept: 0, missed: 0 }).missed++;
       addNews(S, 'bad', `You were ${fmtMW(short)} short of the reserve you promised (lowest ${fmtMW(o.worst ?? 0)} ready${at ? ` at ${at}` : ''}). Penalty: ${fmtMoney(pen)}.`);
     } else {
+      if (S.month) S.month.kept++;
+      (S.reserveTally ||= { kept: 0, missed: 0 }).kept++;
       S.goalFlags = { ...(S.goalFlags || {}), reserveKept: true };
       addNews(S, 'good', `You kept your reserve promise: at least ${fmtMW(o.worst ?? 0)} stayed ready from 3 to 8 pm.`);
     }
@@ -929,6 +948,7 @@ const Sim = (() => {
     const rec = { day, profit, revenue: d.revenue, costs: d.costs, fcas: d.fcas, fcasRaise: d.fcasRaise, fcasLower: d.fcasLower, certs: d.certs, starts: d.starts, clean: d.clean, cis: d.cis, region: d.regionEnergy, contracts: d.contracts, repairs: d.repairs, interest: d.interest, loanInterest: d.loanInterest || 0, upkeep, energy: d.energy, share: d.energy / Math.max(1, d.regionEnergy),
       avg, max: d.maxP, min: d.minP, emis: d.emis, capPay: d.capPay, priceSorted, price: d.price, demand: d.demand, mine: d.mine, shed: d.shed || 0, penalties: d.penalties, bonus: d.bonus, retail: d.retail, keepPay: d.keepPay, overruns: d.overruns, capPays: d.capPays };
     S.days.push(rec);
+    if (careerOn(S)) { tallyDay(S, rec); if ((day + 1) % 30 === 0) judgeAwards(S); }
     if (S.days.length > 3) { const old = S.days[S.days.length - 4]; delete old.price; delete old.demand; delete old.mine; }
     if (S.days.length > 60) S.days.shift();
     S.totals.profit += profit; S.totals.energy += d.energy;
@@ -1365,6 +1385,58 @@ const Sim = (() => {
     return `Every site in the region is full${more.length ? ' for the plants you can build' : ''}. ${[...more, ...grow].join(' ')} From here, your bids and contracts are what earn more.`;
   }
 
+  // ---- career awards and records: recognition, not money ----
+  // Every 30 days the month's play is judged for awards. There's no prize: the late game earns
+  // plenty already. S.month holds the month's tallies, S.records the company's bests (from the day
+  // records began, R.since), S.awards the trophy shelf, S.awardsNew the latest month's winners.
+  const careerOn = S => !S.scenario && !S.challenge;
+  const freshMonth = () => ({ days: 0, profitDays: 0, hedged: 0, profit: 0, clean: 0, energy: 0, region: 0, n: 0, setN: 0, share: 0, kept: 0, missed: 0, top: null });
+  const SURF_PRICE = 5000, SURF_MW = 100;   // Spike surfer: this much sold into this price or more
+  const pct = x => `${Math.round(x * 100)}%`;
+  const AWARDS = [
+    { id: 'steady', name: 'Steady hand', how: 'Make a profit every day for a month, with contracts in place on at least 20 days.', test: M => M.days >= 20 && M.profitDays === M.days && M.hedged >= 20, detail: M => `a profit on all ${M.days} days, hedged on ${M.hedged}` },
+    { id: 'clean', name: 'Clean generator', how: 'Supply 5% of the region from your clean plant over a month.', test: M => M.region > 0 && M.clean / M.region >= 0.05, detail: M => `${(M.clean / M.region * 100).toFixed(1)}% of the region from your clean plant` },
+    { id: 'maker', name: 'Market maker', how: 'Set the price in 15% of a month’s five-minute intervals.', test: M => M.n > 0 && M.setN / M.n >= 0.15, detail: M => `your offers set the price ${pct(M.setN / M.n)} of the time` },
+    { id: 'spike', name: 'Spike surfer', how: `Sell ${SURF_MW} MW or more into a price of ${fmtPrice(SURF_PRICE)}/MWh or more.`, test: M => !!M.top && M.top.price >= SURF_PRICE, detail: M => `${fmtMW(M.top.mw)} sold at ${fmtPrice(M.top.price)}/MWh on day ${M.top.day + 1} at ${clock(M.top.h)}` },
+    { id: 'reliable', name: 'Reliable', how: 'Keep every reserve promise in a month (at least one).', test: M => M.kept > 0 && M.missed === 0, detail: M => `${M.kept} reserve promise${M.kept === 1 ? '' : 's'} kept` },
+    { id: 'heavy', name: 'Heavyweight', how: 'Supply 20% of the region on average for a month.', test: M => M.days > 0 && M.share / M.days >= 0.2, detail: M => `${pct(M.share / M.days)} of the region on average` },
+  ];
+  function tallyDay(S, rec) {
+    const M = (S.month ||= freshMonth()), R = (S.records ||= {});
+    R.since ??= rec.day;
+    M.days++; if (rec.profit > 0) M.profitDays++;
+    M.profit += rec.profit; M.clean += rec.clean || 0; M.energy += rec.energy || 0; M.region += rec.region || 0; M.share += rec.share || 0;
+    if (S.contracts.some(k => !k.retail)) M.hedged++;
+    const best = (k, v) => { if (v != null && (!R[k] || v > R[k].v)) R[k] = { v, day: rec.day }; };
+    best('day', rec.profit); best('share', rec.share); best('value', companyValue(S));
+    best('mw', S.plants.reduce((a, p) => a + (p.status === 'building' ? 0 : p.mw), 0));
+    R.streakNow = rec.profit > 0 ? (R.streakNow || 0) + 1 : 0; best('streak', R.streakNow);
+  }
+  function judgeAwards(S) {
+    const M = S.month || freshMonth(), month = Math.round(dayIndex(S) / 30), R = (S.records ||= {});
+    S.awards ||= {};
+    if (M.days && (!R.month || M.profit > R.month.v)) R.month = { v: M.profit, month };
+    const won = AWARDS.filter(a => a.test(M));
+    for (const a of won) { const w = (S.awards[a.id] ||= { count: 0 }); w.count++; w.last = month; w.detail = a.detail(M); }
+    if (won.length) {
+      S.awardsNew = { month, ids: won.map(a => a.id), seen: false };
+      addNews(S, 'good', `Month ${month} awards: ${listText(won.map(a => `${a.name} (${a.detail(M)})`))}.`);
+    }
+    S.month = freshMonth();
+    return won;
+  }
+
+  // ---- stars made of several parts, and the parts for objectives beyond money ----
+  const allOf = (text, ...parts) => [text, r => parts.every(p => p(r).ok), r => parts.map(p => p(r))];
+  const fmtT = t => t >= 10000 ? `${Math.round(t / 1000).toLocaleString()}k t` : `${Math.round(t).toLocaleString()} t`;
+  const emisPart = max => r => ({ label: 'Your emissions', ok: r.emis <= max, detail: `${fmtT(r.emis)} of the ${fmtT(max)} allowed` });
+  const cleanAllPart = share => r => ({ label: 'Clean share of your output', ok: r.ownCleanAll >= share, detail: `${pct(r.ownCleanAll)} (needs ${pct(share)})` });
+  const gainPart = v => r => ({ label: 'Growth', ok: r.gain >= v, detail: `${fmtMoney(r.gain)} (needs ${fmtMoney(v)})` });
+  const sharePart = need => r => ({ label: 'Your best day', ok: r.maxShare >= need, detail: `${(r.maxShare * 100).toFixed(1)}% of the region (needs ${pct(need)})` });
+  const weekSharePart = need => r => ({ label: 'The last week', ok: r.weekShare >= need, detail: `${(r.weekShare * 100).toFixed(1)}% of the region on average (needs ${pct(need)})` });
+  const keptPart = n => r => ({ label: 'Reserve promises kept', ok: r.kept >= n, detail: `${r.kept} (needs ${n})` });
+  const missedPart = r => ({ label: 'Promises missed', ok: r.missed === 0, detail: r.missed ? `${r.missed} missed` : 'None' });
+
   // ---- goals ----
   const GOALS = [
     { id: 'first', text: 'Build your first plant', reward: 50000, test: S => S.plants.length > 0 },
@@ -1417,7 +1489,7 @@ const Sim = (() => {
   const lit = (r, i) => (r.finalShedHours || 0) <= LIGHTS_HOURS[i] + 1e-9;
   // A star with a lights-on limit (i: 0, 1 or 2 for one, two or three stars) and other parts, each a
   // function of the result giving { label, ok, detail }. All must be met; the end screen lists them.
-  const lightsStar = (i, text, ...parts) => [text, r => lit(r, i) && parts.every(p => p(r).ok), r => [lightsPart(r, i), ...parts.map(p => p(r))]];
+  const lightsStar = (i, text, ...parts) => [text, r => lit(r, i) && parts.every(p => p(r).ok), r => [lightsPart(r, i), ...parts.map(p => p(r))]];   // like allOf, with the lights first
   const lightsText = i => LIGHTS_HOURS[i] ? `no more than ${LIGHTS_HOURS[i]} hours short` : 'no shortfall at all';
   function lightsPart(r, i) {
     const h = r.finalShedHours || 0, max = LIGHTS_HOURS[i];
@@ -1426,7 +1498,7 @@ const Sim = (() => {
   }
   const tunnelPart = r => ({ label: 'Tunnel Two running', ok: r.tunnelOn, detail: r.tunnelOn ? 'Generating' : 'Still being built' });
   const firmPart = r => ({ label: 'Your firm plant', ok: r.ownFirm >= r.firm, detail: `${fmtMW(r.ownFirm)} of the ${fmtMW(r.firm)} needed (gas, coal, hydro and storage you own)` });
-  const valuePart = v => r => { const t = v ?? r.target; return { label: 'Company value', ok: r.value >= t, detail: `${fmtMoney(r.value)} (needs ${t >= 1e9 ? `$${+(t / 1e9).toFixed(2)}B` : `$${Math.round(t / 1e6)}M`})` }; };
+  const valuePart = v => r => { const t = v ?? r.target; return { label: 'Company value', ok: r.value >= t, detail: `${fmtMoney(r.value)} (needs ${t >= 1e9 ? `$${+(t / 1e9).toFixed(2)}B` : t >= 1e6 ? `$${+(t / 1e6).toFixed(2)}M` : fmtMoney(t)})` }; };
   const cleanPart = (share, region) => r => { const x = region ? r.cleanShare : r.ownClean;
     return { label: region ? 'Clean share of the region' : 'Clean share of your output', ok: x >= share, detail: `${Math.round(x * 100)}% (needs ${Math.round(share * 100)}%)` }; };
   const profitPart = r => ({ label: 'A profit every year', ok: r.minYearProfit > 0, detail: `Worst year ${fmtMoney(r.minYearProfit)}` });
@@ -1461,6 +1533,17 @@ const Sim = (() => {
       blurb: '$3M, every technology but coal, and six weeks over summer. Build an empire.',
       unlock: ['wind', 'ccgt', 'hydro'],
       stars: [['Grow the company to $5.5M', r => r.value >= 5500000], ['Grow it to $7M', r => r.value >= 7000000], ['Grow it to $8.5M', r => r.value >= 8500000]] },
+    // ---- judged on more than money ----
+    { id: 'clean-up', name: 'Clean Up', days: 30, startDoy: 75, seed: 7707, cash: 3000000, owns: [['bh3'], ['bh4']], unlock: ['wind'], watch: 'emis', emisCap: 500000,
+      blurb: 'You own Black Hill 3 and 4, 1,320 MW of coal, and the regulator has capped your emissions at 500k t for the month. Clean up without giving up the profits.',
+      stars: [allOf('Keep your emissions under 500k t', emisPart(500000)), allOf('…and make 40% of your output clean', cleanAllPart(0.4)), allOf('…and grow the company by $35M', gainPart(35e6))] },
+    { id: 'big-fish', name: 'Big Fish', days: 21, startDoy: 130, seed: 8808, cash: 30000000, unlock: ['wind', 'ccgt'], watch: 'share', shareNeeds: [0.05, 0.1, 0.1],
+      blurb: '$30M, a quiet autumn market and three weeks. How much of the region can you supply?',
+      stars: [allOf('Supply 5% of the region in one day', sharePart(0.05)), allOf('…supply 10% in one day', sharePart(0.1)), allOf('…and average 10% over the last week', weekSharePart(0.1))] },
+    { id: 'reserve-duty', name: 'Reserve Duty', days: 21, startDoy: 20, seed: 9909, cash: 1500000, calm: true, plants: [["peaker",150],["peaker",50],["peaker",50]], watch: 'reserve',
+      script: [{"day":3,"key":"heatwave","len":2},{"day":8,"key":"heatwave","len":2},{"day":13,"key":"heatwave","len":2},{"day":18,"key":"heatwave","len":2}],
+      blurb: 'Four heatwaves in three weeks. Before each, the operator asks you to promise 80% of your firm plant for the evening peak. Gas peakers count while they run; a battery only counts with two hours of charge in hand, so one that sells into the peak eats into your promise.',
+      stars: [allOf('Keep a reserve promise', keptPart(1)), allOf('…keep all four, missing none', keptPart(4), missedPart), allOf('…and grow the company by $1.25M', gainPart(1250000))] },
 
     // ---- company scenarios: run a portfolio like a real NEM company's (the names are made up).
     // The plants come out of the rival fleet (`owns`), so the market is the same size as ever.
@@ -1946,8 +2029,11 @@ const Sim = (() => {
     const days = S.days.filter(d => d.day < S.scenario.days);
     // the final year comes from the year records: a long year has more days than S.days keeps
     const Y = (S.transition && S.years && S.years[yearsOf(S) - 1]) || { shed: 0, region: 0, clean: 0 };
+    const week = days.slice(-7), energy = days.reduce((a, d) => a + (d.energy || 0), 0);
     const r = { ...resultOf(S, Y), profit: S.years ? S.years.reduce((a, Y) => a + Y.profit, 0) : days.reduce((a, d) => a + d.profit, 0),
-      maxShare: days.reduce((m, d) => Math.max(m, d.share), 0), reserveKept: !!(S.goalFlags && S.goalFlags.reserveKept) };
+      maxShare: days.reduce((m, d) => Math.max(m, d.share), 0), reserveKept: !!(S.goalFlags && S.goalFlags.reserveKept),
+      emis: S.totals.emis, kept: (S.reserveTally || {}).kept || 0, missed: (S.reserveTally || {}).missed || 0,
+      weekShare: week.length ? week.reduce((a, d) => a + d.share, 0) / week.length : 0, ownCleanAll: energy > 0 ? days.reduce((a, d) => a + (d.clean || 0), 0) / energy : 0 };
     return { ...r, ...scoreStars(S, sc, r) };
   }
   function scoreStars(S, sc, r) {
@@ -2068,7 +2154,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, rivalInvestment, regionFull, fullNote, spikeNews, SPIKE, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, rivalInvestment, regionFull, fullNote, spikeNews, SPIKE, AWARDS, judgeAwards, freshMonth, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

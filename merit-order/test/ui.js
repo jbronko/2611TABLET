@@ -301,7 +301,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     const p = await page();
     await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
-    check('the scenarios list, with the company scenarios in their own group', (await p.$$('[data-scenario]')).length === 11 && /Run a company/.test(await p.textContent('#i-body')));
+    check('the scenarios list, with the company scenarios in their own group', (await p.$$('[data-scenario]')).length === 14 && /Run a company/.test(await p.textContent('#i-body')) && /Clean Up.*Big Fish.*Reserve Duty/s.test(await p.textContent('#i-body')));
     await shot(p, 'scenarios');
     await p.click('[data-scenario="heatwave-week"]'); await p.waitForTimeout(150);
     check('a scenario shows its three stars before starting', (await p.$$('.starlist li')).length === 3);
@@ -809,6 +809,49 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
       M.renderAll(); });
     const news = await p.textContent('#news');
     check('a price spike gets a news line saying why', /(Prices hit .* at .*: |Supply ran short at .*: ).*(were broken down|was broken down).*interconnector was out/.test(news), news.slice(0, 220));
+    await p.context().close();
+  }
+
+  // 8p. Trophies and records in the career; a month's awards toast; goal chips in the new scenarios.
+  {
+    const p = await page();
+    await newCompany(p, 'standard');
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); M.Sim.skipTour(S);
+      S.awards = { clean: { count: 2, last: 3, detail: '6.1% of the region from your clean plant' } };
+      S.records = { since: 0, day: { v: 412000, day: 40 }, price: { v: 14000, day: 61, h: 18.25 }, streak: { v: 33, day: 70 } }; M.renderAll(); });
+    for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    await p.click('#open-menu'); await p.waitForTimeout(150);
+    check('the career menu has Trophies and records, with the count won', !(await p.$eval('#m-trophies', x => x.hidden)) && (await p.textContent('#m-trophies-n')) === '2');
+    await p.click('#m-trophies'); await p.waitForTimeout(200);
+    const tb = await p.textContent('#i-body');
+    check('…the shelf lists all six awards, the won one with its count', (await p.$$('.trophies li')).length === 6 && (await p.$$('.trophies li.won')).length === 1 && /Clean generator ×2/.test(tb) && /Last won in month 3/.test(tb) && /Spike surfer/.test(tb));
+    check('…and the records, with a dash for those not set yet', /Best day\$412k profit on day 41/.test(tb) && /Highest price you sold into\$14k\/MWh on day 62 at 6:15 pm/.test(tb) && /Longest run of profitable days33 days/.test(tb) && /Best month—/.test(tb), tb.slice(0, 300));
+    await shot(p, 'trophies');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    await state(p, () => { MeritOrder.state.awardsNew = { month: 4, ids: ['clean', 'maker'], seen: false }; MeritOrder.setSpeed(1); });
+    await p.waitForTimeout(500);
+    check('a month’s awards show in a toast, without pausing', /Month 4 awards: Clean generator, Market maker/.test(await p.textContent('#toast')) && await p.$eval('#sh-info', x => x.hidden) && (await p.$eval('[data-speed="1"]', x => x.getAttribute('aria-pressed'))) === 'true');
+    await p.evaluate(() => MeritOrder.setSpeed(0));
+    // the new scenarios: a goal chip, and its pop-up shows the stars with their parts so far
+    const openSc = async id => { await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-scenarios'); await p.waitForTimeout(200); await p.click(`[data-scenario="${id}"]`); await p.waitForTimeout(200); await scGo(p); await p.waitForTimeout(300); };
+    await openSc('clean-up');
+    await p.click('#open-menu'); await p.waitForTimeout(150);
+    check('in a scenario the menu has no Trophies and records', await p.$eval('#m-trophies', x => x.hidden));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    await state(p, () => { const M = MeritOrder, S = M.state; for (let k = 0; k < 288; k++) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); });
+    check('Clean Up: a chip counts emissions against the cap', /Emissions: [\d,]+k t of 500k t/.test(await p.textContent('#chips')));
+    await state(p, () => { const M = MeritOrder; M.state.totals.emis = 620000; M.renderAll(); });
+    check('…and says when the cap is broken', /over the 500k t cap, the stars are lost/.test(await p.textContent('#chips')) && await p.$eval('[data-goal]', x => x.classList.contains('bad')));
+    await p.click('[data-goal]'); await p.waitForTimeout(200);
+    check('…its pop-up shows the stars with their parts so far', (await p.textContent('#i-title')) === 'Clean Up: so far' && /Your emissions: 620k t of the 500k t allowed/.test(await p.textContent('#i-body')));
+    await shot(p, 'clean-up-so-far');
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    await openSc('big-fish');
+    check('Big Fish: a chip shows the best day, today and what the next star needs', /Best day [\d.]+% · today [\d.]+% · ★ needs 5\.0% in a day/.test(await p.textContent('#chips')), await p.textContent('#chips'));
+    await openSc('reserve-duty');
+    check('Reserve Duty: a chip counts promises kept', /Reserve promises kept: 0 of 4/.test(await p.textContent('#chips')));
+    await state(p, () => { const M = MeritOrder; M.state.reserveTally = { kept: 2, missed: 1 }; M.renderAll(); });
+    check('…and turns red when one is missed', /Reserve promises: 2 kept, 1 missed/.test(await p.textContent('#chips')) && await p.$eval('[data-goal]', x => x.classList.contains('bad')));
     await p.context().close();
   }
 

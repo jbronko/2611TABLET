@@ -223,6 +223,11 @@
   .sheet h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); font-stretch: 110%; }
   .sheet p { margin: 0 0 10px; color: var(--ink-2); }
   .tech-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .trophies { list-style: none; padding: 0; margin: 8px 0 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+  .trophies li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); }
+  .trophies li > div { display: grid; gap: 2px; } .trophies li span { font-size: 13.5px; color: var(--ink-2); }
+  .trophies li .i { flex: none; margin-top: 2px; color: var(--ink-3); } .trophies li.won .i, .trophies .count { color: var(--amber); }
+  .trophies li:not(.won) b { color: var(--ink-2); }
   .build-full { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink); font-size: 14.5px; }
   .card { text-align: left; border-radius: 14px; padding: 14px; background: var(--panel-2); border: 1px solid var(--line); display: grid; gap: 10px; align-content: start; transition: transform 0.12s ease; }
   .card .head { display: flex; gap: 10px; align-items: center; }
@@ -355,7 +360,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 38</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 39</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -459,6 +464,7 @@
     <button type="button" class="switch-row" id="m-share"><span><svg class="i"><use href="#i-share"/></svg> Share your company</span></button>
     <button type="button" class="switch-row" id="m-scenarios"><span><svg class="i"><use href="#i-star"/></svg> Scenarios</span><span class="num" id="m-scenarios-n"></span></button>
     <button type="button" class="switch-row" id="m-challenge"><span><svg class="i"><use href="#i-flag"/></svg> Challenges</span></button>
+    <button type="button" class="switch-row" id="m-trophies"><span><svg class="i"><use href="#i-trophy"/></svg> Trophies and records</span><span class="num" id="m-trophies-n"></span></button>
     <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
     <button type="button" class="switch-row" id="m-tour"><span>Show me around<small>Restart the getting-started missions</small></span></button>
     <button type="button" class="switch-row" id="m-company"><span>Company report</span></button>
@@ -836,6 +842,28 @@
     if (n > 0) return { tone: 'warn', chip: `Final year: ${h} h short (${'★'.repeat(n)} allows ${L[n - 1]})`, Y, hrs, n };
     return { tone: 'bad', chip: `Final year: ${h} h short, the lights-on stars are lost`, Y, hrs, n };
   }
+  // Scenarios judged on emissions, share or reserve promises: a chip with how it's going.
+  const fmtT = t => t >= 10000 ? `${Math.round(t / 1000).toLocaleString()}k t` : `${Math.round(t).toLocaleString()} t`;
+  function goalChip() {
+    const sc = S.scenario && Sim.SCENARIOS.find(x => x.id === S.scenario.id);
+    if (!sc || !sc.watch || S.ended) return [];
+    const r = Sim.scenarioResult(S), chip = (tone, text) => [`<button type="button" class="chip ${tone}" data-goal><svg class="i"><use href="#i-${tone === 'good' ? 'good' : tone === 'bad' ? 'bad' : 'info'}"/></svg>${text}</button>`];
+    if (sc.watch === 'emis') {
+      const e = r.emis, cap = sc.emisCap;
+      return e > cap ? chip('bad', `Emissions ${fmtT(e)}: over the ${fmtT(cap)} cap, the stars are lost`) : chip(e > cap * 0.8 ? 'warn' : 'good', `Emissions: ${fmtT(e)} of ${fmtT(cap)}`);
+    }
+    if (sc.watch === 'share') {
+      const [a, b, c] = sc.shareNeeds, today = S.today.regionEnergy > 0 ? S.today.energy / S.today.regionEnergy : 0, p = x => `${(x * 100).toFixed(1)}%`;
+      const next = r.maxShare < a ? `★ needs ${p(a)} in a day` : r.maxShare < b ? `★★ needs ${p(b)} in a day` : `★★★ needs a ${p(c)} week: ${p(r.weekShare)} so far`;
+      return chip(r.maxShare >= b ? 'good' : 'warn', `Best day ${p(r.maxShare)} · today ${p(today)} · ${next}`);
+    }
+    if (sc.watch === 'reserve') return r.missed ? chip('bad', `Reserve promises: ${r.kept} kept, ${r.missed} missed`) : chip(r.kept ? 'good' : 'warn', `Reserve promises kept: ${r.kept} of 4`);
+    return [];
+  }
+  function goalExplained() {
+    const sc = S.scenario && Sim.SCENARIOS.find(x => x.id === S.scenario.id); if (!sc) return;
+    info(`${sc.name}: so far`, `${starLines(Sim.scenarioResult(S))}<p class="note">Judged at the end of day ${sc.days}. Each part shows where you stand now.</p>`);
+  }
   function lightsExplained() {
     const L = finalYearLights(); if (!L) return;
     const names = ['One star', 'Two stars', 'Three stars'];
@@ -846,6 +874,7 @@
   }
   $('chips').addEventListener('click', e => {
     if (e.target.closest('[data-lights]')) lightsExplained();
+    if (e.target.closest('[data-goal]')) goalExplained();
     if (e.target.closest('[data-timeline]')) openTimeline();
     if (e.target.closest('[data-tender]')) tenderOpened(false);
     if (e.target.closest('[data-loans]')) openLoans();
@@ -877,6 +906,7 @@
       .concat(S.proposal ? [proposalChip()] : [])
       .concat(S.rivalPending && S.rivalPending.length ? [rivalBuildChip()] : [])
       .concat(S.transition ? transitionChips() : [])
+      .concat(goalChip())
       .concat(S.loans.length ? [`<button type="button" class="chip" data-loans><svg class="i"><use href="#i-info"/></svg>Loans ${fmtMoney(Sim.debt(S))}</button>`] : []);
     $('chips').innerHTML = html.join('');
     $('chips').hidden = !html.length;
@@ -1600,7 +1630,8 @@
     $('m-autopause').setAttribute('aria-checked', String(autoPause));
     $('m-idle').setAttribute('aria-checked', String(idle));
     $('m-loans-n').textContent = S.loans.length ? `${fmtMoney(Sim.debt(S))} owed` : '';
-    $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario; $('m-tour').hidden = !!(S.scenario || S.challenge); $('m-timeline').hidden = !S.transition;
+    $('m-challenge').hidden = false; $('m-goals').hidden = !!S.scenario;
+    $('m-trophies').hidden = !!(S.scenario || S.challenge); $('m-trophies-n').textContent = Object.values(S.awards || {}).reduce((a, w) => a + w.count, 0) || ''; $('m-tour').hidden = !!(S.scenario || S.challenge); $('m-timeline').hidden = !S.transition;
     $('m-restart').hidden = !S.scenario; $('m-reset').hidden = !!(S.scenario || S.challenge);
     $('m-scenarios-n').textContent = `${starTotal()} of ${Sim.SCENARIOS.length * 3} ★`;
     openSheet('menu');
@@ -1732,6 +1763,26 @@
   $('m-loans').onclick = () => openLoans();
   $('m-updates').onclick = closeSheets;   // the check itself is the shared app-updates block's
   $('m-timeline').onclick = () => openTimeline();
+  // Trophies and records: the month-by-month awards on a shelf, and the company's bests.
+  function openTrophies() {
+    const A = S.awards || {}, R = S.records || {}, at = d => `day ${d + 1}`;
+    const shelf = Sim.AWARDS.map(a => { const w = A[a.id];
+      return `<li class="${w ? 'won' : ''}"><svg class="i"><use href="#i-trophy"/></svg><div><b>${a.name}${w ? ` <span class="count">×${w.count}</span>` : ''}</b><span>${w ? `Last won in month ${w.last}: ${esc(w.detail)}.` : esc(a.how)}</span></div></li>`; }).join('');
+    const rows = [
+      ['Best day', R.day && `${fmtMoney(R.day.v)} profit on ${at(R.day.day)}`],
+      ['Best month', R.month && `${fmtMoney(R.month.v)} profit in month ${R.month.month}`],
+      ['Highest price you sold into', R.price && `${fmtPrice(R.price.v)}/MWh on ${at(R.price.day)} at ${Sim.clock(R.price.h)}`],
+      ['Biggest share of the region', R.share && `${(R.share.v * 100).toFixed(1)}% on ${at(R.share.day)}`],
+      ['Most plant running', R.mw && fmtMW(R.mw.v)],
+      ['Highest company value', R.value && `${fmtMoney(R.value.v)} on ${at(R.value.day)}`],
+      ['Longest run of profitable days', R.streak && `${R.streak.v} day${R.streak.v === 1 ? '' : 's'}`],
+    ];
+    info('Trophies and records', `<p>Every 30 days your month is judged for awards. They're for the shelf, not the bank.</p>
+      <ul class="trophies">${shelf}</ul>
+      <h3>Records</h3><table class="res compact"><tbody>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v || '—'}</td></tr>`).join('')}</tbody></table>
+      ${R.since > 0 ? `<p class="note">Records kept since day ${R.since + 1}, when this version arrived.</p>` : ''}`);
+  }
+  $('m-trophies').onclick = openTrophies;
   $('m-goals').onclick = () => info('Goals', Sim.GOALS.map(g => {
     const done = S.goalsDone[g.id] !== undefined;
     const reward = [g.reward ? `${fmtMoney(g.reward)} bonus` : '', g.unlock ? `unlocks ${TECH[g.unlock].name.toLowerCase()}s` : ''].filter(Boolean).join(' · ');
@@ -2008,6 +2059,12 @@
       // A scenario decision always opens and pauses too. One that came up behind another pop-up (the
       // year report, or a plant sheet left open) opens as soon as that closes, paused or not.
       if (S.choice && S.choice !== seenChoice && !openId && !S.ended) { seenChoice = S.choice; choiceOpened(speed > 0); }
+      // a month's awards: a toast (no pause); the shelf is in the menu
+      if (S.awardsNew && !S.awardsNew.seen && !openId) {
+        S.awardsNew.seen = true;
+        const names = S.awardsNew.ids.map(id => Sim.AWARDS.find(a => a.id === id).name);
+        toast(`Month ${S.awardsNew.month} awards: ${names.join(', ')}. See Trophies and records in the menu.`);
+      }
       if (speed > 0 && !S.ended && !(openId && openId !== 'plant')) {
         acc += dt * 1000 * speed;
         let n = 0;
@@ -2155,7 +2212,7 @@
   function enterApp() {
     scene = 'app'; $('title').hidden = true; $('app').hidden = false;
     meritAnim.clear(); shownCash = null; plantIds = null; newsKey = ''; fcast = null; missionKey = ''; missionCount = -1; syncSpeed(); renderAll(); resized = true;
-    pausedFor = S.offer; seenOffers = S.contractOffers; seenTender = S.tender; seenChoice = S.choice; seenProposal = S.proposal; if (S.reserveResult) S.reserveResult.seen = true; if (S.proposalResult) S.proposalResult.seen = true; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
+    pausedFor = S.offer; seenOffers = S.contractOffers; seenTender = S.tender; seenChoice = S.choice; seenProposal = S.proposal; if (S.reserveResult) S.reserveResult.seen = true; if (S.proposalResult) S.proposalResult.seen = true; if (S.awardsNew) S.awardsNew.seen = true; resumeSpeed = 0; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1;
   }
   function awayReport(rep) {
     const hours = rep.intervals * H, days = hours / 24;

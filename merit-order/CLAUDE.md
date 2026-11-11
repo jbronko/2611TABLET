@@ -7,8 +7,37 @@ are built, tested and published); this file is what's specific to Merit Order. C
 ## Modes
 - **Career**: your company, three difficulties (Relaxed / Standard / Tough), a guided first week
   ("Getting started" missions), goals that unlock wind, combined-cycle gas and pumped hydro.
+  - **Awards and records** (career only; `AWARDS`, `S.month`, `S.records`, `S.awards`):
+    - Every 30 days the month is judged (`judgeAwards`):
+      - Steady hand: a profit every day, hedged on at least 20
+      - Clean generator: 5% of the region from your clean plant
+      - Market maker: your offers set the price in 15% of intervals
+      - Spike surfer: 100 MW or more sold into $5k+
+      - Reliable: every reserve promise kept, at least one
+      - Heavyweight: 20% of the region on average
+    - The awards are recognition only; no money moves.
+    - Winners get a news line and a toast. The menu's "Trophies and records" shows the shelf and
+      the records:
+      - best day and best month
+      - the dearest price sold into
+      - the biggest share of the region
+      - the most plant running, and the highest value
+      - the longest profitable streak
+    - Old saves start records on update (`R.since`).
+    - Tuned with the test players:
+      - idle and peaker-only companies win nothing
+      - a growing company wins its first awards around month 4, then several a month
 - **Scenarios** (stars, cumulative, same seed for everyone): First Light, Heatwave Week, Black Hill
-  Closes, Gas Squeeze Winter, Too Much Sun, The Big Build, and **Energy Transition**: 20 years,
+  Closes, Gas Squeeze Winter, Too Much Sun, The Big Build. Three are judged on more than money (v39):
+  - **Clean Up:** two Black Hill coal units and an emissions cap.
+  - **Big Fish:** $30M and market share; `shareNeeds`.
+  - **Reserve Duty:** four heatwaves, each with a reserve promise to keep. The fleet is peakers only,
+    because a battery that sells into the peak doesn't count as ready.
+  - Each has a live goal chip (`watch`: emis, share or reserve). Tapping it shows the stars with
+    their parts so far.
+  - Their stars are built with `allOf(text, ...parts)` (`emisPart`, `cleanAllPart`, `gainPart`,
+    `sharePart`, `weekSharePart`, `keptPart`, `missedPart`).
+  - And the **Energy Transition**: 20 years,
   Standard (60-day years) or Long (90-day years), coal closing unit by unit, demand growth, offshore
   wind and long-duration storage arriving, Renewable Energy Zones with grid line limits, storage that
   wears out (refurbish), Capacity Investment Scheme underwriting rounds, a yearly report.
@@ -136,7 +165,9 @@ are built, tested and published); this file is what's specific to Merit Order. C
 ## Balance targets (re-check with `balance.js` after any change to prices, costs or rules)
 - Career at day 120: Standard steady ≈ $26–29M (28.6M now), Tough ≈ $11M, Relaxed ≈ $45M; idle
   ≈ $4.5M; reckless and cap gamblers usually bust; the always-borrow bot ≈ 1.5× steady.
-- Scenarios: doing nothing earns at most 1 star, steady play 1–2, a good plan 3.
+- Scenarios: doing nothing earns at most 1 star, steady play 1–2, a good plan 3. The three judged on
+  more than money: doing nothing 0, the obvious response 1–2, a plan for the objective 3 (results
+  and the players that show it in `balance.js`, `--scenarios`).
 - Energy Transition: doing nothing 0 stars (the region runs short); the steady and firm bots
   3 stars at both lengths with no shortfall from year 12.
 - Company scenarios (`--companies`), measured with these bots: handsoff, steady, firm, gouge
@@ -169,6 +200,12 @@ fast-forwarding `main` to the working branch.
 - `renderAll()` marks the interval as drawn; decide "is this interval new?" before calling it.
 - Shell edits: inline scripts containing `${` or `||=` trip the command safety checker; write the
   edit script to a file and run it.
+- A missing number turns totals into NaN, and NaN silently fails every comparison.
+  - Storage has no `emis` in `TECH`, so before v39 a battery made the emissions totals NaN.
+  - That switched off emissions fines and broke challenge result codes.
+  - `emisOf` now uses `|| 0`, and `engine.js` checks the totals stay finite.
+- A "never overdrawn" objective didn't work: you can't build on the overdraft, so it never bit.
+  Calibrate any new objective with the test players before writing it into a scenario.
 
 ## Ideas not built yet
 Backup and restore of saves (all progress lives in this browser's storage: `merit-order` plus a

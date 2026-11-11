@@ -706,5 +706,54 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('…and a calm day has none', calm != null && on(calm).length === 0);
 }
 
+// Awards and records (career only, no money); emissions totals with storage; scenarios beyond money.
+{
+  // a month's tallies decide the awards; winning moves no money
+  const A = Sim.create(15), cash = A.cash;
+  A.t = 30 * Sim.IPD;
+  A.month = { ...Sim.freshMonth(), days: 30, profitDays: 30, hedged: 25, profit: 3e6, clean: 9000, energy: 12000, region: 150000, n: 8640, setN: 1500, share: 6, kept: 2, missed: 0, top: { price: 6200, day: 21, h: 18.5, mw: 140 } };
+  const won = Sim.judgeAwards(A);
+  check('a month that qualifies wins every award, for the shelf only', won.map(a => a.id).join() === 'steady,clean,maker,spike,reliable,heavy' && A.cash === cash && A.awards.spike.count === 1 && A.awards.spike.last === 1
+    && /140 MW sold at \$6\.2k\/MWh on day 22 at 6:30 pm/.test(A.awards.spike.detail) && /^Month 1 awards: Steady hand/.test(A.news[0].text), won.map(a => a.id).join());
+  A.month = { ...Sim.freshMonth(), days: 30, profitDays: 29, hedged: 30, clean: 100, energy: 12000, region: 150000, n: 8640, setN: 10, share: 1, kept: 1, missed: 1, top: { price: 900, day: 3, h: 18, mw: 200 } };
+  check('…and one that falls short of each wins none', Sim.judgeAwards(A).length === 0 && A.awards.spike.count === 1 && A.month.days === 0);
+  // in play: tallies and records fill in, the month resets, and scenarios keep none
+  const P = Sim.create(16, { cash: 5e7 }); P.unlocked.wind = true;
+  for (const [t, mw] of [['wind', 240], ['solar', 200], ['battery', 100], ['peaker', 300]]) Sim.build(P, t, mw);
+  for (let k = 0; k < 31 * Sim.IPD; k++) { Sim.step(P); if (P.offer) Sim.declineOffer(P); }
+  const R = P.records;
+  check('a career keeps records: best day, share, value, plant, streak and the dearest price sold into', R.since === 0 && R.day && R.share && R.value && R.mw.v === 840 && R.streak && R.price && R.month && P.month.days === 0, Object.keys(R).join());
+  const Q = Sim.createScenario('first-light');
+  for (let k = 0; k < 2 * Sim.IPD; k++) { Sim.step(Q); if (Q.offer) Sim.declineOffer(Q); }
+  check('…and a scenario keeps none', !Q.records && !Q.month && !Q.awards);
+  // an old save starts its records from now
+  const O = Sim.create(17); for (let k = 0; k < 3 * Sim.IPD; k++) { Sim.step(O); if (O.offer) Sim.declineOffer(O); }
+  delete O.records; delete O.month; delete O.awards; Sim.migrate(O);
+  for (let k = 0; k < Sim.IPD + 1; k++) { Sim.step(O); if (O.offer) Sim.declineOffer(O); }
+  check('an old save starts its records from the update', O.records.since === 2 && O.month.days === 2, `${O.records.since} ${O.month.days}`);
+
+  // storage has no emissions of its own: the totals stay numbers (they used to turn NaN)
+  const E = Sim.create(18, { cash: 1e7 }); Sim.build(E, 'battery', 50); Sim.build(E, 'peaker', 50);
+  for (let k = 0; k < 4 * Sim.IPD; k++) { Sim.step(E); if (E.offer) Sim.declineOffer(E); }
+  check('emissions totals stay numbers with a battery running', Number.isFinite(E.totals.emis) && E.days.every(d => Number.isFinite(d.emis)), String(E.totals.emis));
+
+  // the new scenarios: what you start with, and stars judged on emissions, share and promises
+  const CU = Sim.createScenario('clean-up'), BF = Sim.createScenario('big-fish'), RD = Sim.createScenario('reserve-duty');
+  check('Clean Up hands you two Black Hill coal units; Big Fish $30M; Reserve Duty three peakers', CU.plants.filter(p => p.tech === 'coal').length === 2 && BF.cash === 3e7 && RD.plants.map(p => p.tech + p.mw).join() === 'peaker150,peaker50,peaker50');
+  for (let k = 0; k < Sim.IPD + 2; k++) { Sim.step(CU); if (CU.offer) Sim.declineOffer(CU); }
+  const cr = Sim.scenarioResult(CU);
+  check('Clean Up counts your emissions against its cap', cr.emis > 10000 && cr.lines[0].parts[0].label === 'Your emissions' && cr.lines[0].parts[0].ok && /of the 500k t allowed/.test(cr.lines[0].parts[0].detail), cr.lines[0].parts[0].detail);
+  CU.totals.emis = 600000;
+  check('…and past it, the first star (so every star) is lost', Sim.scenarioResult(CU).stars === 0 && !Sim.scenarioResult(CU).lines[0].ok);
+  RD.reserveTally = { kept: 1, missed: 0 };
+  const rr = Sim.scenarioResult(RD);
+  check('Reserve Duty counts promises kept and missed', rr.kept === 1 && rr.lines[0].ok && !rr.lines[1].ok && rr.lines[1].parts.map(q => q.label).join('|') === 'Reserve promises kept|Promises missed');
+  RD.reserveTally = { kept: 4, missed: 1 };
+  check('…a missed promise loses the second star', !Sim.scenarioResult(RD).lines[1].ok && Sim.scenarioResult(RD).lines[1].parts[1].detail === '1 missed');
+  for (let k = 0; k < 3 * Sim.IPD + 2; k++) { Sim.step(BF); if (BF.offer) Sim.declineOffer(BF); }
+  const br = Sim.scenarioResult(BF);
+  check('Big Fish measures your best day and the last week', br.maxShare >= 0 && br.weekShare >= 0 && br.lines[0].parts[0].label === 'Your best day' && Sim.SCENARIOS.find(x => x.id === 'big-fish').shareNeeds.join() === '0.05,0.1,0.1');
+}
+
 console.log(fails ? `\n${fails} check(s) failed` : '\nAll engine checks passed');
 process.exit(fails ? 1 : 0);

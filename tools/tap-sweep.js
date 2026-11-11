@@ -87,6 +87,16 @@ const SEEDS = {
         document.getElementById('toast').hidden = true;   // as above: no fading message before the first tap
       });
     },
+    // the career's Trophies and records sheet, with an award on the shelf and some records
+    trophies: async p => {
+      await p.evaluate(() => MeritOrder.startCareer(true, 'standard'));
+      await p.waitForTimeout(150);
+      await p.evaluate(() => { const M = MeritOrder, S = M.state; M.Sim.skipTour(S); M.setSpeed(0);
+        S.awards = { clean: { count: 1, last: 2, detail: '5.4% of the region from your clean plant' } }; S.records = { since: 0, day: { v: 90000, day: 12 } }; M.renderAll(); });
+      await p.keyboard.press('Escape');
+      await p.click('#open-menu'); await p.click('#m-trophies');
+      await p.waitForTimeout(150);
+    },
     // two scenario games going (First Light a day in, Highcountry open), with the Scenarios list
     // showing both under In progress: Carry on, and the intro's Carry on and Start again
     saves: async p => {

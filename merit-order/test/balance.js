@@ -91,6 +91,19 @@ const STRATS = {
     offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
   },
 };
+// For the scenarios judged on more than money (v39): Clean Up's plans for the coal, and building big.
+STRATS.greener = { day(S, d) { if (d === 0) for (const p of S.plants) if (p.tech === 'coal') p.bid = 'peak'; STRATS.steady.day(S, d); }, offer: S => STRATS.steady.offer(S) };   // coal only at $300+
+STRATS.cleanplan = {   // close one coal unit, run the other only at peaks, build wind, solar and storage hard
+  day(S, d) {
+    if (d === 0) { const c = S.plants.filter(p => p.tech === 'coal'); if (c[0]) Sim.retire(S, c[0]); if (c[1]) c[1].bid = 'peak'; }
+    for (let n = 0; n < 4; n++) if (!['wind', 'solar', 'battery'].some(t => tryBuild(S, t, Math.max(100000, S.cash * 0.1), true))) break;
+  },
+  offer(S) { Sim.declineOffer(S); },
+};
+STRATS.bigbuild = {   // the biggest sizes first, gas and wind before the rest
+  day(S) { for (let n = 0; n < 6; n++) if (!['ccgt', 'wind', 'solar', 'peaker', 'battery'].some(t => tryBuild(S, t, Math.max(100000, S.cash * 0.05), true))) break; },
+  offer(S) { Sim.declineOffer(S); },
+};
 // Scenarios: play each one to its end with a strategy and report the stars.
 // Energy Transition players: build firm plant ahead of each closure and keep adding clean plant.
 STRATS.firm = {
@@ -195,6 +208,14 @@ if (require.main === module && process.argv[2] === '--transition') {
 } else if (require.main === module && process.argv[2] === '--scenarios') {
   // node merit-order/test/balance.js --scenarios [strategies]
   // Targets: idle at most 1 star, steady 1-2, savvy 2-3.
+  // The ones judged on more than money (v39), with the players that show each star can be won:
+  //   Clean Up (emissions cap 500k t, 40% clean, +$35M): idle 0 (832k t), steady 0 (722k t), greener 1
+  //   (405k t, 34% clean), quitcoal 2 (162k t, 44%, +$20.5M), cleanplan 3 (276k t, 48%, +$42.8M).
+  //   Big Fish (5% in a day, 10% in a day, 10% over the last week): idle 0, steady 2 (11.5%, week 9.7%),
+  //   bigbuild 3 (16.5%, week 12.9%).
+  //   Reserve Duty (four heatwave promises; keep one, keep all four, +$1.25M): idle 0 (declines),
+  //   steady 1 (its batteries sell into the peak, so 3 are missed), peaker 3 (all four kept, +$1.49M).
+  //   node merit-order/test/balance.js --scenarios idle,steady,greener,quitcoal,cleanplan,bigbuild,peaker
   const kinds = (process.argv[3] || 'idle,steady,savvy').split(',');
   for (const sc of Sim.SCENARIOS) {
     if (sc.transition) continue;   // the 20-year scenario has its own mode (--transition), the companies too (--companies)
