@@ -108,8 +108,16 @@ are built, tested and published); this file is what's specific to Merit Order. C
 - **Rival builds in the career** (`rivalInvestment`) take developers' names (`DEVELOPERS`,
   `rivalName`), like the company scenarios' rivals. `migrate` renames old saves' "Rival peaker N".
 - **Every site full** (`regionFull`, `fullNote`): when no site has room for the smallest plant of
-  anything unlocked, the news says so once (`S.fullSaid`) and the build sheet shows it. The note
-  says what's left to unlock, when new sites open, and how to grow from here.
+  anything unlocked, the news says so once (`S.fullSaid`) and the build sheet shows it (counted
+  live). The note says:
+  - what's left to unlock, and when new sites open
+  - how many plants can still be upgraded (upgrades need no site room), or that every plant has
+    been
+  - whether the rivals' coal units may still be offered (career only)
+  - that bids and contracts are what earn more from there
+
+  Selling a plant frees room only for the same kind, so the note doesn't suggest it. A rich late
+  game is intended: the owner likes that you earn a lot of money there.
 - **Bid stacks**: 10 bands per plant. New band prices apply from tomorrow; MW rebids apply now.
   Presets: Cover costs (and start-ups for gas), Peaks only, Ladder, Custom. Plants offer the slice
   of their stack they can reach this interval (`offerSlice` in `sim.js`): below it they must run.

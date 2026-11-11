@@ -799,7 +799,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
       M.renderAll(); });
     for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
     await p.click('#add-plant'); await p.waitForTimeout(250);
-    check('with every site taken, the build sheet says the region is full and how to grow', !(await p.$eval('#build-full', x => x.hidden)) && /^Every site in the region is full\. To grow from here, upgrade your plants/.test(await p.textContent('#build-full')), await p.textContent('#build-full'));
+    check('with every site taken, the build sheet says the region is full and how to grow', !(await p.$eval('#build-full', x => x.hidden)) && /^Every site in the region is full\. Upgrades need no site room: \d+ of your plants can still have one \(open a plant to see it\)\..*From here, your bids and contracts are what earn more\.$/.test(await p.textContent('#build-full')), await p.textContent('#build-full'));
     await shot(p, 'build-full');
     await p.keyboard.press('Escape'); await p.waitForTimeout(150);
     // a squeeze at the evening peak: every coal unit down, the interconnector out, a heatwave

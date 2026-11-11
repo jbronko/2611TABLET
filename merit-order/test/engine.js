@@ -666,7 +666,13 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('with every site taken, the region is full', Sim.regionFull(F));
   for (let k = 0; k < Sim.IPD + 1; k++) { Sim.step(F); if (F.offer) Sim.declineOffer(F); }
   const fullNews = () => F.news.filter(n => /^Every site in the region is full\./.test(n.text));
-  check('…the news says so, with how to grow from here', fullNews().length === 1 && /upgrade your plants, or sell old ones to make room/.test(fullNews()[0].text), F.news.slice(0, 3).map(n => n.text).join(' / '));
+  const upLeft = F.plants.filter(p => p.tech !== 'coal').length;
+  check('…the news says so, with how many plants can still be upgraded and the coal still on offer', fullNews().length === 1
+    && fullNews()[0].text === `Every site in the region is full. Upgrades need no site room: ${upLeft} of your plants can still have one (open a plant to see it). The rivals’ coal units may still be offered to you, and they need no site room either. From here, your bids and contracts are what earn more.`, fullNews()[0] && fullNews()[0].text);
+  const F2 = JSON.parse(JSON.stringify(F)); Sim.migrate(F2);
+  for (const p of F2.plants) p.upg = true;
+  for (const r of F2.rivals) if (r.tech === 'coal') r.sold = true;
+  check('…and once every plant has its upgrade and the coal is gone, says just that', Sim.fullNote(F2) === 'Every site in the region is full. Every plant has had its upgrade. From here, your bids and contracts are what earn more.', Sim.fullNote(F2));
   for (let k = 0; k < Sim.IPD; k++) { Sim.step(F); if (F.offer) Sim.declineOffer(F); }
   check('…once, not every day', fullNews().length === 1);
   Sim.retire(F, F.plants.find(p => p.tech === 'solar'));

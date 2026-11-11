@@ -1357,7 +1357,12 @@ const Sim = (() => {
     }
     const next = Math.min(...buildable(S).filter(t => S.unlocked[t]).flatMap(t => (SITES[t] || []).map(st => siteOpensIn(S, st))).filter(y => y != null && y > year));
     if (S.transition && isFinite(next)) more.push(`New sites open in year ${next}.`);
-    return `Every site in the region is full${more.length ? ' for the plants you can build' : ''}. ${more.join(' ')}${more.length ? ' ' : ''}To grow from here, upgrade your plants, or sell old ones to make room for bigger and better ones.`;
+    // what's still possible without new room: upgrades (one per plant), and the rivals' coal units
+    const canUp = S.plants.filter(p => UPGRADES[p.tech] && p.status !== 'retiring' && canUpgrade(p)).length;
+    const coalLeft = !S.scenario && !S.challenge && S.rivals.some(x => x.tech === 'coal' && !x.gone && !x.closing && !x.sold && x.id !== 'bh1');
+    const grow = [canUp ? `Upgrades need no site room: ${canUp} of your plants can still have one (open a plant to see it).` : 'Every plant has had its upgrade.'];
+    if (coalLeft) grow.push('The rivals’ coal units may still be offered to you, and they need no site room either.');
+    return `Every site in the region is full${more.length ? ' for the plants you can build' : ''}. ${[...more, ...grow].join(' ')} From here, your bids and contracts are what earn more.`;
   }
 
   // ---- goals ----
