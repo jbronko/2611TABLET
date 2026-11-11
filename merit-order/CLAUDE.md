@@ -34,10 +34,15 @@ are built, tested and published); this file is what's specific to Merit Order. C
   - Emissions fines at `emisFine` ($120/t).
   - Year-report rows from `report(S, Y)` (plus common rows: emissions, rival projects, your firm
     plant against the first star).
-  - Compound stars list their parts (a third element in `stars`, e.g. `lightsPart`, `firmPart`),
-    shown ✓/✗ on the end screen and in the year report; stars are won in order, and the screen says
-    so. In the final year a chip tracks the lights-on part. Year reports always pause, even with
-    "Pause for decisions" off.
+  - **Keeping the lights on** (company scenarios and the Energy Transition): each star has its own
+    limit on hours short in the final year, `LIGHTS_HOURS` = 48 h for ★, 12 h for ★★, none for ★★★
+    (an interval counts as short for a shortfall of 1 MW or more). Build such stars with
+    `lightsStar(i, text, ...parts)`: the lights part plus parts such as `firmPart`, `tunnelPart`,
+    `valuePart(v)`, `cleanPart(share, region)`, `profitPart`; the star needs every part.
+  - Compound stars list their parts (a third element in `stars`), shown ✓/✗ on the end screen and
+    in the year report; stars are won in order, and the screen says so. In the final year a chip
+    tracks the hours short against the three limits (its pop-up lists them). Year reports always
+    pause, even with "Pause for decisions" off.
   - Closure badges from `closes` (copied to `S.closeAt`; `closesIn`).
 - **Scenario fields:**
   - `years`, `yearDays`, `timeline` (same shape as `TRANSITION`)
@@ -100,8 +105,9 @@ are built, tested and published); this file is what's specific to Merit Order. C
 - Company scenarios (`--companies`), measured with these bots: handsoff, steady, firm, gouge
   (thermal only at $300+), quitcoal (closes its coal on day 1), buyer (buys every proposal), plus
   steady with each decision option.
-  - **First star:** keep the lights on *and* own the scenario's `firm` MW, so rivals filling the
-    gap doesn't earn it for you.
+  - **First star:** no more than 48 hours short in the final year *and* own the scenario's `firm`
+    MW, so rivals filling the gap doesn't earn it for you. One star should be very achievable for
+    anyone who builds firm plant; three need no shortfall at all.
   - **Targets:**
     - Handsoff, gouge and quitcoal end below steady in value (rival proposals are what stop
       withholding from paying).

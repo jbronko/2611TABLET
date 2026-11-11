@@ -487,12 +487,23 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
-    // the final year with a shortfall past the standard: the chip says the star is lost
+    // the final year, 2 hours short: three stars are lost on the lights, two still possible
     await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); while (S.t < 288 + 5) M.Sim.step(S);
       S.years[4] = { ...S.years[0], shed: 300, shedHours: 2, region: 3e6, days: 20 }; S.t = 250 * 288 + 5; M.renderAll(); });
-    check('in the final year, a chip tracks the lights-on star', /Final year: 2\.0 h short, the lights-on star is lost/.test(await p.textContent('#chips')));
+    check('in the final year, a chip tracks the lights-on limits', /Final year: 2\.0 h short \(★★ allows 12\)/.test(await p.textContent('#chips')) && await p.$eval('[data-lights]', x => x.classList.contains('warn')));
     await p.click('[data-lights]'); await p.waitForTimeout(200);
-    check('…and explains it', (await p.textContent('#i-title')) === 'Keeping the lights on' && /no more than 0\.002%/.test(await p.textContent('#i-body')));
+    const lightsBody = await p.textContent('#i-body');
+    check('…and explains each star’s limit', (await p.textContent('#i-title')) === 'Keeping the lights on' && /One star: no more than 48 hours short, still possible/.test(lightsBody)
+      && /Two stars: no more than 12 hours short, still possible/.test(lightsBody) && /Three stars: no shortfall at all, lost this time/.test(lightsBody) && /2\.0 hours short \(300 MWh unserved\)/.test(lightsBody), lightsBody);
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    await state(p, () => { const M = MeritOrder, S = M.state; S.years[4].shedHours = 0; S.years[4].shed = 0; M.renderAll(); });
+    check('…no shortfall: all three still possible', /Final year: no shortfall so far/.test(await p.textContent('#chips')));
+    await state(p, () => { const M = MeritOrder, S = M.state; S.years[4].shedHours = 30; S.years[4].shed = 4000; M.renderAll(); });
+    check('…30 hours short: one star still possible', /Final year: 30\.0 h short \(★ allows 48\)/.test(await p.textContent('#chips')));
+    await state(p, () => { const M = MeritOrder, S = M.state; S.years[4].shedHours = 60; S.years[4].shed = 9000; M.renderAll(); });
+    check('…60 hours short: the lights-on stars are lost', /Final year: 60\.0 h short, the lights-on stars are lost/.test(await p.textContent('#chips')) && await p.$eval('[data-lights]', x => x.classList.contains('bad')));
+    await p.click('[data-lights]'); await p.waitForTimeout(200);
+    check('…and the pop-up says no star can be won now', /can no longer earn a star/.test(await p.textContent('#i-body')) && !(await p.$$eval('#i-body .starlist li.ok', xs => xs.length)));
     await p.keyboard.press('Escape'); await p.waitForTimeout(150);
     // the end: rich enough for stars 2 and 3, but year 5 ran short
     await state(p, () => { const M = MeritOrder, S = M.state; S.cash = 1e9;
@@ -501,7 +512,9 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     let title = '';
     for (let k = 0; k < 10 && !(await p.$('.stars.big')); k++) await p.waitForTimeout(300);
     const end = await p.textContent('#i-body');
-    check('the end screen shows the first star’s parts, ✓ and ✗', (await p.$$('.starlist .parts li')).length === 3 && /Lights on: 10\.5 hours short in year 5/.test(end) && /Your firm plant: /.test(end));
+    check('the end screen shows every star’s parts, ✓ and ✗', (await p.$$('.starlist .parts li')).length === 7 && /Lights on \(up to 48 h short\): 10\.5 hours short in year 5/.test(end)
+      && /Lights on \(no shortfall\): 10\.5 hours short in year 5/.test(end) && /Your firm plant: /.test(end) && /Company value: /.test(end), end.slice(0, 400));
+    check('…10.5 hours short meets the one- and two-star lights limits, not the three-star one', (await p.$$eval('.starlist .parts li', xs => xs.filter(x => /^Lights on/.test(x.textContent)).map(x => x.classList.contains('ok')).join())) === 'true,true,false');
     check('…and says stars are won in order', /Stars are won in order/.test(end));
     await shot(p, 'company-end-parts');
     await p.context().close();

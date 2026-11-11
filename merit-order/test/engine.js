@@ -395,12 +395,20 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('the first star needs your own firm plant, not just the rivals’', Sim.ownFirm(F) === 2320 && !r0.lines[0].ok && /2\.8 GW/.test(r0.lines[0].text));
   // …and says which of its conditions failed
   const HP = Sim.starsIf(Sim.createScenario('highcountry'), { shed: 1240, shedHours: 10.5, region: 7.5e6, clean: 0, energy: 1, profit: 1, year: 5 }).lines[0].parts;
-  check('a compound star lists its parts: lights on, Tunnel Two, firm plant', HP.length === 3 && HP.map(q => q.label).join('|') === 'Lights on|Tunnel Two running|Your firm plant'
-    && !HP[0].ok && /10\.5 hours short in year 5: 1,240 MWh unserved, and the reliability standard allows 150/.test(HP[0].detail) && !HP[1].ok && !HP[2].ok && /1\.4 GW of the 2\.8 GW/.test(HP[2].detail), HP[0].detail);
+  check('a compound star lists its parts: lights on, Tunnel Two, firm plant', HP.length === 3 && HP.map(q => q.label).join('|') === 'Lights on (up to 48 h short)|Tunnel Two running|Your firm plant'
+    && HP[0].ok && /^10\.5 hours short in year 5$/.test(HP[0].detail) && !HP[1].ok && !HP[2].ok && /1\.4 GW of the 2\.8 GW/.test(HP[2].detail), HP[0].detail);
   const ok0 = r0.lines[0].parts;
   check('…each part judged on its own: lights on, firm plant short', ok0[0].ok && /No shortfall in year 4/.test(ok0[0].detail) && !ok0[1].ok);
-  const EP = Sim.starsIf(Sim.createScenario('energy-transition'), { shed: 0, shedHours: 0, region: 7e6, clean: 0, energy: 1, profit: 1, year: 20 }).lines[0].parts;
-  check('…and the Energy Transition’s first star shows its lights-on part', EP.length === 1 && EP[0].ok && /year 20/.test(EP[0].detail));
+  const EP = Sim.starsIf(Sim.createScenario('energy-transition'), { shed: 0, shedHours: 0, region: 7e6, clean: 0, energy: 1, profit: 1, year: 20 }).lines.map(l => l.parts);
+  check('…and the Energy Transition’s stars show their lights-on parts', EP.map(q => q.length).join() === '1,2,2' && EP.every(q => q[0].ok && /year 20/.test(q[0].detail)));
+  // each star has its own lights-on limit in the final year: 48 hours short, 12 hours, none
+  const HC = Sim.createScenario('highcountry');
+  HC.cash = 1e9; for (const p of HC.plants) if (p.tunnel) p.status = 'online';
+  HC.plants.push({ ...HC.plants.find(p => p.tech === 'peaker'), id: 'test-firm', mw: 2000, tunnel: false });
+  const tiers = [0, 10, 30, 60].map(h => Sim.starsIf(HC, { shed: h * 100, shedHours: h, region: 7.5e6, clean: 0, energy: 1, profit: 1, year: 5 }));
+  check('lights on: no shortfall earns 3 stars, 10 hours short 2, 30 hours 1, 60 hours none', tiers.map(t => t.stars).join() === '3,2,1,0', tiers.map(t => t.stars).join());
+  check('…and the star that fails says it was the lights', !tiers[1].lines[2].ok && !tiers[1].lines[2].parts[0].ok && tiers[1].lines[2].parts[1].ok
+    && tiers[1].lines[2].parts[0].label === 'Lights on (no shortfall)' && Sim.LIGHTS_HOURS.join() === '48,12,0');
 }
 
 // 11e. Caps at three strikes: each release has a $300 cap and one at $150 or $1,000 in turn, priced
@@ -537,9 +545,9 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   T.years = years(); T.cash = 3e9;
   const ok = Sim.scenarioResult(T), asIf = Sim.starsIf(T, T.years[19]);
   check('the report\'s "if this were year 20" scores like the end', asIf.stars === ok.stars && asIf.lines.every((l, i) => l.text === ok.lines[i].text && l.ok === ok.lines[i].ok));
-  T.years[19].shed = 0.00003 * 60e6;
-  const short = Sim.scenarioResult(T);
-  check('stars: reliable, clean and big earns three; missing the reliability standard earns none', ok.stars === 3 && short.stars === 0, `${ok.stars} vs ${short.stars}`);
+  const short = [5, 30, 60].map(h => { T.years[19].shedHours = h; T.years[19].shed = h * 500; return Sim.scenarioResult(T).stars; });
+  T.years[19].shedHours = 0; T.years[19].shed = 0;
+  check('stars: no shortfall, clean and big earns three; 5 hours short two, 30 hours one, 60 hours none', ok.stars === 3 && short.join() === '2,1,0', `${ok.stars} vs ${short}`);
   // the Long version: 90-day years, 1,800 days, a 90-day underwriting window and a bigger value star
   const Lg = Sim.createScenario('energy-transition', { length: 'long' });
   const sc2 = Sim.createScenario('energy-transition', { length: 'long' });

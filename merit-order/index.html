@@ -348,7 +348,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 34</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 35</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -775,20 +775,22 @@
     if (open && t.accepted && t.used < t.mw) out.push(`<span class="chip"><svg class="i"><use href="#i-good"/></svg>Underwriting: ${fmtMW(t.mw - t.used)} of new ${Sim.TENDER_KINDS[t.kind].name} left</span>`);
     return out;
   }
-  // In a multi-year scenario's final year: shortfall so far against the reliability standard, which
-  // the first star is judged on (the allowance is for the whole year, from the year's demand so far).
+  // In a multi-year scenario's final year: hours short so far against each star's lights-on limit
+  // (Sim.LIGHTS_HOURS, for one, two and three stars). `n` is how many of those limits are still met.
   function finalYearLights() {
     const N = Sim.yearsOf(S), Y = S.years && S.years[N - 1];
     if (!S.transition || Sim.yearOf(S) + 1 !== N || !Y || !Y.days) return null;
-    const allowed = Sim.RELIABILITY * Y.region / Y.days * Sim.yearDays(S), h = Y.shedHours.toFixed(1);
-    if (Y.shed < 0.5) return { tone: 'good', chip: 'Final year: no shortfall so far', Y, allowed };
-    if (Y.shed <= allowed) return { tone: 'warn', chip: `Final year: ${h} h short so far, close to the limit`, Y, allowed };
-    return { tone: 'bad', chip: `Final year: ${h} h short, the lights-on star is lost`, Y, allowed };
+    const hrs = Y.shedHours || 0, h = hrs.toFixed(1), L = Sim.LIGHTS_HOURS, n = L.filter(x => hrs <= x + 1e-9).length;
+    if (n === 3) return { tone: 'good', chip: 'Final year: no shortfall so far', Y, hrs, n };
+    if (n > 0) return { tone: 'warn', chip: `Final year: ${h} h short (${'★'.repeat(n)} allows ${L[n - 1]})`, Y, hrs, n };
+    return { tone: 'bad', chip: `Final year: ${h} h short, the lights-on stars are lost`, Y, hrs, n };
   }
   function lightsExplained() {
     const L = finalYearLights(); if (!L) return;
-    info('Keeping the lights on', `<p>The first star is judged on this, the final year: the region may leave no more than 0.002% of the year's demand unserved, about <b>${Math.round(L.allowed).toLocaleString()} MWh</b>.</p>
-      <p>So far this year: <b>${Math.round(L.Y.shed).toLocaleString()} MWh</b> unserved over ${L.Y.shedHours.toFixed(1)} hours.${L.tone === 'bad' ? ' That is past the limit, so the first star (and the ones after it) can no longer be won this time.' : ''}</p>
+    const names = ['One star', 'Two stars', 'Three stars'];
+    info('Keeping the lights on', `<p>Your stars are judged on this, the final year. Each star allows fewer hours with customers cut off:</p>
+      <ul class="starlist">${Sim.LIGHTS_HOURS.map((x, i) => `<li class="${i < L.n ? 'ok' : ''}"><span>${names[i]}: ${x ? `no more than <b>${x} hours</b> short` : '<b>no shortfall</b> at all'}, ${i < L.n ? 'still possible' : 'lost this time'}</span></li>`).join('')}</ul>
+      <p>So far this year: <b>${L.hrs > 0 ? `${L.hrs.toFixed(1)} hours` : 'no hours'}</b> short${L.hrs > 0 ? ` (${Math.round(L.Y.shed).toLocaleString()} MWh unserved)` : ''}.${L.n === 0 ? ' That is past even the one-star limit, so this game can no longer earn a star.' : ''}</p>
       <p class="note">Shortfalls come in evening peaks, heatwaves and still weeks. Firm plant helps most: gas peakers, batteries with a few hours of storage, hydro.</p>`);
   }
   $('chips').addEventListener('click', e => {
