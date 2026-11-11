@@ -54,14 +54,28 @@ are built, tested and published); this file is what's specific to Merit Order. C
   - `emis`, `emisFine`, `firm` (the first star's MW of your own firm plant), `rivalPlan`, `report`,
     `intro`
   - Use `yearsOf`/`timelineOf`/`siteOpensIn`, never `TRANSITION` directly.
-- **Restarting and switching scenarios:** only one scenario runs at a time (`store.scenario`). The
-  menu's "Restart this scenario" and Start on another scenario's intro both ask first
-  (`confirmLose`, naming the game in progress and its worth) and then begin fresh with
-  `startScenario`. The menu's "Start a new company" deletes the career, so it is shown only in the
-  career.
+- **Saves:** the career, one challenge, and **one game per scenario**, all at once.
+  - Each scenario's game has its own key, `merit-order-run-<id>`, so a save writes only the game
+    being played. `store.runs` in `merit-order` indexes them (`{ at, length, when, value }`).
+  - The Scenarios list shows them under "In progress" (Carry on, `data-resume`), and the title's
+    Scenarios button says how many are going.
+  - A scenario's intro offers Carry on (`#sc-go`) and Start again (`#sc-again`, asks first);
+    `startScenario(id, length, fresh)` opens the saved game unless `fresh`.
+  - The menu's "Restart this scenario" asks first and restarts only that scenario. Finishing a
+    scenario drops only its save.
+  - The menu's "Start a new company" deletes the career, so it is shown only in the career.
+  - Saves from before v36 (`store.scenario`) are moved to their key on load. A run key with no index
+    entry is adopted, not deleted.
 - **Challenges**: 30 days, a shareable code (`MO-…`), highest company value wins.
-- The career and the multi-year scenarios keep trading while the app is closed (up to 7 game days per
-  absence) unless "Keep trading while I'm away" is off. New games start paused.
+- **Away time** goes only to the game that was open when the app closed:
+  - `store.last` names it at each save; on load the time since becomes that game's credit
+    (`store.away`), used when it's next opened.
+  - The career and the multi-year scenarios then catch up (up to 7 game days per absence) unless
+    "Keep trading while I'm away" is off.
+  - A game you switch away from inside the app, or leave for the title screen, waits for you.
+- New games start paused.
+- Tests: wipe storage from the title screen (`wipe` in `ui.js`). A game that is open saves itself
+  again on reload.
 
 ## Files
 - `sim.js`: the whole engine, no DOM, runs in Node. Exposes `Sim` (create, step, catchUp, build,
@@ -134,6 +148,7 @@ fast-forwarding `main` to the working branch.
   edit script to a file and run it.
 
 ## Ideas not built yet
-Backup and restore of saves (all progress lives in this browser's storage), a reserve setting for
+Backup and restore of saves (all progress lives in this browser's storage: `merit-order` plus a
+`merit-order-run-<id>` key per scenario game), a reserve setting for
 storage (hold back energy for emergencies and price spikes), fewer pop-ups (merge same-day dialogs,
 skip contract pop-ups at 16×).

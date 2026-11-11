@@ -85,6 +85,19 @@ const SEEDS = {
         document.getElementById('toast').hidden = true;   // as above: no fading message before the first tap
       });
     },
+    // two scenario games going (First Light a day in, Highcountry open), with the Scenarios list
+    // showing both under In progress: Carry on, and the intro's Carry on and Start again
+    saves: async p => {
+      await p.click('#t-scenarios'); await p.click('[data-scenario="first-light"]'); await p.click('#sc-go');
+      await p.waitForTimeout(150);
+      await p.evaluate(() => { const M = MeritOrder, S = M.state; M.setSpeed(0); for (let k = 0; k < 288; k++) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); M.save(); });
+      await p.click('#open-menu'); await p.click('#m-scenarios'); await p.click('[data-scenario="highcountry"]'); await p.click('#sc-go');
+      await p.waitForTimeout(150);
+      await p.evaluate(() => MeritOrder.setSpeed(0));
+      await p.click('#open-menu'); await p.click('#m-scenarios');
+      await p.waitForTimeout(150);
+      await p.evaluate(() => { document.getElementById('toast').hidden = true; });
+    },
   },
 };
 

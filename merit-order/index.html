@@ -74,6 +74,12 @@
   .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 12px; }
   .sc { text-align: left; display: grid; gap: 4px; align-content: start; padding: 14px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); min-height: 48px; }
   .sc:hover { border-color: var(--line-2); }
+  .runs { display: grid; gap: 8px; margin-top: 8px; }
+  .run-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 14px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); }
+  .run-row > div { display: grid; gap: 2px; min-width: 0; } .run-row span { font-size: 13.5px; color: var(--ink-2); } .run-row .btn { flex: none; }
+  .sc small.going { color: var(--amber); font-weight: 650; }
+  .going-note { margin-top: 12px; }
+  .btn .count { font-size: 13px; font-weight: 750; min-width: 24px; height: 24px; padding: 0 7px; display: inline-grid; place-items: center; border-radius: 999px; background: var(--amber); color: var(--amber-ink); white-space: nowrap; }
   .sc b { font-size: 16.5px; } .sc span { font-size: 13.5px; color: var(--ink-2); } .sc small { color: var(--ink-3); font-size: 12.5px; }
   .stars { color: var(--amber); letter-spacing: 0.08em; font-size: 18px; font-family: system-ui, sans-serif; }
   .stars i { color: var(--ink-3); font-style: normal; }
@@ -342,13 +348,13 @@
     <div class="title-actions">
       <button type="button" class="btn btn-primary continue" id="t-continue"><span><b id="t-cont-k">Start your company</b><small id="t-cont-sub">An empty site and some cash</small></span><svg class="i"><use href="#i-play"/></svg></button>
       <div class="title-row">
-        <button type="button" class="btn btn-quiet" id="t-scenarios"><svg class="i"><use href="#i-star"/></svg>Scenarios</button>
+        <button type="button" class="btn btn-quiet" id="t-scenarios"><svg class="i"><use href="#i-star"/></svg>Scenarios<span class="count" id="t-sc-count" hidden></span></button>
         <button type="button" class="btn btn-quiet" id="t-challenge"><svg class="i"><use href="#i-flag"/></svg>Challenges</button>
         <button type="button" class="btn btn-quiet" id="t-help"><svg class="i"><use href="#i-help"/></svg>How it works</button>
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 35</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 36</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -490,27 +496,70 @@
   const MS_PER_INTERVAL = 1250;     // 1x: one game day is 6 real minutes
 
   // ---------------------------------------------------------------------------------
-  // Storage: the main company, an optional challenge run, results from friends.
+  // Storage: the career, an optional challenge run, results from friends, best stars, and one
+  // saved game per scenario. Each scenario's game has its own key (RUN_KEY + id), so a save writes
+  // only the game being played; `store.runs` indexes them ({ at, length, when, value }).
+  // Away time: `store.last` names the game open at the last save. When the app next loads, the time
+  // since goes to that game's credit (`store.away`), used when it's opened. A game you switch away
+  // from inside the app gets no credit, so it waits for you.
   // ---------------------------------------------------------------------------------
-  const KEY = 'merit-order';
+  const KEY = 'merit-order', RUN_KEY = 'merit-order-run-';
   let store = {};
   try { store = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { store = {}; }
   // A save that storage refuses (full or blocked) is said once, so progress is never lost silently.
   let saveWarned = false;
-  const persist = () => {
-    try { localStorage.setItem(KEY, JSON.stringify(store)); }
-    catch { if (!saveWarned) { saveWarned = true; toast('Couldn’t save your game: this browser’s storage is full or blocked.'); } }
-  };
+  const warnSave = () => { if (!saveWarned) { saveWarned = true; toast('Couldn’t save your game: this browser’s storage is full or blocked.'); } };
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch { warnSave(); } };
   function pack(S) {
     const copy = { ...S, last: undefined };
     copy.days = S.days.map((d, i) => i < S.days.length - 2 ? { ...d, priceSorted: undefined, price: undefined, demand: undefined, mine: undefined } : d);
     return copy;
   }
+  // Scenario games: one key each. `quiet` while loading (the toast isn't ready yet).
+  const readRun = id => { try { return JSON.parse(localStorage.getItem(RUN_KEY + id)); } catch { return null; } };
+  function writeRun(id, st, quiet) { try { localStorage.setItem(RUN_KEY + id, JSON.stringify(st)); return true; } catch { if (!quiet) warnSave(); return false; } }
+  const forgetAway = key => { delete store.away[key]; if (store.last && store.last.key === key) delete store.last; };
+  function dropRun(id) { try { localStorage.removeItem(RUN_KEY + id); } catch {} delete store.runs[id]; forgetAway(`run:${id}`); }
+  const runEntry = st => { const { when, value } = progressOf(st); return { at: Date.now(), length: st.scenario.length, when, value: Math.round(value) }; };
+  store.runs ||= {}; store.away ||= {};
+  // Saves from before v36: one scenario in `store.scenario`, and a "seen" time for each game.
+  if (store.scenario || store.careerSeen || store.scenarioSeen) {
+    const old = store.scenario, id = old && old.scenario && old.scenario.id;
+    if (id && !old.ended && Sim.SCENARIOS.some(x => x.id === id) && writeRun(id, old, true)) store.runs[id] = { ...runEntry(old), at: store.scenarioSeen || Date.now() };
+    const seen = store.slot === 'scenario' ? store.scenarioSeen : store.careerSeen;
+    const key = store.slot === 'scenario' ? (id && store.runs[id] ? `run:${id}` : null) : store.slot === 'career' && store.career ? 'career' : null;
+    if (key && seen) store.last = { key, at: seen };   // the game played last gets the time away
+    if (!id || store.runs[id] || old.ended) delete store.scenario;   // kept if it couldn't be moved: tried again next time
+    delete store.scenarioSeen; delete store.careerSeen; delete store.challengeSeen;
+  }
+  // A scenario game saved without its index entry (the main save failed after it): keep it.
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i), id = k && k.startsWith(RUN_KEY) ? k.slice(RUN_KEY.length) : null;
+      if (!id || store.runs[id]) continue;
+      const st = readRun(id);
+      if (st && st.scenario && Sim.SCENARIOS.some(x => x.id === id)) store.runs[id] = runEntry(st);
+    }
+  } catch {}
+  // The time since the last save goes to the game that was open then, if it's still there.
+  if (store.last) {
+    const k = store.last.key, there = k === 'career' ? !!store.career : k.startsWith('run:') ? !!store.runs[k.slice(4)] : false;
+    if (there) store.away[k] = (store.away[k] || 0) + Math.max(0, Date.now() - store.last.at);
+    delete store.last;
+  }
+  try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {}
+  // How many intervals a game has to catch up, once (its credit is then used up).
+  const takeAway = key => { const ms = store.away[key] || 0; delete store.away[key]; return Math.floor(ms / MS_PER_INTERVAL); };
   let S = null, slot = 'career', speed = [0, 1, 4, 16, 32, 64].includes(store.speed) ? store.speed : 1;
   let waitingToStart = false;   // a new game starts paused, with 1x pulsing until you start the clock
   function save() {
     if (!S || S.ended) return;
-    store[slot] = pack(S); store[`${slot}Seen`] = Date.now(); store.slot = slot; store.speed = speed;
+    if (slot === 'scenario') {
+      const id = S.scenario.id;
+      if (writeRun(id, pack(S))) store.runs[id] = runEntry(S);
+      store.last = { key: `run:${id}`, at: Date.now() };
+    } else { store[slot] = pack(S); store.last = { key: slot, at: Date.now() }; }
+    store.slot = slot; store.speed = speed;
     persist();
   }
 
@@ -1719,13 +1768,15 @@
     info('Rename company', `<div class="field-row"><input type="text" id="rename-in" maxlength="28" value="${esc(S.company || 'Your company')}" aria-label="Company name"><button type="button" class="btn btn-primary" id="rename-ok">Save</button></div>`);
     $('rename-ok').onclick = () => { S.company = $('rename-in').value.trim() || 'Your company'; save(); renderTop(); closeSheets(); };
   };
-  $('m-title').onclick = () => { save(); closeSheets(); showTitle(); };
+  $('m-title').onclick = () => { save(); delete store.last; persist(); closeSheets(); showTitle(); };
   // Before a scenario's progress is lost: say what's at stake, and offer Cancel.
-  function scenarioProgress(st) {
+  // How far a scenario game is ("year 2 of 5" or "day 5 of 14"), and what it's worth
+  function progressOf(st) {
     const sc = Sim.SCENARIOS.find(x => x.id === st.scenario.id);
     const when = st.transition ? `year ${Math.min(Sim.yearsOf(st), Sim.yearOf(st) + 1)} of ${Sim.yearsOf(st)}` : `day ${Math.min(sc.days, Sim.dayIndex(st) + 1)} of ${sc.days}`;
-    return { sc, text: `${sc.name}: ${when}, worth ${fmtMoney(Sim.companyValue(st))}` };
+    return { sc, when, value: Sim.companyValue(st) };
   }
+  function scenarioProgress(st) { const { sc, when, value } = progressOf(st); return { sc, text: `${sc.name}: ${when}, worth ${fmtMoney(value)}` }; }
   function confirmLose(title, text, yes, then, back) {
     info(title, `<p>${text}</p>
       <div class="field-row" style="margin-top:14px"><button type="button" class="btn btn-quiet" id="cl-no" style="flex:1">Cancel</button><button type="button" class="btn btn-quiet danger" id="cl-yes" style="flex:1">${yes}</button></div>`);
@@ -1735,11 +1786,11 @@
   $('m-restart').onclick = () => {
     if (!S.scenario) return;
     const { sc, text } = scenarioProgress(S), length = S.scenario.length;
-    confirmLose(`Restart ${sc.name}?`, `${esc(text)}. That progress will be lost, and you'll start again from the beginning.`, 'Restart', () => startScenario(sc.id, length));
+    confirmLose(`Restart ${sc.name}?`, `${esc(text)}. That progress will be lost, and you'll start again from the beginning.`, 'Restart', () => startScenario(sc.id, length, true));
   };
   $('m-reset').onclick = () => {
     info('Start a new company?', `<p>This deletes ${esc(S.company || 'your company')} and everything it owns. Challenge results are kept.</p><button type="button" class="btn btn-primary" id="reset-ok" style="width:100%">Delete and start again</button>`);
-    $('reset-ok').onclick = () => chooseDifficulty(d => { delete store.career; delete store.careerSeen; persist(); closeSheets(); startCareer(true, d); });
+    $('reset-ok').onclick = () => chooseDifficulty(d => { delete store.career; forgetAway('career'); persist(); closeSheets(); startCareer(true, d); });
   };
   function chooseDifficulty(then) {
     const D = Sim.DIFFICULTY;
@@ -1828,54 +1879,65 @@
   const starTotal = () => Sim.SCENARIOS.reduce((a, sc) => a + ((store.scenarios || {})[sc.id]?.stars || 0), 0);
   function openScenarios() {
     store.scenarios ||= {};
-    const act = store.scenario, actSc = act && Sim.SCENARIOS.find(x => x.id === act.scenario.id);
-    info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Scenarios only run while the app is open, except the multi-year ones (the company scenarios and the 20-year Energy Transition), which keep trading while you're away.</p>
-      ${actSc ? `<h3>Your current scenario</h3><p>${actSc.name} · ${actSc.transition ? `year ${Math.min(Sim.yearsOf(act), Sim.yearOf(act) + 1)} of ${Sim.yearsOf(act)}` : `day ${Math.min(actSc.days, Sim.dayIndex(act) + 1)} of ${actSc.days}`}</p><button type="button" class="btn btn-primary" id="sc-resume" style="width:100%">Carry on</button>` : ''}
+    const runs = Object.entries(store.runs).filter(([id]) => Sim.SCENARIOS.some(x => x.id === id)).sort((a, b) => b[1].at - a[1].at);
+    const playing = playingRun();
+    const prog = id => id === playing ? progressOf(S) : store.runs[id];
+    info('Scenarios', `<p>Hand-made situations, each with three stars to win. Everyone gets the same weather, so you can compare stars with friends. Each scenario keeps its own game, so you can have several going: a game waits for you while you play another. The multi-year ones (the company scenarios and the 20-year Energy Transition) also keep trading while the app is closed, if you were playing them.</p>
+      ${runs.length ? `<h3>In progress</h3><div class="runs">${runs.map(([id]) => { const sc = Sim.SCENARIOS.find(x => x.id === id), p = prog(id);
+        return `<div class="run-row"><div><b>${sc.name}</b><span>${p.when} · worth ${fmtMoney(p.value)}${id === playing ? ' · playing now' : ''}</span></div><button type="button" class="btn btn-primary" data-resume="${id}">Carry on</button></div>`; }).join('')}</div>` : ''}
       ${['', 'company'].map(g => `${g ? '<h3>Run a company</h3><p class="note">Take over a portfolio like a real company’s (the names are made up) for a few fast years.</p>' : ''}<div class="sc-grid">${Sim.SCENARIOS.filter(sc => (sc.group || '') === g).map(sc => { const b = store.scenarios[sc.id];
-        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span><small>${sc.transition ? `${sc.years || Sim.TRANSITION_YEARS} years` : `${sc.days} days`}${b ? ` · best ${fmtMoney(b.value)}${b.length && sc.lengths ? ` (${sc.lengths[b.length].name})` : ''}` : ''}</small></button>`; }).join('')}</div>`).join('')}`);
-    if (actSc) $('sc-resume').onclick = () => startScenario(null);
+        return `<button type="button" class="sc" data-scenario="${sc.id}"><span class="stars">${starStr(b ? b.stars : 0)}</span><b>${sc.name}</b><span>${sc.blurb}</span>${store.runs[sc.id] ? `<small class="going">In progress: ${prog(sc.id).when}</small>` : ''}<small>${sc.transition ? `${sc.years || Sim.TRANSITION_YEARS} years` : `${sc.days} days`}${b ? ` · best ${fmtMoney(b.value)}${b.length && sc.lengths ? ` (${sc.lengths[b.length].name})` : ''}` : ''}</small></button>`; }).join('')}</div>`).join('')}`);
+    $('i-body').querySelectorAll('[data-resume]').forEach(b => b.onclick = () => startScenario(b.dataset.resume));
     $('i-body').querySelectorAll('[data-scenario]').forEach(b => b.onclick = () => scenarioIntro(b.dataset.scenario));
   }
   let scLen = 'standard';
   const LEN_BLURB = { standard: 'Seasons pass quickly, with something new most years.', long: 'Slower seasons and more time to build between milestones.' };
   const bestText = (sc, b) => `${b.stars} star${b.stars === 1 ? '' : 's'}, ${fmtMoney(b.value)}${b.length && sc.lengths ? ` (${sc.lengths[b.length].name})` : ''}`;
   function scenarioIntro(id, len) {
-    const sc = Sim.SCENARIOS.find(x => x.id === id), b = (store.scenarios || {})[id];
-    if (len) scLen = len;
+    const sc = Sim.SCENARIOS.find(x => x.id === id), b = (store.scenarios || {})[id], run = store.runs[id];
+    const going = run && (id === playingRun() ? progressOf(S) : run);
+    if (len) scLen = len; else if (run) scLen = run.length || 'standard';
     const L = sc.lengths && (sc.lengths[scLen] || sc.lengths.standard);
     const picker = sc.lengths ? `<h3>Length</h3><div class="diff-grid" role="radiogroup">${Object.entries(sc.lengths).map(([k, v]) => `<button type="button" class="diff" data-len="${k}" aria-pressed="${v === L}"><b>${v.name}: ${v.yearDays}-day years</b><span>${(Sim.TRANSITION_YEARS * v.yearDays).toLocaleString()} game days. ${LEN_BLURB[k] || ''}</span></button>`).join('')}</div>` : '';
     info(sc.name, `<p>${sc.blurb}</p>${picker}<h3>Stars</h3><ul class="starlist">${Sim.starText(sc, scLen).map(t => `<li>${t}</li>`).join('')}</ul>
       ${sc.transition ? `<p>${sc.intro || 'Coal closes unit by unit, demand grows with electric cars, data centres and electric heating, offshore wind and long-duration storage arrive, and the government underwrites new plant.'} <button type="button" class="btn btn-quiet small" id="sc-timeline">See the timeline</button></p>` : ''}
-      <p class="note">${sc.transition ? `${sc.years || Sim.TRANSITION_YEARS} years of ${(L || sc).yearDays} days; ${idle ? 'keeps trading while you’re away (you can turn that off in the menu)' : 'waits for you while you’re away'}` : `${sc.days} game days`}${b ? ` · your best: ${bestText(sc, b)}` : ''}. ${store.scenario ? 'Starting this ends the scenario you have going.' : ''}</p>
-      <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-back" style="flex:1">All scenarios</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Start</button></div>`);
+      <p class="note">${sc.transition ? `${sc.years || Sim.TRANSITION_YEARS} years of ${(L || sc).yearDays} days; ${idle ? 'keeps trading while the app is closed, if you were playing it (you can turn that off in the menu)' : 'waits for you while you’re away'}` : `${sc.days} game days`}${b ? ` · your best: ${bestText(sc, b)}` : ''}.</p>
+      ${going ? `<p class="going-note"><b>You have a game going:</b> ${going.when}, worth ${fmtMoney(going.value)}.</p>
+      <div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-again" style="flex:1">Start again</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Carry on</button></div>
+      <button type="button" class="btn btn-quiet" id="sc-back" style="width:100%;margin-top:8px">All scenarios</button>`
+      : `<div class="field-row" style="margin-top:12px"><button type="button" class="btn btn-quiet" id="sc-back" style="flex:1">All scenarios</button><button type="button" class="btn btn-primary" id="sc-go" style="flex:1">Start</button></div>`}`);
     $('sc-back').onclick = openScenarios;
     if ($('sc-timeline')) $('sc-timeline').onclick = () => openTimeline(Sim.createScenario(id, { length: scLen }), () => scenarioIntro(id));
     $('i-body').querySelectorAll('[data-len]').forEach(x => x.onclick = () => scenarioIntro(id, x.dataset.len));
-    $('sc-go').onclick = () => {
-      const act = store.scenario;
-      if (!act || act.ended) { startScenario(id, scLen); return; }
-      const { text } = scenarioProgress(act), same = act.scenario.id === id;
-      confirmLose(same ? `Restart ${sc.name}?` : `Start ${sc.name}?`, `You have a game going: ${esc(text)}. ${same ? 'Starting again' : 'Starting this one'} ends it: its progress will be lost, and you'd have to start it again.`,
-        same ? 'Restart' : 'Start', () => startScenario(id, scLen), () => scenarioIntro(id));
-    };
+    // Start (or carry on: startScenario opens the saved game if there is one). Other scenarios'
+    // games are kept, so only starting this one again asks first.
+    $('sc-go').onclick = () => startScenario(id, scLen);
+    if (going) $('sc-again').onclick = () => confirmLose(`Start ${sc.name} again?`, `You have a game going: ${going.when}, worth ${fmtMoney(going.value)}. Starting again ends it: its progress will be lost, and you'll start from the beginning.`,
+      'Start again', () => startScenario(id, scLen, true), () => scenarioIntro(id));
   }
-  function startScenario(id, length) {
-    if (id == null && !store.scenario) { toast('That scenario has finished.'); return; }
+  // The scenario game open now, if any (on the title screen, nothing is being played)
+  const playingRun = () => scene === 'app' && slot === 'scenario' && S && !S.ended && S.scenario ? S.scenario.id : null;
+  // Open a scenario: its saved game if it has one (unless `fresh`), else a new one. The game you
+  // were playing is saved first and waits for you.
+  function startScenario(id, length, fresh) {
+    if (!fresh && id === playingRun()) { closeSheets(); return; }
     save();
     slot = 'scenario';
-    let rep = null;
-    if (id == null) {
-      S = Sim.migrate(store.scenario);
-      if (S.transition && idle) {   // multi-year scenarios keep trading while you're away
-        const away = Math.floor((Date.now() - (store.scenarioSeen || Date.now())) / MS_PER_INTERVAL);
-        if (away >= 12) rep = Sim.catchUp(S, Math.min(away, (S.scenario.days * Sim.IPD) - S.t + Sim.IPD));
-      }
+    let rep = null, st = null;
+    if (fresh) dropRun(id);
+    else if (store.runs[id]) {
+      st = readRun(id);
+      if (!st || !st.scenario) { st = null; dropRun(id); persist(); toast('That save couldn’t be read, so the scenario starts again.'); }
+    }
+    if (st) {
+      S = Sim.migrate(st);
+      const away = takeAway(`run:${id}`);   // only if this game was open when the app closed
+      if (S.transition && idle && away >= 12) rep = Sim.catchUp(S, Math.min(away, (S.scenario.days * Sim.IPD) - S.t + Sim.IPD));
     } else { S = Sim.createScenario(id, { length }); S.company = (store.career && store.career.company) || 'Your company'; Sim.step(S); startPaused(); }
-    store.scenario = S;
     closeSheets(); enterApp(); save();
     if (Sim.scenarioOver(S)) { scenarioEnd(); return; }
     if (rep) awayReport(rep);
-    else if (id != null) toast('Paused: tap 1× when you’re ready.');
+    else if (!st) toast('Paused: tap 1× when you’re ready.');
   }
   function scenarioEnd() {
     const sc = Sim.SCENARIOS.find(x => x.id === S.scenario.id), r = Sim.scenarioResult(S);
@@ -1883,7 +1945,7 @@
     const best = store.scenarios[sc.id];
     const better = !best || r.stars > best.stars || (r.stars === best.stars && r.value > best.value);
     if (better) store.scenarios[sc.id] = { stars: r.stars, value: Math.round(r.value), length: S.scenario.length };
-    delete store.scenario; S.ended = true; persist();
+    dropRun(sc.id); S.ended = true; persist();
     speed = 0; syncSpeed(); acc = 0;
     info(sc.name, `<div class="stars big" aria-label="${r.stars} of 3 stars">${starStr(r.stars)}</div>
       ${starLines(r)}
@@ -1893,7 +1955,7 @@
       ${better && best ? '<p class="note">A new best for this scenario.</p>' : ''}
       <div class="field-row" style="margin-top:14px"><button type="button" class="btn btn-quiet" id="se-share" style="flex:1"><svg class="i"><use href="#i-share"/></svg>Share</button><button type="button" class="btn btn-quiet" id="se-again" style="flex:1">Try again</button><button type="button" class="btn btn-primary" id="se-back" style="flex:1">Done</button></div>`);
     $('se-share').onclick = () => shareText(`Merit Order · ${sc.name} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} · company worth ${fmtMoney(r.value)}. Try to beat it: same weather for everyone.`);
-    $('se-again').onclick = () => startScenario(sc.id);
+    $('se-again').onclick = () => startScenario(sc.id, S.scenario.length, true);
     $('se-back').onclick = closeSheets;
   }
   $('m-scenarios').onclick = openScenarios;
@@ -1904,7 +1966,7 @@
     const value = Sim.companyValue(S), seed = S.challenge.seed, code = resultCode(seed, value, S.totals.emis);
     (store.results ||= {})[seed] ||= [];
     store.results[seed].push({ name: `${S.company || 'You'} (you)`, value: Math.round(value / 100) * 100, emis: S.totals.emis });
-    delete store.challenge; S.ended = true; persist();
+    delete store.challenge; forgetAway('challenge'); S.ended = true; persist();
     speed = 0; syncSpeed();
     info('Challenge complete', `<div class="kv"><div><span>Final company value</span><b>${fmtMoney(value)}</b></div><div><span>Profit</span><b>${fmtMoney(S.totals.profit)}</b></div><div><span>Emissions</span><b>${Math.round(S.totals.emis).toLocaleString()} t</b></div></div>
       <h3>Your result code</h3><div class="code">${code}</div>
@@ -2081,7 +2143,8 @@
     scene = 'title'; $('title').hidden = false; $('app').hidden = true; $('offer').hidden = true;
     demo = Sim.create(4242, { cash: 0 });
     for (let k = 0; k < 17 * 12; k++) Sim.step(demo);    // start the demo in the late afternoon
-    const has = !!store.career;
+    const has = !!store.career, going = Object.keys(store.runs).length;
+    $('t-sc-count').hidden = !going; $('t-sc-count').textContent = going; $('t-sc-count').setAttribute('aria-label', `${going} in progress`);
     $('t-cont-k').textContent = has ? 'Continue' : 'Start your company';
     $('t-cont-sub').textContent = has ? `${store.career.company || 'Your company'} · day ${Sim.dayIndex(store.career) + 1}` : 'An empty site and some cash';
   }
@@ -2102,10 +2165,11 @@
     slot = 'career';
     if (!fresh && store.career) {
       S = Sim.migrate(store.career);
-      const away = Math.floor((Date.now() - (store.careerSeen || Date.now())) / MS_PER_INTERVAL);
+      const away = takeAway('career');   // only if the career was open when the app closed
       enterApp();
       if (idle && away >= 12) { const rep = Sim.catchUp(S, away); pausedFor = S.offer; seenOffers = S.contractOffers; lastRec = S.days.length ? S.days[S.days.length - 1].day : -1; renderAll(); awayReport(rep); }
     } else {
+      forgetAway('career');
       S = Sim.create((Math.random() * 2 ** 31) >>> 0, { difficulty, tour: true }); S.company = 'Your company';
       Sim.step(S);
       startPaused(); enterApp();
@@ -2121,7 +2185,7 @@
     speed = 0; syncSpeed(); acc = 0;
     if (S.challenge) { challengeEnd(); return; }
     if (S.scenario) { scenarioEnd(); return; }
-    S.ended = true; delete store.career; delete store.careerSeen; persist();
+    S.ended = true; delete store.career; forgetAway('career'); persist();
     const best = S.days.reduce((m, d) => Math.max(m, d.value || 0), 0);
     info('Your company has collapsed', `<p>${esc(S.company || 'Your company')} ran out of money and plant to sell, and the bank has wound it up after ${Sim.dayIndex(S) + 1} days.</p>
       <div class="kv"><div><span>Peak value</span><b>${fmtMoney(best)}</b></div><div><span>Energy sold</span><b>${Math.round(S.totals.energy).toLocaleString()} MWh</b></div><div><span>Debt written off</span><b class="down">${fmtMoney(-S.cash)}</b></div></div>

@@ -45,10 +45,13 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   };
   const shot = async (p, name) => { if (SHOTS) await p.screenshot({ path: path.join(SHOTS, `${name}.png`) }); };
   const state = (p, fn, arg) => p.evaluate(fn, arg);
+  // A clean slate: reload first (to the title, where nothing is open to save itself back on the
+  // next reload), then clear every key and reload again.
+  const wipe = async p => { await p.reload(); await p.waitForTimeout(300); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(400); };
   // Start from a scenario's intro, confirming if a game in progress would end
   const scGo = async p => { await p.click('#sc-go'); await p.waitForTimeout(200); if (await p.$('#cl-yes')) { await p.click('#cl-yes'); await p.waitForTimeout(200); } };
   const newCompany = async (p, diff = 'relaxed') => {
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(500);
+    await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(500);
     await p.click('#t-continue'); await p.click(`[data-diff="${diff}"]`); await p.click('#diff-go'); await p.waitForTimeout(200);
     await p.click('#welcome-ok');
   };
@@ -195,7 +198,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     // pretend the app was closed 3 real hours ago: reload (which saves), then edit the save while
     // nothing is loaded, then reload again so the app reads it
     await p.reload(); await p.waitForTimeout(300);
-    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.careerSeen = Date.now() - 3 * 3600 * 1000; localStorage.setItem('merit-order', JSON.stringify(s)); });
+    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.last = { key: 'career', at: Date.now() - 3 * 3600 * 1000 }; localStorage.setItem('merit-order', JSON.stringify(s)); });
     await p.reload(); await p.waitForTimeout(300);
     await p.click('#t-continue'); await p.waitForTimeout(400);
     check('coming back after 3 hours: a week of catch-up and a report', (await p.textContent('#i-title')) === 'While you were away' && ((await state(p, () => MeritOrder.state.t)) - t0) === 7 * 288);
@@ -208,7 +211,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#sh-menu [data-close]');
     const t1 = await state(p, () => MeritOrder.state.t);
     await p.reload(); await p.waitForTimeout(300);
-    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.careerSeen = Date.now() - 3 * 3600 * 1000; localStorage.setItem('merit-order', JSON.stringify(s)); });
+    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.last = { key: 'career', at: Date.now() - 3 * 3600 * 1000 }; localStorage.setItem('merit-order', JSON.stringify(s)); });
     await p.reload(); await p.waitForTimeout(300);
     await p.click('#t-continue'); await p.waitForTimeout(400);
     check('with "Keep trading while I\'m away" off, the game waits for you', idleOff && (await state(p, () => MeritOrder.state.t)) === t1 && await p.$eval('#sh-info', x => x.hidden));
@@ -296,7 +299,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   // 8. Scenarios: pick one, play it to the end, stars are saved, carry on later, a collapse scores nothing.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     check('the scenarios list, with the company scenarios in their own group', (await p.$$('[data-scenario]')).length === 11 && /Run a company/.test(await p.textContent('#i-body')));
     await shot(p, 'scenarios');
@@ -310,12 +313,12 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     if ((await p.textContent('#i-title')) === 'New contracts on offer') { await p.click('#nc-play'); await p.waitForTimeout(1500); }
     check('it ends on its last day with stars', (await p.textContent('#i-title')) === 'Heatwave Week' && !!(await p.$('.stars.big')) && /day 10 of 10/.test(await p.textContent('#clock')));
     await shot(p, 'scenario-end');
-    check('the best result is saved', await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); return !!s.scenarios['heatwave-week'] && !s.scenario; }));
+    check('the best result is saved', await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); return !!s.scenarios['heatwave-week'] && !s.runs['heatwave-week'] && !localStorage.getItem('merit-order-run-heatwave-week'); }));
     await p.click('#se-again'); await p.waitForTimeout(300);
     await p.click('#open-menu'); await p.click('#m-title'); await p.waitForTimeout(200);
     check('the menu\'s "Title screen" button goes back to the title', await state(p, () => MeritOrder.scene()) === 'title' && !(await p.$eval('#title', x => x.hidden)));
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
-    await p.click('#sc-resume'); await p.waitForTimeout(300);
+    await p.click('[data-resume="heatwave-week"]'); await p.waitForTimeout(300);
     check('try again, leave, and carry on later', /Heatwave Week · day 1 of 10/.test(await p.textContent('#clock')));
     await state(p, () => { const M = MeritOrder; M.state.cash = -5e7; let n = 0; while (!M.state.bust && n++ < 6 * 288) M.Sim.step(M.state); });
     await p.waitForTimeout(500);
@@ -327,7 +330,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   //     underwriting round that pauses the game, catch-up while away and a year-by-year report.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="energy-transition"]'); await p.waitForTimeout(150);
     await p.click('[data-len="long"]'); await p.waitForTimeout(100);
@@ -372,11 +375,11 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     // away for a while: reload (which saves), edit the save while nothing is loaded, reload and carry on
     const t0 = await state(p, () => MeritOrder.state.t);
     await p.reload(); await p.waitForTimeout(300);
-    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.scenarioSeen = Date.now() - 2 * 288 * 1250; localStorage.setItem('merit-order', JSON.stringify(s)); });
+    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.last = { key: 'run:energy-transition', at: Date.now() - 2 * 288 * 1250 }; localStorage.setItem('merit-order', JSON.stringify(s)); });
     await p.reload(); await p.waitForTimeout(300);
     await p.click('#t-scenarios'); await p.waitForTimeout(150);
-    check('the scenario list shows the year', /Energy Transition · year 3 of 20/.test(await p.textContent('#i-body')));
-    await p.click('#sc-resume'); await p.waitForTimeout(400);
+    check('the scenario list shows the year', /In progress\s*Energy Transition\s*year 3 of 20/.test(await p.textContent('#i-body')));
+    await p.click('[data-resume="energy-transition"]'); await p.waitForTimeout(400);
     const dt = (await state(p, () => MeritOrder.state.t)) - t0;
     check('it kept trading while you were away', (await p.textContent('#i-title')) === 'While you were away' && dt >= 2 * 288 - 2 && dt <= 2 * 288 + 2, `${dt} intervals`);
     await p.click('#sh-info [data-close]');
@@ -393,7 +396,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   // 8c. The Long version, and refurbishing a worn battery.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="energy-transition"]'); await p.waitForTimeout(150);
     await p.click('[data-len="long"]'); await p.waitForTimeout(100);
@@ -414,7 +417,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   // 8e. Company scenarios: a portfolio taken from the rivals, a timeline of their own, a few short years.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(150);
     check('a company scenario explains its portfolio and stars', /all four Black Hill coal units/.test(await p.textContent('#i-body')) && (await p.$$('.starlist li')).length === 3 && /4 years of 60 days/.test(await p.textContent('#i-body')));
@@ -440,7 +443,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   //     report's own lines, and the 32x speed.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="coastline"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -483,7 +486,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   //     reports pause even with "Pause for decisions" off.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -521,7 +524,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   }
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="coastline"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -574,7 +577,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   //     or toasts with "Pause for decisions" off; a chip says when a going-ahead plant starts.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -631,67 +634,124 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
-  // 8n. Restart a scenario, and switch to another: both ask first, and the new game shares nothing
-  //     with the old one (date, cash, plants, news, contracts, decisions, proposals, pop-ups).
+  // 8n. A save for every scenario: switching keeps each game, which waits for you; a new game shares
+  //     nothing with another (date, cash, plants, news, contracts, decisions, proposals, pop-ups);
+  //     Restart and Start again ask first and touch only that scenario; finishing one drops only its
+  //     save; only the game open when the app closed catches up; old saves are moved over.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
+    check('a scenario with no game going has just Start', (await p.textContent('#sc-go')) === 'Start' && !(await p.$('#sc-again')));
     await scGo(p);
     // a few weeks in: a decision waiting, a rival proposal open, contracts signed
-    const busy = () => state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.cash = 5e7;
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.cash = 5e7;
       while (S.t < 62 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); if (S.proposal && S.t < 60 * 288) S.proposal = null; }
       for (const d of S.days.slice(-15)) d.avg = 400; while (!S.proposal) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); }
-      M.Sim.signContract(S, 0); if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.save();
-      return { t: S.t, cash: S.cash }; });
-    const old = await busy();
+      M.Sim.signContract(S, 0); if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.save(); });
+    const at = () => state(p, () => { const S = MeritOrder.state; return { id: S.scenario && S.scenario.id, t: S.t, cash: Math.round(S.cash), plants: S.plants.length }; });
+    const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+    const hc = await at();
     const fresh = id => state(p, id => { const S = MeritOrder.state; return S.scenario.id === id && MeritOrder.Sim.dayIndex(S) === 0 && !S.choice && !S.proposal && !S.contracts.length
       && !S.news.some(n => /Tunnel Two: the boring|plans a|You sold/.test(n.text)) && S.plants.length === MeritOrder.Sim.createScenario(id).plants.length; }, id);
+    const saved = () => state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); return { runs: Object.keys(s.runs).sort().join(), keys: Object.keys(localStorage).filter(k => k.startsWith('merit-order-run-')).sort().join(), old: 'scenario' in s }; });
+    const openList = async () => { await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-scenarios'); await p.waitForTimeout(200); };
+    await openList();
+    check('the list shows the game in progress, marked as playing now', /In progress\s*Highcountry Hydroyear 2 of 5 · worth \$[\d.]+M · playing now/.test(await p.textContent('#i-body')) && /In progress: year 2 of 5/.test(await p.textContent('[data-scenario="highcountry"]')));
+    // switching to another scenario: no question, nothing lost
+    await p.click('[data-scenario="wellspring"]'); await p.waitForTimeout(200);
+    await p.click('#sc-go'); await p.waitForTimeout(400);
+    const cards = await p.$$eval('[data-plant] .name', xs => xs.map(x => x.textContent));
+    check('starting another scenario asks nothing and starts it fresh: its own plants, no old chips or pop-ups', !(await p.$('#cl-yes')) && await fresh('wellspring') && cards.join('|') === 'Black Hill 3|Black Hill 4|Tallawang Gas|Mulga Creek Peaker'
+      && /Wellspring Energy · Year 1 of 4/.test(await p.textContent('#clock')) && !/Decision|plans a|Tunnel/.test(await p.textContent('#chips')) && await p.$eval('#sh-info', x => x.hidden), cards.join('|'));
+    let sv = await saved();
+    check('…each game is saved under its own key', sv.runs === 'highcountry,wellspring' && sv.keys === 'merit-order-run-highcountry,merit-order-run-wellspring' && !sv.old, JSON.stringify(sv));
+    await state(p, () => { const M = MeritOrder, S = M.state; for (let k = 0; k < 3 * 288; k++) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); });
+    const ws = await at();
+    await openList();
+    const rows = await p.$$eval('[data-resume]', xs => xs.map(x => x.dataset.resume).join());
+    check('both are in progress, the one being played first', rows === 'wellspring,highcountry', rows);
+    await p.click('[data-resume="highcountry"]'); await p.waitForTimeout(400);
+    check('…Carry on returns to Highcountry exactly as it was left: it waited', same(await at(), hc) && await p.$eval('#sh-info', x => x.hidden) && /Highcountry Hydro · Year 2 of 5/.test(await p.textContent('#clock'))
+      && /Decision: Tunnel Two/.test(await p.textContent('#chips')));
+    // a scenario with a game going: Carry on, or Start again (which asks first)
+    await openList(); await p.click('[data-scenario="wellspring"]'); await p.waitForTimeout(200);
+    check('the intro of a game going offers Carry on and Start again', (await p.textContent('#sc-go')) === 'Carry on' && !!(await p.$('#sc-again')) && /You have a game going: year 1 of 4, worth/.test(await p.textContent('#i-body')));
+    await p.click('#sc-again'); await p.waitForTimeout(200);
+    check('Start again asks first, saying what will be lost', /Start Wellspring Energy again\?/.test(await p.textContent('#i-title')) && /year 1 of 4.*progress will be lost/.test(await p.textContent('#i-body')));
+    await p.click('#cl-no'); await p.waitForTimeout(200);
+    check('…Cancel goes back to its intro', /Wellspring Energy/.test(await p.textContent('#i-title')) && (await p.textContent('#sc-go')) === 'Carry on');
+    await p.click('#sc-go'); await p.waitForTimeout(400);
+    check('…and Carry on picks it up where it was', same(await at(), ws));
+    // Restart from the menu: only this scenario
     await p.click('#open-menu'); await p.waitForTimeout(150);
     check('the menu offers Restart in a scenario, and not "Start a new company"', !(await p.$eval('#m-restart', x => x.hidden)) && await p.$eval('#m-reset', x => x.hidden));
     await p.click('#m-restart'); await p.waitForTimeout(200);
-    check('Restart asks first, saying what will be lost', /Restart Highcountry Hydro\?/.test(await p.textContent('#i-title')) && /year 2 of 5.*progress will be lost/.test(await p.textContent('#i-body')));
+    check('Restart asks first, saying what will be lost', /Restart Wellspring Energy\?/.test(await p.textContent('#i-title')) && /year 1 of 4.*progress will be lost/.test(await p.textContent('#i-body')));
     await p.click('#cl-no'); await p.waitForTimeout(200);
-    check('…Cancel keeps the game as it was', await state(p, o => MeritOrder.state.t === o.t && MeritOrder.state.scenario.id === 'highcountry', old) && await p.$eval('#sh-info', x => x.hidden));
+    check('…Cancel keeps the game as it was', same(await at(), ws) && await p.$eval('#sh-info', x => x.hidden));
     await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-restart'); await p.waitForTimeout(200);
     await p.click('#cl-yes'); await p.waitForTimeout(400);
-    check('…Restart starts it again from the beginning, with nothing left over', await fresh('highcountry') && /Year 1 of 5 · Jan/.test(await p.textContent('#clock')) && !/Decision|plans a/.test(await p.textContent('#chips')));
-    // switching to another scenario
-    await busy();
-    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-scenarios'); await p.waitForTimeout(200);
-    await p.click('[data-scenario="wellspring"]'); await p.waitForTimeout(200);
-    await p.click('#sc-go'); await p.waitForTimeout(200);
-    check('choosing another scenario asks first, naming the game that will end', /Start Wellspring Energy\?/.test(await p.textContent('#i-title')) && /Highcountry Hydro: year 2 of 5/.test(await p.textContent('#i-body')));
-    await p.click('#cl-no'); await p.waitForTimeout(200);
-    check('…Cancel goes back to its intro, and the game is untouched', /Wellspring Energy/.test(await p.textContent('#i-title')) && !!(await p.$('#sc-go')) && await state(p, () => MeritOrder.state.scenario.id === 'highcountry' && MeritOrder.Sim.dayIndex(MeritOrder.state) > 60));
-    await p.click('#sc-go'); await p.waitForTimeout(200); await p.click('#cl-yes'); await p.waitForTimeout(400);
-    const cards = await p.$$eval('[data-plant] .name', xs => xs.map(x => x.textContent));
-    check('…Start gives a fresh game of the new scenario: its own plants on screen, no old chips or pop-ups', await fresh('wellspring') && cards.join('|') === 'Black Hill 3|Black Hill 4|Tallawang Gas|Mulga Creek Peaker'
-      && /Wellspring Energy · Year 1 of 4/.test(await p.textContent('#clock')) && !/Decision|plans a|Tunnel/.test(await p.textContent('#chips')) && await p.$eval('#sh-info', x => x.hidden), cards.join('|'));
-    // the same while the game is running fast, with a decision and a proposal open
+    const hcSaved = await state(p, () => JSON.parse(localStorage.getItem('merit-order-run-highcountry')).t);
+    check('…Restart starts it again from the beginning, and leaves the other games alone', await fresh('wellspring') && /Year 1 of 4 · Jan/.test(await p.textContent('#clock')) && hcSaved === hc.t);
+    // switching while the game runs at 64x, with a decision and a proposal open
     await state(p, () => { const M = MeritOrder, S = M.state; while (S.t < 61 * 288) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.setSpeed(64); });
     await p.waitForTimeout(300);
     for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
-    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-scenarios'); await p.waitForTimeout(200);
-    await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(200);
-    await p.click('#sc-go'); await p.waitForTimeout(200); await p.click('#cl-yes'); await p.waitForTimeout(400);
+    await openList(); await p.click('[data-scenario="lakeside"]'); await p.waitForTimeout(200);
+    await p.click('#sc-go'); await p.waitForTimeout(400);
     check('…switching while it runs at 64× starts the new one fresh and paused', await fresh('lakeside') && (await p.$eval('[data-speed="0"]', x => x.getAttribute('aria-pressed'))) === 'true');
-    // the career keeps its own "Start a new company"
-    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-title'); await p.waitForTimeout(300);
-    await p.click('#t-continue'); await p.waitForTimeout(300);
+    // only the game open when the app closed catches up: Lakeside was open, Highcountry waits
+    await state(p, () => { const M = MeritOrder, S = M.state; for (let k = 0; k < 288; k++) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.save(); });
+    const lk = await at();
+    await p.reload(); await p.waitForTimeout(300);   // reloading saves, so edit the save after it
+    await state(p, () => { const s = JSON.parse(localStorage.getItem('merit-order')); s.last = { key: 'run:lakeside', at: Date.now() - 2 * 288 * 1250 }; localStorage.setItem('merit-order', JSON.stringify(s)); });
+    await p.reload(); await p.waitForTimeout(400);
+    check('the title says how many scenario games are going', (await p.textContent('#t-sc-count')) === '3' && (await p.getAttribute('#t-sc-count', 'aria-label')) === '3 in progress' && !(await p.$eval('#t-sc-count', x => x.hidden)));
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-resume="highcountry"]'); await p.waitForTimeout(400);
+    check('after the app was closed, a game that was not open waits: no catch-up', same(await at(), hc) && await p.$eval('#sh-info', x => x.hidden));
+    await openList(); await p.click('[data-resume="lakeside"]'); await p.waitForTimeout(500);
+    const dt = (await at()).t - lk.t;
+    check('…and the one that was open catches up for the time away', (await p.textContent('#i-title')) === 'While you were away' && dt >= 2 * 288 - 2 && dt <= 2 * 288 + 2, `${dt} intervals`);
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    // finishing a scenario drops only its save
+    await state(p, () => { const M = MeritOrder, S = M.state; if (S.yearReport) S.yearReport.seen = true; S.days.push({ ...S.days[S.days.length - 1], day: S.scenario.days - 1 }); M.setSpeed(16); });
+    for (let k = 0; k < 10 && !(await p.$('.stars.big')); k++) await p.waitForTimeout(300);
+    sv = await saved();
+    check('finishing a scenario drops its save and keeps the others', !!(await p.$('.stars.big')) && sv.runs === 'highcountry,wellspring' && sv.keys === 'merit-order-run-highcountry,merit-order-run-wellspring', JSON.stringify(sv));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(400);
+    // the career waits too while you play a scenario
     if (await p.$('[data-diff="standard"]')) { await p.click('[data-diff="standard"]'); await p.waitForTimeout(100); await p.click('#diff-go').catch(() => {}); await p.waitForTimeout(400); }
+    if (await state(p, () => MeritOrder.scene()) === 'title') { await p.click('#t-continue'); await p.waitForTimeout(300); await p.click('[data-diff="standard"]').catch(() => {}); await p.waitForTimeout(100); await p.click('#diff-go').catch(() => {}); await p.waitForTimeout(400); }
     await p.evaluate(() => MeritOrder.setSpeed(0));
     for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    await state(p, () => { const M = MeritOrder, S = M.state; for (let k = 0; k < 288; k++) { M.Sim.step(S); if (S.offer) M.Sim.declineOffer(S); } M.renderAll(); M.save(); });
+    const car = await at();
     await p.click('#open-menu'); await p.waitForTimeout(150);
-    check('in the career, the menu has "Start a new company" and no Restart', await state(p, () => !MeritOrder.state.scenario) && !(await p.$eval('#m-reset', x => x.hidden)) && await p.$eval('#m-restart', x => x.hidden));
+    check('in the career, the menu has "Start a new company" and no Restart', !car.id && !(await p.$eval('#m-reset', x => x.hidden)) && await p.$eval('#m-restart', x => x.hidden));
+    await p.click('#m-scenarios'); await p.waitForTimeout(200); await p.click('[data-resume="highcountry"]'); await p.waitForTimeout(400);
+    await p.click('#open-menu'); await p.waitForTimeout(150); await p.click('#m-title'); await p.waitForTimeout(300);
+    await p.click('#t-continue'); await p.waitForTimeout(400);
+    check('…and back in the career, it is where you left it: it waited', same(await at(), car) && await p.$eval('#sh-info', x => x.hidden));
+    // a save from before v36 (one scenario in the main save) is moved to its own key
+    await p.reload(); await p.waitForTimeout(300);   // reloading saves, so edit the save after it
+    await state(p, () => { const S = MeritOrder.Sim.createScenario('coastline'); for (let k = 0; k < 2 * 288 + 5; k++) { MeritOrder.Sim.step(S); if (S.offer) MeritOrder.Sim.declineOffer(S); }
+      localStorage.clear(); localStorage.setItem('merit-order', JSON.stringify({ scenario: S, scenarioSeen: Date.now() - 1000, slot: 'scenario', scenarios: {} })); });
+    await p.reload(); await p.waitForTimeout(400);
+    sv = await saved();
+    check('an old save’s scenario moves to its own key', sv.runs === 'coastline' && sv.keys === 'merit-order-run-coastline' && !sv.old, JSON.stringify(sv));
+    await p.click('#t-scenarios'); await p.waitForTimeout(200);
+    await p.click('[data-resume="coastline"]'); await p.waitForTimeout(400);
+    check('…and carries on where it was', await state(p, () => MeritOrder.state.scenario.id === 'coastline' && MeritOrder.Sim.dayIndex(MeritOrder.state) === 2) && /Coastline Energy · Year 1 of 4/.test(await p.textContent('#clock')));
     await p.context().close();
   }
 
   // 8i. 64x: offered, and really twice as fast as 32x (the loop's per-frame cap doesn't hold it back).
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="first-light"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -704,7 +764,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   // 8h. A save that storage refuses says so (once), and play carries on.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="first-light"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -720,7 +780,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   //     as chips that still work; trading while away past a decision's deadline takes its default.
   {
     const p = await page();
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -731,7 +791,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
       S.proposal.big = true; if (S.yearReport) S.yearReport.seen = true; M.renderAll(); M.save(); });
     await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
-    await p.click('#sc-resume'); await p.waitForTimeout(400);
+    await p.click('[data-resume="highcountry"]'); await p.waitForTimeout(400);
     const chips = await p.textContent('#chips');
     check('after a reload, the waiting decision and the open proposal are chips again', /Decision: Tunnel Two/.test(chips) && /decides in \d+ days/.test(chips), chips.slice(0, 160));
     await p.click('[data-choice]'); await p.waitForTimeout(200);
@@ -742,7 +802,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.click('#pr-buy'); await p.waitForTimeout(200);
     check('…and so does buying the project', await state(p, n => MeritOrder.state.plants.length === n + 1 && !MeritOrder.state.proposal, n0));
     // away past a decision's deadline: a new game four days before the deadline, then a week away
-    await p.evaluate(() => localStorage.removeItem('merit-order')); await p.reload(); await p.waitForTimeout(400);
+    await wipe(p);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
     await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150);
     await scGo(p); await p.waitForTimeout(300);
@@ -751,10 +811,10 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
       if (S.yearReport) S.yearReport.seen = true; M.save(); });
     check('a decision is waiting before going away', await state(p, () => !!MeritOrder.state.choice && MeritOrder.Sim.choiceView(MeritOrder.state).daysLeft === 4));
     await p.reload(); await p.waitForTimeout(300);   // reloading saves, so edit the save after it
-    await state(p, () => { const st = JSON.parse(localStorage.getItem('merit-order')); st.scenarioSeen = Date.now() - 7 * 288 * 1250; localStorage.setItem('merit-order', JSON.stringify(st)); });
+    await state(p, () => { const st = JSON.parse(localStorage.getItem('merit-order')); st.last = { key: 'run:highcountry', at: Date.now() - 7 * 288 * 1250 }; localStorage.setItem('merit-order', JSON.stringify(st)); });
     await p.reload(); await p.waitForTimeout(400);
     await p.click('#t-scenarios'); await p.waitForTimeout(200);
-    await p.click('#sc-resume'); await p.waitForTimeout(600);
+    await p.click('[data-resume="highcountry"]'); await p.waitForTimeout(600);
     check('away past the deadline: the default was taken, and the away report shows', (await p.textContent('#i-title')) === 'While you were away' && await state(p, () => MeritOrder.state.chosen.tbm === 'wait' && !MeritOrder.state.choice && MeritOrder.state.news.some(n => /No decision in time/.test(n.text))));
     await p.context().close();
   }
