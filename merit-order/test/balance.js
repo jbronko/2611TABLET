@@ -91,6 +91,30 @@ const STRATS = {
     offer(S) { const o = S.offer; if (o.type === 'reserve' && firm(S) >= o.mw) Sim.acceptOffer(S); else Sim.declineOffer(S); },
   },
 };
+// Plant ageing (v40, multi-year scenarios): a maintainer reads each plant's page once a day and acts
+// on its payback estimates (Sim.maintenancePlan: at recent earnings, counting what's lost offline):
+// an overhaul or a rebuild that pays back within a game year (the rebuild if it's sooner), and either
+// only if it pays back by halfway through what's left of the scenario; storage gets new cells below
+// 80%. steadyM and firmM are steady and firm plus that.
+// Results (v40, Standard): Energy Transition steady $4.93B, steadyM $4.79B (73 overhauls, 41 rebuilds);
+// firm $3.41B, firmM $3.48B (44 and 74); all 3 stars. Company scenarios steady vs steadyM: Coastline
+// $637M / $622M, Highcountry $608M / $603M, Lakeside $937M / $937M, Wellspring $1.24B / $1.16B, all
+// 2 stars, but with 0-2 actions each, so the gaps there are the random stream shifting, not upkeep.
+// Ageing itself: a neglected fleet ends about 12% below no ageing at all (Transition steady $5.62B
+// before v40). Maintenance on these estimates roughly breaks even: plants pay back in weeks, so the
+// gain from fixing an old one is small next to building another, and the estimates are cautious.
+function maintain(S) {
+  const yr = Sim.yearDays(S), left = S.scenario.days - Sim.dayIndex(S);
+  for (const p of [...S.plants]) {
+    if (p.status !== 'online' || !Sim.AGEING[p.tech]) continue;
+    const m = Sim.maintenancePlan(S, p), o = m.overhaul, r = m.rebuild;
+    const ok = (x, lim) => x && x.payback != null && x.payback <= Math.min(lim, left / 2) && S.cash > x.cost * 1.5;
+    if (ok(r, yr) && (!ok(o, yr) || r.payback < o.payback)) { Sim.rebuild(S, p); continue; }
+    if (ok(o, yr)) Sim.overhaul(S, p);
+    if (Sim.AGEING[p.tech].store && (p.health ?? 1) < 0.8 && S.cash > Sim.refurbishCost(S, p) * 2) Sim.refurbish(S, p);
+  }
+}
+const withUpkeep = k => ({ day(S, d) { STRATS[k].day(S, d); maintain(S); }, offer: S => STRATS[k].offer(S), proposal: STRATS[k].proposal });
 // For the scenarios judged on more than money (v39): Clean Up's plans for the coal, and building big.
 STRATS.greener = { day(S, d) { if (d === 0) for (const p of S.plants) if (p.tech === 'coal') p.bid = 'peak'; STRATS.steady.day(S, d); }, offer: S => STRATS.steady.offer(S) };   // coal only at $300+
 STRATS.cleanplan = {   // close one coal unit, run the other only at peaks, build wind, solar and storage hard
@@ -160,6 +184,7 @@ function run(kind, seed, difficulty, days) {
   out.cap = S.days.reduce((a, r) => a + (r.capPay > 0 ? 1 : 0), 0); out.bust = S.bust ? 1 : 0;
   return out;
 }
+STRATS.steadyM = withUpkeep('steady'); STRATS.firmM = withUpkeep('firm');
 module.exports = { run, runScenario, STRATS };
 if (require.main === module && process.argv[2] === '--transition') {
   // node merit-order/test/balance.js --transition [strategies] [--long]

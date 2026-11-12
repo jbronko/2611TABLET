@@ -87,6 +87,14 @@ const SEEDS = {
         document.getElementById('toast').hidden = true;   // as above: no fading message before the first tap
       });
     },
+    // a worn plant's page in Highcountry: its condition, an overhaul and a rebuild
+    worn: async p => {
+      await p.click('#t-scenarios'); await p.click('[data-scenario="highcountry"]'); await p.click('#sc-go');
+      await p.waitForTimeout(150);
+      await p.evaluate(() => { const M = MeritOrder; M.setSpeed(0); M.state.cash = 1e9; M.renderAll(); document.getElementById('toast').hidden = true; });
+      await p.evaluate(() => [...document.querySelectorAll('#plants [data-plant]')].find(x => x.querySelector('.name').textContent === 'Kurri Gas Turbines').click());
+      await p.waitForTimeout(150);
+    },
     // the career's Trophies and records sheet, with an award on the shelf and some records
     trophies: async p => {
       await p.evaluate(() => MeritOrder.startCareer(true, 'standard'));

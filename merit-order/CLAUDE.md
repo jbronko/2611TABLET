@@ -99,6 +99,52 @@ are built, tested and published); this file is what's specific to Merit Order. C
   - Saves from before v36 (`store.scenario`) are moved to their key on load. A run key with no index
     entry is adopted, not deleted.
 - **Challenges**: 30 days, a shareable code (`MO-…`), highest company value wins.
+- **Plant ageing (v40):** only in the multi-year scenarios (the Energy Transition and the company
+  scenarios), once a game year in `transitionYear`. The career and the short scenarios never age.
+  - Each plant has `p.age`, which only a rebuild resets, and `p.wear`, which an overhaul cuts to 30%.
+  - Per year of wear (`AGEING`):
+    - wind and offshore: −1.2% and −1.0% output; solar −0.6%
+    - gas: +0.8–1% running cost and +8% breakdowns
+    - everything: +1–3% upkeep
+  - The effects come from `ageEffects` and are applied in `vreMW`, `vcOf`, `upkeepOf` and the
+    breakdown odds.
+  - **Past design life** (solar 25, wind 20, offshore 25, gas 30, hydro 50, batteries 15, long
+    storage 20), each year counts three times and an overhaul can't remove that part. Storage fades
+    twice as fast then.
+  - Output wear applies after the output cap (`vreMW`), so an upgraded or newer farm still loses it.
+  - **Better technology:** wind, offshore and solar built later in a scenario make more (`p.vintage`:
+    +1.5%, +1% and +1% a year, capped at +25%).
+  - **Overhaul** (`overhaul`): 6–12% of today's price (hydro: of its turbines), a day offline,
+    leaves 30% of the wear. Storage keeps its "new cells" refurbish, which now also cuts wear.
+  - **Rebuild** (`rebuild`): a new plant of today's design on the same site, same size, built
+    alongside. The old one keeps running until the new one connects, then it's knocked down (in
+    `step`'s construction loop; `p.replaces` / `p.replacedBy`).
+    - Price: today's price less the reused connection and 40% salvage of the old plant (paid at
+      once; the old plant's value drops to 0).
+    - Keeps the name, bids, storage and FCAS settings and the upgrade; age 0, today's vintage.
+    - Not offered for hydro or coal.
+  - `maintenancePlan` estimates each option's daily gain and payback at the plant's recent earnings
+    (`p.margin` and `p.eDay`, averaged daily). The plant page shows it, because maintenance only
+    pays where the plant earns. Worn solar in a late Transition full of cheap midday power often
+    isn't worth it.
+    - The estimate (`wearGain`) is deliberately cautious: more output is discounted for the share
+      the zone would curtail, for your own share of the region (extra output lowers the price your
+      other plants get) and ×0.7 for falling prices; a newer design's extra output counts at half;
+      and the whole gain is × `GAIN_CAUTION` (0.6). An overhaul also counts what it misses
+      offline; a rebuild doesn't (it's built alongside).
+    - **Balance (v40, `balance.js` steadyM/firmM):** a neglected fleet ends about 12% below no
+      ageing in the Transition (steady $5.62B → $4.93B), and every bot keeps its stars. Acting on
+      the estimates roughly breaks even (steadyM $4.79B, firmM $3.48B vs firm $3.41B): plants pay
+      back in weeks, so fixing an old one gains little against building another. Rebuilds pay where
+      a plant earns well, isn't curtailed and is far behind today's design. In the company
+      scenarios the bots make 0–2 maintenance moves, so differences there are the random stream.
+  - **Inherited fleets start old** (`age` in `owns`; `wear` is half the age).
+  - **Telling the player:** a worn tag on the plant cards, a condition card on the plant page, a
+    yearly ageing news line (one line, the most worn plant), and a "Plant condition" row in the year
+    report.
+  - Coal keeps its own ageing (`coalAge`) and closure dates.
+- **Menu (v40):** sections Your company / Play / Settings / Help (`.menu-h`). Recent days is part of
+  the Company report; Goals has the target icon.
 - **Away time** goes only to the game that was open when the app closed:
   - `store.last` names it at each save; on load the time since becomes that game's credit
     (`store.away`), used when it's next opened.

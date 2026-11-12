@@ -268,6 +268,15 @@ const Sim = (() => {
       const kept = (S.keepOpen && S.keepOpen.refs) || [];
       S.closeAt = Object.fromEntries(Object.entries(sc.closes).filter(([ref]) => !kept.includes(ref) && S.plants.some(p => p.ref === ref)));
     }
+    if (S.transition) {
+      const owns = (scenarioOf(S) || {}).owns || [];
+      for (const p of S.plants) {
+        if (!AGEING[p.tech] || p.age != null || p.status === 'building') continue;
+        const o = (owns.find(([rid]) => rid === p.ref) || [])[1] || {};
+        const yrs = Math.floor(Math.max(0, S.t - (p.built || 0)) / IPD / yearDaysOf(S));
+        p.age = (o.age || 0) + yrs; p.wear = Math.round((o.age || 0) / 2) + yrs;
+      }
+    }
     for (const r of S.rivals || []) {
       const m = /^Rival (battery|peaker) (\d+)$/.exec(r.name || '');
       if (m) r.name = rivalName(S, DEVELOPERS[(+m[2] - 1) % DEVELOPERS.length], m[1], r);
@@ -503,7 +512,7 @@ const Sim = (() => {
   function vcOf(S, p) {
     const T = TECH[p.tech];
     if (T.kind !== 'thermal') return T.vc;
-    return T.vc * (p.tech === 'coal' ? 1 : S.fuelMult) * (p.upg && p.tech === 'ccgt' ? 0.88 : 1);
+    return T.vc * (p.tech === 'coal' ? 1 : S.fuelMult) * (p.upg && p.tech === 'ccgt' ? 0.88 : 1) * ageEffects(p).vc;
   }
   // (storage has no emis of its own: without the || 0 a battery's output made the totals NaN, which
   // silently switched off emissions fines and broke challenge result codes)
@@ -554,7 +563,7 @@ const Sim = (() => {
     }
     // player
     // upgrades: trackers and repowering lift output about 20%, never above the plant's rating
-    const vreMW = p => { const T = TECH[p.tech], cf = (p.tech === 'solar' ? c.sun : Math.min(1, (T.steady || 0) + c.wind * (p.res ?? 1))); return Math.min(p.mw, p.mw * cf * (p.upg ? 1.2 : 1)); };
+    const vreMW = p => { const T = TECH[p.tech], cf = (p.tech === 'solar' ? c.sun : Math.min(1, (T.steady || 0) + c.wind * (p.res ?? 1))); return Math.min(p.mw, p.mw * cf * (p.upg ? 1.2 : 1) * (p.vintage || 1)) * ageEffects(p).out; };   // wear is lost availability: after the cap
     const zone = {};   // your wind and solar output in each zone with a line limit
     if (S.transition) for (const p of S.plants) {
       if (!running(p) || TECH[p.tech].kind !== 'vre') continue;
@@ -879,10 +888,19 @@ const Sim = (() => {
     for (const p of S.plants) {
       if (p.status === 'building') {
         p.buildLeft -= 1 / IPD;
-        if (p.buildLeft <= 0) { p.status = 'online'; p.today = { energy: 0, money: 0 }; addNews(S, 'good', `${p.name} is connected and trading.`); checkMissions(S); }
+        if (p.buildLeft <= 0) {
+          p.status = 'online'; p.today = { energy: 0, money: 0 };
+          const old = p.replaces && S.plants.find(x => x.id === p.replaces);
+          if (old) { S.plants = S.plants.filter(x => x !== old); retireRecord(S, old, p.salvage || 0); addNews(S, 'good', `The new ${p.name} is connected and trading; the old one has been knocked down.`); }
+          else addNews(S, 'good', `${p.name} is connected and trading.`);
+          delete p.replaces; checkMissions(S);
+        }
       } else if (p.status === 'upgrading') {
         p.upgLeft -= 1 / IPD;
         if (p.upgLeft <= 0) finishUpgrade(S, p);
+      } else if (p.status === 'overhaul') {
+        p.ohLeft -= 1 / IPD;
+        if (p.ohLeft <= 0) { p.status = 'online'; addNews(S, 'good', `${p.name} is back from its overhaul.`); }
       }
     }
 
@@ -960,7 +978,13 @@ const Sim = (() => {
       for (const k of ['retail', 'keepPay', 'overruns', 'rivalBuilt', 'rivalShelved']) Y[k] = (Y[k] || 0) + (d[k] || 0);
       Y.priceSum = (Y.priceSum || 0) + avg; Y.days = (Y.days || 0) + 1; Y.peak = Math.max(Y.peak || 0, ...d.demand); Y.curtailed = (Y.curtailed || 0) + (d.curtailed || 0);
     }
-    for (const p of S.plants) p.today = { energy: 0, money: 0 };
+    for (const p of S.plants) {
+      if (p.today && p.status === 'online') {   // recent earnings, for judging an overhaul or a rebuild
+        const m = p.today.money || 0, e = Math.max(0, p.today.energy || 0);
+        p.margin = p.margin == null ? m : p.margin * 0.85 + m * 0.15; p.eDay = p.eDay == null ? e : p.eDay * 0.85 + e * 0.15;
+      }
+      p.today = { energy: 0, money: 0 };
+    }
     S.today = freshDay();
 
     // rivals: hydro water budget refills, outages count down, breakdowns
@@ -983,7 +1007,7 @@ const Sim = (() => {
       if (p.status === 'outage') { p.outLeft--; if (p.outLeft <= 0) { p.status = 'online'; addNews(S, 'good', `${p.name} is repaired and back online.`); } }
       else if (p.status === 'online' && T.outage) {
         const roll = rnd(S, P), len = rnd(S, P);
-        const odds = T.outage * diff(S).outage * (p.upg && p.tech === 'peaker' ? 0.5 : 1) * (p.tech === 'coal' ? coalAge(S) * (isCompany(S) && activeEvent(S, 'heatwave') ? 2 : 1) : 1);
+        const odds = T.outage * diff(S).outage * ageEffects(p).brk * (p.upg && p.tech === 'peaker' ? 0.5 : 1) * (p.tech === 'coal' ? coalAge(S) * (isCompany(S) && activeEvent(S, 'heatwave') ? 2 : 1) : 1);
         if (roll < odds) {
           const major = p.tech === 'coal' && majorFailure(S, p, roll, odds);
           p.status = 'outage'; p.outLeft = major ? 6 + Math.floor(len * 7) : 1 + Math.floor(len * 2);
@@ -1077,7 +1101,7 @@ const Sim = (() => {
     const T = TECH[tech];
     return (T.upkeepMW ? mw * T.upkeepMW + (mwh ?? mw * T.hours) * T.upkeepMWh : mw * T.upkeep) * diff(S).upkeep;
   }
-  function upkeepOf(S, p) { return upkeepFor(S, p.tech, p.mw, TECH[p.tech].kind === 'storage' ? (p.mwh ?? p.mw * hoursOf(p)) : undefined); }
+  function upkeepOf(S, p) { return upkeepFor(S, p.tech, p.mw, TECH[p.tech].kind === 'storage' ? (p.mwh ?? p.mw * hoursOf(p)) : undefined) * ageEffects(p).up; }
 
   // ---- upgrades: one per plant ----
   const UPGRADES = {
@@ -1089,6 +1113,127 @@ const Sim = (() => {
     hydro:   { name: 'Extra turbine', days: 2, blurb: 'Another turbine adds 25% more power from the same reservoir, as far as the site allows.' },
     coal:    { name: 'Flexible operation retrofit', fixed: 600000, days: 3, blurb: 'Turns down to 30% and changes output twice as fast, so it loses less money when prices go negative.' },
   };
+  // ---- plants age, in the multi-year scenarios (the Energy Transition and the company scenarios) ----
+  // Once a game year every plant gains a year of age (only a rebuild resets it) and a year of wear (an
+  // overhaul removes 70%). Per year of wear: out = output lost, vc = running cost added, up = upkeep
+  // added, brk = breakdown odds added. Past its design life a plant wears three times as fast, and an
+  // overhaul can't remove that part: in the end, knock it down and rebuild. Wind, offshore and solar
+  // built later in a scenario make more (vint per year, up to +25%): turbines and panels improve.
+  // oh = overhaul cost as a share of today's build price (hydro: of its turbines), ohDays offline (a
+  // day: done in the quiet hours). A rebuild is built alongside: the old plant runs until it connects.
+  // Coal keeps its own ageing (more breakdowns each year, coalAge) and its closure dates.
+  const AGEING = {
+    solar:    { out: 0.006, up: 0.02, life: 25, oh: 0.08, ohDays: 1, vint: 0.01 },
+    wind:     { out: 0.012, up: 0.03, life: 20, oh: 0.12, ohDays: 1, vint: 0.015 },
+    offshore: { out: 0.010, up: 0.03, life: 25, oh: 0.12, ohDays: 1, vint: 0.01 },
+    peaker:   { vc: 0.008, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1 },
+    ccgt:     { vc: 0.010, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1 },
+    hydro:    { up: 0.01, life: 50, oh: 0.06, ohDays: 1, noRebuild: true },
+    battery:  { up: 0.02, life: 15, store: true },
+    ldes:     { up: 0.02, life: 20, store: true },
+  };
+  const OVERHAUL_KEEPS = 0.3, VINTAGE_CAP = 0.25, WORN_AT = 1 / 3;
+  // Estimates of what maintenance earns are counted at 60%: recent earnings swing, and the market moves.
+  const GAIN_CAUTION = 0.6;
+  // Years of wear that count: the wear, plus each year past design life twice more.
+  function wearOf(p) { const A = AGEING[p.tech]; return A ? (p.wear || 0) + 2 * Math.max(0, (p.age || 0) - A.life) : 0; }
+  function ageEffects(p) {
+    const A = AGEING[p.tech], w = wearOf(p);
+    if (!A || !w) return { w: 0, out: 1, vc: 1, up: 1, brk: 1 };
+    return { w, out: Math.max(0.5, 1 - (A.out || 0) * w), vc: 1 + (A.vc || 0) * w, up: 1 + (A.up || 0) * w, brk: 1 + (A.brk || 0) * w };
+  }
+  // A plant's condition for the page, the cards and the news.
+  function condition(p) {
+    const A = AGEING[p.tech]; if (!A) return null;
+    const e = ageEffects(p), age = Math.floor(p.age || 0), past = age > A.life, worn = past || wearOf(p) >= A.life * WORN_AT, bits = [];
+    if (A.out) bits.push(`output −${Math.round((1 - e.out) * 100)}%`);
+    if (A.vc) bits.push(`running cost +${Math.round((e.vc - 1) * 100)}%`);
+    if (A.brk) bits.push(`breakdowns ×${e.brk.toFixed(1)}`);
+    bits.push(`upkeep +${Math.round((e.up - 1) * 100)}%`);
+    return { age, life: A.life, past, worn, wear: wearOf(p), effects: e, text: e.w ? bits.join(', ') : 'as good as new' };
+  }
+  const vintageNow = (S, tech) => { const A = AGEING[tech]; return S.transition && A && A.vint ? 1 + Math.min(VINTAGE_CAP, A.vint * yearOf(S)) : 1; };
+  function overhaulCost(S, p) {
+    const A = AGEING[p.tech]; if (!A || !A.oh) return null;
+    const base = p.tech === 'hydro' ? TECH.hydro.capexMW * p.mw * S.costMult.hydro * diff(S).capex : priceOf(S, p.tech, p.mw, { site: p.site, mwh: p.mwh });
+    return Math.round(base * A.oh / 100) * 100;
+  }
+  // Overhaul: most of the wear goes (not the years past design life); offline for a few days.
+  function overhaul(S, p) {
+    const A = AGEING[p.tech];
+    if (!A || !A.oh || p.status !== 'online' || p.replacedBy || !((p.wear || 0) >= 1)) return { ok: false, why: 'unavailable' };
+    const cost = overhaulCost(S, p);
+    if (S.cash < cost) return { ok: false, why: 'cash' };
+    S.cash -= cost; p.value += cost; p.capital += cost;
+    p.wear = Math.round(p.wear * OVERHAUL_KEEPS * 10) / 10; p.status = 'overhaul'; p.ohLeft = A.ohDays; p.overhauls = (p.overhauls || 0) + 1;
+    addNews(S, 'info', `${p.name} is offline for ${A.ohDays} day${A.ohDays === 1 ? '' : 's'} for an overhaul (${fmtMoney(cost)}).`);
+    return { ok: true, cost };
+  }
+  // Knock down and rebuild: a new plant of today's design on the same site, same size. The grid
+  // connection is reused, and the old plant is salvaged as if sold (40% of its book value).
+  function rebuildCost(S, p) {
+    const A = AGEING[p.tech], T = TECH[p.tech];
+    if (!A || A.noRebuild) return null;
+    const st = siteOf(p.tech, p.site), price = priceOf(S, p.tech, p.mw, { site: p.site, mwh: p.mwh });
+    const conn = Math.round((T.connect || 0) * (st.connect ?? 1) * S.costMult[p.tech] * diff(S).capex / 100) * 100, salvage = Math.round(p.value * 0.4);
+    return { price, conn, salvage, net: Math.max(0, price - conn - salvage), days: buildDays(p.tech, p.mw, p.site) };
+  }
+  // What a rebuild changes: output against today's (wind and solar), and the wear that goes.
+  function rebuildGain(S, p) {
+    const e = ageEffects(p);
+    return { out: vintageNow(S, p.tech) / ((p.vintage || 1) * e.out) - 1, vc: e.vc - 1, up: e.up - 1, brk: e.brk - 1 };
+  }
+  // The new plant is built alongside on the same site (its room is the old plant's); the old one keeps
+  // running until the new one connects, then it's knocked down (see step). Salvage is paid now.
+  function rebuild(S, p) {
+    const c = rebuildCost(S, p);
+    if (!c || !['online', 'outage'].includes(p.status) || p.replacedBy) return { ok: false, why: 'unavailable' };
+    if (S.cash < c.net) return { ok: false, why: 'cash' };
+    const keep = { name: p.name, bid: p.bid, bands: p.bands && JSON.parse(JSON.stringify(p.bands)), strategy: p.strategy, stratSet: p.stratSet, sbands: p.sbands && JSON.parse(JSON.stringify(p.sbands)), fcasRaise: p.fcasRaise, fcasLower: p.fcasLower, cis: p.cis, upg: p.upg };   // built to today's spec: its upgrade comes with it
+    const at = S.plants.indexOf(p);
+    S.plants.splice(at, 1);   // out of the way while the new one takes its room
+    S.cash += c.salvage + c.conn;   // build() charges the full price: take off the salvage and the reused connection
+    const r = build(S, p.tech, p.mw, { site: p.site, mwh: p.mwh });
+    S.plants.splice(at, 0, p);
+    if (!r.ok) { S.cash -= c.salvage + c.conn; return r; }
+    S.news.shift();   // not "construction has started"
+    for (const [k, v] of Object.entries(keep)) if (v !== undefined) r.plant[k] = v;
+    Object.assign(r.plant, { value: c.price - c.conn, capital: c.price - c.conn, rebuilt: (p.rebuilt || 0) + 1, replaces: p.id, salvage: c.salvage });
+    p.replacedBy = r.plant.id; p.value = 0;   // its salvage is paid: it no longer counts in the company's value
+    S.plants.splice(S.plants.indexOf(r.plant), 1); S.plants.splice(at + 1, 0, r.plant);   // next to the old one
+    addNews(S, 'info', `Rebuilding ${p.name}: ${fmtMoney(c.net)} after ${fmtMoney(c.salvage)} for the old plant and its reused connection. The old one keeps running until the new one connects in ${c.days} day${c.days === 1 ? '' : 's'}.`);
+    return { ok: true, plant: r.plant, cost: c.net };
+  }
+  // What a change in wear is worth a day at the plant's recent earnings (margin and energy averaged
+  // over the last week or so): more output, cheaper running, fewer breakdowns, cheaper upkeep.
+  function wearGain(S, p, now, after, vintRatio = 1) {
+    const T = TECH[p.tech], margin = Math.max(0, p.margin || 0), A = AGEING[p.tech];
+    let g = 0;
+    if (A.out) {   // more output: less what the zone's line would curtail, and less what it takes off your other plants' price
+      const L = p.life || {}, cut = (L.curtailed || 0) / Math.max(1, (L.energy || 0) + (L.curtailed || 0));
+      const share = S.days.slice(-7).reduce((a, d) => a + (d.share || 0), 0) / Math.max(1, Math.min(7, S.days.length));
+      // (better turbines and panels help in light wind and sun, not when the plant is already at its rating: count half)
+      const vr = 1 + (vintRatio - 1) * 0.5;
+      g += margin * (after.out * vr / now.out - 1) * (1 - cut) * (1 - share) * 0.7;   // and prices for wind and solar tend to fall as more is built
+    }
+    if (A.vc) g += (p.eDay || 0) * T.vc * S.fuelMult * (p.upg && p.tech === 'ccgt' ? 0.88 : 1) * (now.vc - after.vc);
+    if (A.brk && T.outage) g += (now.brk - after.brk) * T.outage * diff(S).outage * (p.mw * 150 * diff(S).upkeep + 2 * margin);
+    g += upkeepFor(S, p.tech, p.mw, T.kind === 'storage' ? (p.mwh ?? p.mw * hoursOf(p)) : undefined) * (now.up - after.up);
+    return g * GAIN_CAUTION;
+  }
+  const effectsAt = (A, wear, age) => { const w = wear + 2 * Math.max(0, age - A.life); return { out: Math.max(0.5, 1 - (A.out || 0) * w), vc: 1 + (A.vc || 0) * w, up: 1 + (A.up || 0) * w, brk: 1 + (A.brk || 0) * w }; };
+  // An overhaul and a rebuild, side by side: cost, the earnings lost while it's offline, a day's gain
+  // at recent earnings, and days to pay back both (null without enough history, or if it never would).
+  function maintenancePlan(S, p) {
+    const A = AGEING[p.tech]; if (!A) return null;
+    const now = ageEffects(p), known = p.margin != null, margin = Math.max(0, p.margin || 0), out = {};
+    const pay = (cost, days, gain) => ({ cost, lost: known ? days * margin : null, gain: known ? gain : null, payback: known && gain > 0 ? (cost + days * margin) / gain : null, days });
+    const oc = overhaulCost(S, p);
+    if (oc != null && (p.wear || 0) >= 1) out.overhaul = pay(oc, A.ohDays, wearGain(S, p, now, effectsAt(A, (p.wear || 0) * OVERHAUL_KEEPS, p.age || 0)));
+    const rc = rebuildCost(S, p);
+    if (rc && !p.replacedBy) out.rebuild = pay(rc.net, 0, wearGain(S, p, now, effectsAt(A, 0, 0), vintageNow(S, p.tech) / (p.vintage || 1)));
+    return out;
+  }
   // Refurbishing worn storage: new cells for about half of today's cost of that much storage.
   function refurbishCost(S, p) {
     const T = TECH[p.tech];
@@ -1098,7 +1243,7 @@ const Sim = (() => {
     if (!TECH[p.tech].fade || (p.health ?? 1) > 0.95 || !running(p)) return { ok: false, why: 'unavailable' };
     const cost = refurbishCost(S, p);
     if (S.cash < cost) return { ok: false, why: 'cash' };
-    S.cash -= cost; p.value += cost; p.capital += cost; p.health = 1;
+    S.cash -= cost; p.value += cost; p.capital += cost; p.health = 1; if (p.wear) p.wear = Math.round(p.wear * OVERHAUL_KEEPS * 10) / 10;
     addNews(S, 'good', `${p.name} has new cells: back to its full ${Math.round(p.mwh ?? p.mw * hoursOf(p)).toLocaleString()} MWh.`);
     return { ok: true, cost };
   }
@@ -1347,6 +1492,7 @@ const Sim = (() => {
       bid: T.kind === 'vre' ? 'nonneg' : T.kind === 'thermal' ? 'cost' : undefined,
       strategy: T.kind === 'storage' ? 'arb' : undefined, soc: T.kind === 'storage' ? mwh * 0.5 : 0, last: 0, fcasRaise: T.fcas ? true : undefined, fcasLower: T.fcasLower ? true : undefined, today: { energy: 0, money: 0 },
       capital: cost, life: freshLife() };
+    if (vintageNow(S, tech) > 1) p.vintage = vintageNow(S, tech);
     freshBands(S, p);
     S.plants.push(p);
     addNews(S, 'info', `Construction has started on ${p.name} (${fmtMW(mw)}${mwh ? `, ${Math.round(mwh).toLocaleString()} MWh` : ''}) at ${st.name}. It connects in ${days} day${days === 1 ? '' : 's'}.`);
@@ -1555,7 +1701,7 @@ const Sim = (() => {
     { id: 'highcountry', group: 'company', name: 'Highcountry Hydro', years: 5, yearDays: 60, startDoy: 0, seed: 7707, cash: 2000000, idle: true, transition: true,
       blurb: 'The mountain hydro company. Run the hydro and the gas peakers that back up the grid, and finish Tunnel Two, a giant pumped hydro scheme that is already late.',
       intro: 'You own the Snowgum hydro scheme and two fleets of gas peakers, the region’s backup. Tunnel Two (1,000 MW of pumped hydro) is half dug. Rivals’ coal closes around you.',
-      owns: [['snw', { tech: 'hydro', site: 'snowy', name: 'Snowgum Hydro' }], ['kur', { tech: 'peaker', site: 'port', name: 'Kurri Gas Turbines' }], ['cst', { tech: 'peaker', site: 'gas-hub', name: 'Coastal Peakers' }]],
+      owns: [['snw', { tech: 'hydro', site: 'snowy', name: 'Snowgum Hydro', age: 50 }], ['kur', { tech: 'peaker', site: 'port', name: 'Kurri Gas Turbines', age: 25 }], ['cst', { tech: 'peaker', site: 'gas-hub', name: 'Coastal Peakers', age: 15 }]],
       setup: S => {
         const p = givePlant(S, 'hydro', 1000, { site: 'tumut', name: 'Tunnel Two', tunnel: true });
         p.status = 'building'; p.buildLeft = p.buildDays = 2 * S.yearDays + 5;
@@ -1588,7 +1734,7 @@ const Sim = (() => {
     { id: 'lakeside', group: 'company', name: 'Lakeside Power', years: 4, yearDays: 60, startDoy: 0, seed: 8808, cash: 1500000, idle: true, transition: true,
       blurb: 'The country’s biggest coal generator has promised to close it all. Shut Black Hill unit by unit, keep the lights on, and rebuild the company clean.',
       intro: 'You own all four Black Hill coal units (2,640 MW), the Ash Hill peaker and 400 MW of wind. Your coal closes on a fixed schedule: one unit at the start of each year from year 2.',
-      owns: [['bh1'], ['bh2'], ['bh3'], ['bh4'], ['ash', { tech: 'peaker', site: 'gas-hub', name: 'Ash Hill Peaker' }], ['rwind', { tech: 'wind', mw: 400, site: 'tablelands', name: 'Kestrel Ridge Wind' }]],
+      owns: [['bh1'], ['bh2'], ['bh3'], ['bh4'], ['ash', { tech: 'peaker', site: 'gas-hub', name: 'Ash Hill Peaker', age: 20 }], ['rwind', { tech: 'wind', mw: 400, site: 'tablelands', name: 'Kestrel Ridge Wind', age: 12 }]],
       unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.9, 0.45], emisFine: 120, firm: 2940, sites: { 'bh-yard': 2, 'bh-ldes': 3 },
       closes: { bh1: 2, bh2: 3, bh3: 4 },
       timeline: [
@@ -1614,7 +1760,7 @@ const Sim = (() => {
     { id: 'wellspring', group: 'company', name: 'Wellspring Energy', years: 4, yearDays: 60, startDoy: 0, seed: 9909, cash: 1500000, idle: true, transition: true,
       blurb: 'Gas and the region’s last big coal station. The government wants the coal kept open; every winter the gas gets dear.',
       intro: 'You own Black Hill 3 and 4 (1,320 MW of coal), the Tallawang combined-cycle plant and the Mulga Creek peaker. The coal is due to close at the start of year 3, and gas runs short every winter.',
-      owns: [['bh3'], ['bh4'], ['tal', { tech: 'ccgt', site: 'gas-hub', name: 'Tallawang Gas' }], ['mul', { tech: 'peaker', site: 'port', name: 'Mulga Creek Peaker' }]],
+      owns: [['bh3'], ['bh4'], ['tal', { tech: 'ccgt', site: 'gas-hub', name: 'Tallawang Gas', age: 12 }], ['mul', { tech: 'peaker', site: 'port', name: 'Mulga Creek Peaker', age: 22 }]],
       unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.85, 0.55], emisFine: 120, firm: 2800, sites: { 'bh-yard': 2 },
       closes: { bh3: 3, bh4: 3 },
       script: winters(4, 28, [['gascrunch', 5], ['cold', 3, 3]]),
@@ -1643,7 +1789,7 @@ const Sim = (() => {
     { id: 'coastline', group: 'company', name: 'Coastline Energy', years: 4, yearDays: 60, startDoy: 152, seed: 1212, cash: 1500000, idle: true, transition: true,
       blurb: 'A million customers to supply. You’ve sold 800 MW around the clock at a fixed price, and you set next year’s price. Stay able to supply them through cold, dear winters and a coal closure.',
       intro: 'You own Black Hill 2 (660 MW of coal, closing at the start of year 3), the Wollemi combined-cycle plant and the Mulga Creek peaker, and you supply your retail customers: 800 MW around the clock at a fixed price. Before each renewal you set the price: dearer keeps fewer customers.',
-      owns: [['bh2'], ['wol', { tech: 'ccgt', site: 'gas-hub', name: 'Wollemi Gas' }], ['mul', { tech: 'peaker', site: 'port', name: 'Mulga Creek Peaker' }]],
+      owns: [['bh2'], ['wol', { tech: 'ccgt', site: 'gas-hub', name: 'Wollemi Gas', age: 18 }], ['mul', { tech: 'peaker', site: 'port', name: 'Mulga Creek Peaker', age: 22 }]],
       unlock: ['wind', 'ccgt', 'hydro'], rivalPlan: { wind: 100, solar: 120, battery: 60 }, emis: [0.8, 0.5], emisFine: 120, firm: 1510,
       closes: { bh2: 3 },
       script: winters(4, 3, [['cold', 3], ['gascrunch', 4, 2], ['still', 4, 8]]),
@@ -1720,15 +1866,19 @@ const Sim = (() => {
       S.evLoad = (S.evLoad || 0) + (S.evGrow || 0);
       const grow = (id, mw) => { const r = rival(S, id); if (r) { r.cap += mw; if (r.tech === 'battery') r.soc = Math.min(r.soc, r.cap * r.hours); } };
       grow('rwind', S.rivalPlan.wind); grow('rsol', S.rivalPlan.solar); grow('rbat', S.rivalPlan.battery);
-      // storage wears out: batteries lose about 2.5% of their capacity a year, long-duration storage 1%
+      // every plant ages a year (see AGEING); storage wears out too: batteries lose about 2.5% of their
+      // capacity a year, long-duration storage 1% (twice that past design life)
       for (const p of S.plants) {
+        if (p.status === 'building') continue;
+        if (AGEING[p.tech]) { p.age = (p.age || 0) + 1; p.wear = (p.wear || 0) + 1; }
         const f = TECH[p.tech].fade;
-        if (!f || p.status === 'building') continue;
-        const was = p.health ?? 1;
-        p.health = Math.max(0.5, Math.round((was - f) * 1000) / 1000); p.soc = Math.min(p.soc, storeCap(p));
+        if (!f) continue;
+        const was = p.health ?? 1, past = (p.age || 0) > AGEING[p.tech].life;
+        p.health = Math.max(0.5, Math.round((was - f * (past ? 2 : 1)) * 1000) / 1000); p.soc = Math.min(p.soc, storeCap(p));
         if (was >= 0.8 && p.health < 0.8) addNews(S, 'bad', `${p.name} can now hold only ${Math.round(p.health * 100)}% of what it could when new. Refurbish it from its page.`);
       }
     }
+    if (y > 1) ageingNews(S);
     const N = yearsOf(S), TL = timelineOf(S), em = (scenarioOf(S) || {}).emis || [0.7, 0.05];
     S.emisTarget = Math.round((em[0] + (em[1] - em[0]) * (y - 1) / Math.max(1, N - 1)) * 100) / 100;
     for (const e of TL.filter(e => e.year === y)) { addNews(S, e.close ? 'bad' : 'info', `Year ${y}: ${e.text}`); if (e.apply) e.apply(S); }
@@ -1744,10 +1894,24 @@ const Sim = (() => {
     }
   }
   // A company scenario's own lines in the year report: [label, value, tone] (tone 'up', 'down' or '').
+  // Once a year: one line about your most worn plants (not one line per plant).
+  function ageingNews(S) {
+    const worn = S.plants.map(p => ({ p, c: condition(p) })).filter(x => x.c && x.c.worn && x.p.status !== 'building').sort((a, b) => b.c.wear / b.c.life - a.c.wear / a.c.life);
+    if (!worn.length) return;
+    const { p, c } = worn[0];
+    addNews(S, 'info', `Ageing: ${p.name} is ${c.age} years old${c.past ? ', past its design life,' : ''} (${c.text}).${worn.length > 1 ? ` ${worn.length - 1} more of your plants ${worn.length > 2 ? 'are' : 'is'} worn.` : ''} Overhaul or rebuild from a plant's page.`);
+  }
+  function conditionRow(S) {
+    const all = S.plants.map(p => ({ p, c: condition(p) })).filter(x => x.c && x.p.status !== 'building');
+    const worn = all.filter(x => x.c.worn), past = all.filter(x => x.c.past);
+    if (!worn.length) return null;
+    const w = worn.sort((a, b) => b.c.wear / b.c.life - a.c.wear / a.c.life)[0];
+    return ['Plant condition', `${worn.length} worn${past.length ? `, ${past.length} past design life` : ''} (most worn: ${w.p.name}, ${w.c.text})`, past.length ? 'down' : ''];
+  }
   function reportRows(S, Y) {
-    const sc = scenarioOf(S);
-    if (!sc || sc.group !== 'company') return [];
-    const rows = [];
+    const sc = scenarioOf(S), rows = [], cond = conditionRow(S);
+    if (cond) rows.push(cond);
+    if (!sc || sc.group !== 'company') return rows;
     if (Y.energy > 0 && Y.emis != null) { const i = Y.emis / Y.energy; rows.push(['Emissions', `${i.toFixed(2)} t/MWh (target ${(Y.emisTarget ?? 0).toFixed(2)})`, i > (Y.emisTarget ?? 1) ? 'down' : 'up']); }
     if (sc.firm) rows.push(['Your firm plant', `${fmtMW(ownFirm(S))} (the first star needs ${fmtMW(sc.firm)})`, ownFirm(S) >= sc.firm ? 'up' : 'down']);
     if (Y.rivalBuilt || Y.rivalShelved) rows.push(['Rival projects', `${Y.rivalBuilt || 0} went ahead, ${Y.rivalShelved || 0} shelved`, '']);
@@ -1812,6 +1976,7 @@ const Sim = (() => {
     S.unlocked[tech] = true;
     const p = givePlant(S, tech, mw, { site: o.site, name: o.name || r.name, ref: r.id });
     S.unlocked[tech] = was;
+    if (o.age) { p.age = o.age; p.wear = Math.round(o.age / 2); }   // old, and overhauled now and then
     return p;
   }
   // Your own coal closes on the scheduled day (the notice was given long ago).
@@ -2154,7 +2319,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, rivalInvestment, regionFull, fullNote, spikeNews, SPIKE, AWARDS, judgeAwards, freshMonth, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, rivalInvestment, regionFull, fullNote, spikeNews, SPIKE, AWARDS, judgeAwards, freshMonth, AGEING, ageEffects, condition, overhaul, overhaulCost, rebuild, rebuildCost, rebuildGain, vintageNow, maintenancePlan, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };

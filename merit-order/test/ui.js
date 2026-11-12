@@ -855,6 +855,44 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.context().close();
   }
 
+  // 8q. Ageing on the plant page (overhaul and rebuild), worn tags on the cards; the menu in sections.
+  {
+    const p = await page();
+    await wipe(p);
+    await p.click('#t-scenarios'); await p.waitForTimeout(200); await p.click('[data-scenario="highcountry"]'); await p.waitForTimeout(150); await scGo(p);
+    await state(p, () => { const M = MeritOrder, S = M.state; M.setSpeed(0); S.cash = 1e9; M.renderAll(); });
+    for (let k = 0; k < 4 && !(await p.$eval('#sh-info', x => x.hidden)); k++) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    const card = name => p.$eval(`#plants [data-plant]:has(.name:text-is("${name}"))`, x => x.querySelector('.aged').textContent).catch(() => p.evaluate(n => { const el = [...document.querySelectorAll('#plants [data-plant]')].find(x => x.querySelector('.name').textContent === n); return el ? el.querySelector('.aged').textContent : null; }, name));
+    check('worn plants say so on their cards', /Worn · 25 years old/.test(await card('Kurri Gas Turbines')) && /Worn · 50 years old/.test(await card('Snowgum Hydro')));
+    const open = async name => { await p.evaluate(n => [...document.querySelectorAll('#plants [data-plant]')].find(x => x.querySelector('.name').textContent === n).click(), name); await p.waitForTimeout(250); };
+    await open('Kurri Gas Turbines');
+    const pg = await p.textContent('#p-actions');
+    check('a worn plant’s page shows its condition, an overhaul and a rebuild', /Condition: worn/.test(pg) && /Age 25 years \(design life 30\)/.test(pg) && /running cost \+10%, breakdowns ×2\.0, upkeep \+32%/.test(pg) && !!(await p.$('[data-overhaul]')) && !!(await p.$('[data-rebuild]')), pg.slice(0, 200));
+    await p.$eval('#p-actions', x => x.scrollIntoView()); await p.waitForTimeout(100);
+    await shot(p, 'plant-worn');
+    await p.click('[data-overhaul]'); await p.waitForTimeout(200);
+    check('…the overhaul takes it offline and takes away most of the wear', await state(p, () => { const q = MeritOrder.state.plants.find(x => x.name === 'Kurri Gas Turbines'); return q.status === 'overhaul' && q.wear < 5; }) && /Overhaul under way/.test(await p.textContent('#p-actions')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    await state(p, () => { MeritOrder.state.plants.find(x => x.name === 'Coastal Peakers').wear = 12; });   // worn: a rebuild is offered
+    await open('Coastal Peakers');
+    await p.click('[data-rebuild]'); await p.waitForTimeout(100);
+    check('…a rebuild asks for a second tap', /Tap again/.test(await p.textContent('[data-rebuild]')));
+    await p.click('[data-rebuild]'); await p.waitForTimeout(250);
+    check('…and builds the new one alongside, keeping the name; the old one runs until it connects', await state(p, () => { const q = MeritOrder.state.plants.filter(x => x.name === 'Coastal Peakers'); return q.length === 2 && q[0].status === 'online' && !!q[0].replacedBy && q[1].status === 'building' && !q[1].age && !q[1].wear; }) && /Coastal Peakers/.test(await p.textContent('#p-top')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    check('…its card says it’s being replaced', /Being replaced · [\d.]+ days/.test(await card('Coastal Peakers')));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    // the menu: sections, a different icon for Goals and Trophies, Recent days in the Company report
+    await p.click('#open-menu'); await p.waitForTimeout(150);
+    const heads = await p.$$eval('#sh-menu .menu-h', xs => xs.map(x => x.textContent).join('|'));
+    check('the menu is in sections', heads === 'Your company|Play|Settings|Help' && !(await p.$('#m-report')), heads);
+    check('…Goals and Trophies have different icons', (await p.$eval('#m-goals use', x => x.getAttribute('href'))) === '#i-target' && (await p.$eval('#m-trophies use', x => x.getAttribute('href'))) === '#i-trophy');
+    await shot(p, 'menu');
+    await p.click('#m-company'); await p.waitForTimeout(300);
+    check('…and Recent days is part of the Company report', /Recent days/.test(await p.textContent('#i-body')));
+    await p.context().close();
+  }
+
   // 8i. 64x: offered, and really twice as fast as 32x (the loop's per-frame cap doesn't hold it back).
   {
     const p = await page();

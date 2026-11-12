@@ -186,6 +186,7 @@
   .plant .name { font-weight: 700; font-size: 14.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .plant .sub { font-size: 12.5px; color: var(--ink-2); }
   .plant .closes { display: block; color: var(--amber); font-weight: 700; } .plant .closes:empty { display: none; }
+  .plant .aged { display: block; color: var(--amber); font-weight: 650; } .plant .aged.bad { color: var(--bad); } .plant .aged:empty { display: none; }
   .plant .bar { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
   .plant .bar i { display: block; height: 100%; border-radius: inherit; transition: width 0.4s ease; }
   .plant .row { display: flex; justify-content: space-between; font-size: 13px; gap: 8px; }
@@ -228,6 +229,8 @@
   .trophies li > div { display: grid; gap: 2px; } .trophies li span { font-size: 13.5px; color: var(--ink-2); }
   .trophies li .i { flex: none; margin-top: 2px; color: var(--ink-3); } .trophies li.won .i, .trophies .count { color: var(--amber); }
   .trophies li:not(.won) b { color: var(--ink-2); }
+  .menu-h { margin: 14px 4px 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .menu-h:first-child { margin-top: 0; }
   .build-full { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink); font-size: 14.5px; }
   .card { text-align: left; border-radius: 14px; padding: 14px; background: var(--panel-2); border: 1px solid var(--line); display: grid; gap: 10px; align-content: start; transition: transform 0.12s ease; }
   .card .head { display: flex; gap: 10px; align-items: center; }
@@ -340,6 +343,7 @@
   <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.8M12 17v.3"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z"/></symbol>
   <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8"/></symbol>
 </svg>
 
 <!-- Title -->
@@ -360,7 +364,7 @@
       </div>
     </div>
     <!-- the same number as VERSION in sw.js: test/ui.js checks they match -->
-    <div class="title-version"><span id="t-version">Version 39</span> · <button type="button" data-check-updates>Check for updates</button></div>
+    <div class="title-version"><span id="t-version">Version 40</span> · <button type="button" data-check-updates>Check for updates</button></div>
   </div>
 </section>
 
@@ -459,25 +463,28 @@
 <div class="backdrop" id="sh-menu" hidden><section class="sheet narrow" role="dialog" aria-modal="true" aria-labelledby="m-heading">
   <div class="sheet-head"><h2 id="m-heading">Menu</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-close"/></svg></button></div>
   <div class="menu-list">
-    <button type="button" class="switch-row" id="m-goals"><span><svg class="i"><use href="#i-trophy"/></svg> Goals</span><span class="num" id="m-goals-n"></span></button>
-    <button type="button" class="switch-row" id="m-report"><span>Recent days</span></button>
-    <button type="button" class="switch-row" id="m-share"><span><svg class="i"><use href="#i-share"/></svg> Share your company</span></button>
-    <button type="button" class="switch-row" id="m-scenarios"><span><svg class="i"><use href="#i-star"/></svg> Scenarios</span><span class="num" id="m-scenarios-n"></span></button>
-    <button type="button" class="switch-row" id="m-challenge"><span><svg class="i"><use href="#i-flag"/></svg> Challenges</span></button>
-    <button type="button" class="switch-row" id="m-trophies"><span><svg class="i"><use href="#i-trophy"/></svg> Trophies and records</span><span class="num" id="m-trophies-n"></span></button>
-    <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
-    <button type="button" class="switch-row" id="m-tour"><span>Show me around<small>Restart the getting-started missions</small></span></button>
-    <button type="button" class="switch-row" id="m-company"><span>Company report</span></button>
-    <button type="button" class="switch-row" id="m-updates" data-check-updates><span>Check for updates</span></button>
-    <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Timeline</span></button>
+    <h3 class="menu-h">Your company</h3>
+    <button type="button" class="switch-row" id="m-company"><span>Company report<small>Value, accounts, recent days and every plant’s record</small></span></button>
     <button type="button" class="switch-row" id="m-contracts"><span>Contracts</span><span class="num" id="m-contracts-n"></span></button>
     <button type="button" class="switch-row" id="m-loans"><span>Bank loans</span><span class="num" id="m-loans-n"></span></button>
-    <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive (year reports and scenario decisions always pause)</small></span><span class="switch"></span></button>
-    <button type="button" class="switch-row" id="m-idle" role="switch" aria-checked="true"><span>Keep trading while I’m away<small>Up to 7 game days each time you leave: your company and the Energy Transition</small></span><span class="switch"></span></button>
+    <button type="button" class="switch-row" id="m-goals"><span><svg class="i"><use href="#i-target"/></svg> Goals</span><span class="num" id="m-goals-n"></span></button>
+    <button type="button" class="switch-row" id="m-trophies"><span><svg class="i"><use href="#i-trophy"/></svg> Trophies and records</span><span class="num" id="m-trophies-n"></span></button>
+    <button type="button" class="switch-row" id="m-timeline" hidden><span><svg class="i"><use href="#i-flag"/></svg> Timeline</span></button>
+    <button type="button" class="switch-row" id="m-share"><span><svg class="i"><use href="#i-share"/></svg> Share your company</span></button>
     <button type="button" class="switch-row" id="m-rename"><span>Rename company</span></button>
+    <h3 class="menu-h">Play</h3>
+    <button type="button" class="switch-row" id="m-scenarios"><span><svg class="i"><use href="#i-star"/></svg> Scenarios</span><span class="num" id="m-scenarios-n"></span></button>
+    <button type="button" class="switch-row" id="m-challenge"><span><svg class="i"><use href="#i-flag"/></svg> Challenges</span></button>
     <button type="button" class="switch-row danger" id="m-restart" hidden><span>Restart this scenario</span></button>
     <button type="button" class="switch-row" id="m-title"><span>Title screen</span></button>
     <button type="button" class="switch-row danger" id="m-reset"><span>Start a new company</span></button>
+    <h3 class="menu-h">Settings</h3>
+    <button type="button" class="switch-row" id="m-autopause" role="switch" aria-checked="true"><span>Pause for decisions<small>Stop the clock when an offer, a request or new contracts arrive (year reports and scenario decisions always pause)</small></span><span class="switch"></span></button>
+    <button type="button" class="switch-row" id="m-idle" role="switch" aria-checked="true"><span>Keep trading while I’m away<small>Up to 7 game days each time you leave: your company and the Energy Transition</small></span><span class="switch"></span></button>
+    <button type="button" class="switch-row" id="m-updates" data-check-updates><span>Check for updates</span></button>
+    <h3 class="menu-h">Help</h3>
+    <button type="button" class="switch-row" id="m-help"><span><svg class="i"><use href="#i-help"/></svg> How it works</span></button>
+    <button type="button" class="switch-row" id="m-tour"><span>Show me around<small>Restart the getting-started missions</small></span></button>
   </div>
 </section></div>
 
@@ -957,6 +964,7 @@
     if (p.status === 'outage') return `Broken down · back in ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}`;
     if (p.status === 'retiring') return `Closing in ${p.retireLeft} day${p.retireLeft > 1 ? 's' : ''}`;
     if (p.status === 'upgrading') return `Upgrading · ${Math.max(0.1, p.upgLeft).toFixed(1)} days left`;
+    if (p.status === 'overhaul') return `Overhaul · ${Math.max(0.1, p.ohLeft).toFixed(1)} days left`;
     const now = p.now || 0;
     if (T.kind === 'storage') return now > 0.5 ? `Selling ${fmtMW(now)}` : now < -0.5 ? `Charging ${fmtMW(-now)}` : `Holding · ${Math.round(p.soc / Sim.storeCap(p) * 100)}% full`;
     let tag = '';
@@ -970,6 +978,7 @@
   function plantFrac(p) {
     const T = TECH[p.tech];
     if (p.status === 'upgrading') return 1 - p.upgLeft / Sim.UPGRADES[p.tech].days;
+    if (p.status === 'overhaul') return 1 - p.ohLeft / Sim.AGEING[p.tech].ohDays;
     return running(p) ? (T.kind === 'storage' ? p.soc / Sim.storeCap(p) : Math.max(0, p.now || 0) / p.mw) : p.status === 'building' ? 1 - p.buildLeft / T.build : 0;
   }
   function renderPlants() {
@@ -979,7 +988,7 @@
       $('plants').innerHTML = `<button type="button" class="add-plant" id="add-plant"><svg class="i"><use href="#i-plus"/></svg>Build a plant</button>` + S.plants.map(p => {
         const T = TECH[p.tech];
         return `<button type="button" class="plant" data-plant="${p.id}">
-          <div class="top">${dot(p.tech)}<div style="min-width:0"><div class="name">${esc(p.name)}</div><div class="sub">${T.short} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${fmtHours(p)} h` : ''}<span class="closes"></span></div></div></div>
+          <div class="top">${dot(p.tech)}<div style="min-width:0"><div class="name">${esc(p.name)}</div><div class="sub">${T.short} · ${fmtMW(p.mw)}${hoursOf(p) ? ` · ${fmtHours(p)} h` : ''}<span class="closes"></span><span class="aged"></span></div></div></div>
           <div class="bar"><i></i></div>
           <div class="row"><span class="status"></span><span class="num money"></span></div>
         </button>`;
@@ -990,9 +999,13 @@
       const T = TECH[p.tech], money = p.today ? p.today.money : 0;
       const bar = el.querySelector('.bar i');
       bar.style.width = `${Math.round(Math.min(1, Math.max(0, plantFrac(p))) * 100)}%`;
-      bar.style.background = p.status === 'building' || p.status === 'upgrading' ? 'var(--ink-3)' : T.color;
+      bar.style.background = p.status === 'building' || p.status === 'upgrading' || p.status === 'overhaul' ? 'var(--ink-3)' : T.color;
       el.querySelector('.status').textContent = plantStatus(p);
       el.querySelector('.closes').textContent = closesText(p);
+      const ag = el.querySelector('.aged'), cond = S.transition && p.status !== 'building' ? Sim.condition(p) : null;
+      const nb = p.replacedBy && S.plants.find(x => x.id === p.replacedBy);
+      ag.textContent = nb ? `Being replaced · ${Math.max(0.1, nb.buildLeft).toFixed(1)} days` : cond && cond.past ? 'Past design life' : cond && cond.worn ? `Worn · ${cond.age} years old` : '';
+      ag.classList.toggle('bad', !!(cond && cond.past));
       const m = el.querySelector('.money');
       m.textContent = running(p) ? fmtMoney(money) : '';
       m.className = `num money ${money >= 0 ? 'up' : 'down'}`;
@@ -1431,7 +1444,7 @@
     const sell = p.tech === 'coal' ? (p.status === 'retiring' ? '' : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Give notice to close (5 days)</button>`)
       : `<button type="button" class="btn btn-quiet danger" data-retire style="width:100%;margin-top:16px">Sell for ${fmtMoney(Math.round(p.value * 0.4))}</button>`;
     $('p-life').innerHTML = lifeBlock(p);
-    $('p-actions').innerHTML = p.status === 'building' ? '' : upgradeCard(p) + refurbishCard(p) + sell;
+    $('p-actions').innerHTML = p.status === 'building' ? '' : p.replacedBy ? conditionCard(p) : conditionCard(p) + upgradeCard(p) + refurbishCard(p) + sell;
     sheetAfford = S.cash >= Sim.upgradeCost(S, p);
   }
   let sheetAfford = null;
@@ -1464,6 +1477,39 @@
     if (line == null) return '';
     const have = S.plants.reduce((a, p) => a + (p.site === st.id && Sim.SITES[p.tech] === Sim.SITES[t] ? p.mw : 0), 0);
     return ` · line carries ${fmtMW(line)}${have ? `, you have ${fmtMW(have)} here` : ''}`;
+  }
+  // Ageing (multi-year scenarios): how worn it is, and the two ways back: an overhaul or a rebuild.
+  function conditionCard(p) {
+    const c = S.transition ? Sim.condition(p) : null;
+    if (!c || p.status === 'retiring') return '';
+    const T = TECH[p.tech], A = Sim.AGEING[p.tech], pct = x => `${Math.round(x * 100)}%`;
+    let html = `<div class="upgrade cond"><b>Condition: ${c.past ? 'past its design life' : c.worn ? 'worn' : 'good'}</b>
+      <p>Age ${c.age} year${c.age === 1 ? '' : 's'} (design life ${c.life}) · ${c.text}.${c.past ? ' Past its design life it wears three times as fast, and an overhaul can’t undo that part.' : ''}</p>`;
+    const nb = p.replacedBy && S.plants.find(x => x.id === p.replacedBy);
+    if (nb) html += `<p>Being replaced: it keeps running until the new one connects in ${Math.max(0.1, nb.buildLeft).toFixed(1)} days, then it’s knocked down.</p>`;
+    else if (p.status === 'overhaul') html += `<p>Overhaul under way: back in ${Math.max(0.1, p.ohLeft).toFixed(1)} days.</p>`;
+    else {
+      const plan = Sim.maintenancePlan(S, p) || {}, yr = Sim.yearDays(S), left = S.scenario ? S.scenario.days - Sim.dayIndex(S) : Infinity;
+      // at the plant's recent earnings: what it adds a day, and how soon it pays back
+      const worth = x => !x ? '' : x.gain == null ? '<p class="note">Its earnings over the next few days will show what this is worth.</p>'
+        : x.payback == null ? '<p class="note">At its recent earnings this wouldn’t pay back.</p>'
+        : `<p class="note">At its recent earnings: about ${fmtMoney(x.gain)} more a day.${x.lost > 0 ? ` With the ${fmtMoney(x.lost)} it would miss while offline, that` : ' That'} pays back in about ${Math.round(x.payback)} days${x.payback > left ? `, more than the ${left} days left` : x.payback <= yr ? ' (within a year)' : ''}.</p>`;
+      const oc = Sim.overhaulCost(S, p);
+      if (oc != null && (p.wear || 0) >= 1) {
+        const can = S.cash >= oc && p.status === 'online';
+        html += `<p class="num">Overhaul: ${fmtMoney(oc)} · offline for ${A.ohDays === 1 ? 'a day' : `${A.ohDays} days`} · takes away 70% of the wear</p>${worth(plan.overhaul)}
+          <button type="button" class="btn btn-quiet" data-overhaul ${can ? '' : 'disabled'}>${p.status !== 'online' ? 'Available once it’s running' : S.cash < oc ? `Need ${fmtMoney(oc - S.cash)} more` : `Overhaul for ${fmtMoney(oc)}`}</button>`;
+      }
+      const rc = Sim.rebuildCost(S, p), g = rc && Sim.rebuildGain(S, p);
+      if (rc && (c.worn || g.out >= 0.1)) {
+        const can = S.cash >= rc.net && ['online', 'outage'].includes(p.status);
+        const gain = T.kind === 'vre' ? `about ${pct(g.out)} more output` : T.kind === 'thermal' ? 'running cost and breakdowns back to new' : 'new cells and no wear';
+        html += `<p class="num" style="margin-top:10px">Rebuild: ${fmtMoney(rc.net)} · built alongside in ${rc.days} day${rc.days === 1 ? '' : 's'}</p>
+          <p>Build a new ${T.name.toLowerCase()} of today’s design here, then knock the old one down (it keeps running until the new one connects): ${gain}${p.upg ? ', with its upgrade built in' : ''}. Today’s price ${fmtMoney(rc.price)}, less ${fmtMoney(rc.conn)} for the connection it reuses and ${fmtMoney(rc.salvage)} for the old plant.</p>${worth(plan.rebuild)}
+          <button type="button" class="btn btn-quiet" data-rebuild ${can ? '' : 'disabled'}>${!['online', 'outage'].includes(p.status) ? 'Available once it’s running' : S.cash < rc.net ? `Need ${fmtMoney(rc.net - S.cash)} more` : `Rebuild for ${fmtMoney(rc.net)}`}</button>`;
+      }
+    }
+    return html + '</div>';
   }
   // Worn storage: new cells bring it back to full.
   function refurbishCard(p) {
@@ -1590,6 +1636,18 @@
       if (r.ok) { toast(`${p.name} has new cells.`); renderPlantSheet(); renderAll(); save(); }
       return;
     }
+    if (e.target.closest('[data-overhaul]')) {
+      const r = Sim.overhaul(S, p);
+      if (r.ok) { toast(`${p.name} is in for an overhaul.`); renderPlantSheet(); renderAll(); save(); }
+      return;
+    }
+    const rb = e.target.closest('[data-rebuild]');
+    if (rb) {
+      if (rb.dataset.confirm !== '1') { rb.dataset.confirm = '1'; rb.textContent = 'Tap again to knock it down and rebuild'; return; }
+      const r = Sim.rebuild(S, p);
+      if (r.ok) { plantOpen = r.plant.id; toast(`${p.name} is being rebuilt.`); renderPlantSheet(); renderAll(); save(); }
+      return;
+    }
     if (e.target.closest('[data-upgrade]')) {
       const r = Sim.upgrade(S, p);
       if (r.ok) { toast(`${p.name} is being upgraded.`); renderPlantSheet(); renderAll(); save(); }
@@ -1692,6 +1750,7 @@
         ${line('Energy sales', sum('revenue'))}${line('Fuel and running costs', -sum('costs'))}${line('Frequency control: raise', days.reduce((a, d) => a + (d.fcasRaise ?? d.fcas ?? 0), 0))}${line('Frequency control: lower', sum('fcasLower'))}${line('Renewable certificates', sum('certs'))}${line('Start-ups', -sum('starts'))}${S.transition && (S.tender || sum('cis')) ? line('Underwriting', sum('cis')) : ''}${line('Contracts', sum('contracts'))}
         ${line('Upkeep', -sum('upkeep'))}${line('Repairs', -sum('repairs'))}${line('Overdraft interest', -sum('interest'))}${line('Loan interest', -sum('loanInterest'))}${line('Fines', -sum('penalties'))}${line('Bonuses', sum('bonus'))}${line('Profit', sum('profit'), true)}
       </tbody></table><p class="note">Building costs, sales of plant and goal rewards aren't counted in profit.</p>` : ''}
+      ${recentDays()}
       ${stationTable()}`);
     if (days.length >= 2) drawCompany(days);
   }
@@ -1788,11 +1847,12 @@
     const reward = [g.reward ? `${fmtMoney(g.reward)} bonus` : '', g.unlock ? `unlocks ${TECH[g.unlock].name.toLowerCase()}s` : ''].filter(Boolean).join(' · ');
     return `<div class="goal ${done ? 'done' : ''}"><span class="tick">${done ? '<svg class="i"><use href="#i-good"/></svg>' : ''}</span><span class="gtext">${g.text}<small>${reward}${done ? ` · done on day ${S.goalsDone[g.id] + 1}` : ''}</small></span></div>`;
   }).join(''));
-  $('m-report').onclick = () => {
+  // The last ten days, for the Company report (it used to be its own menu row).
+  function recentDays() {
     const rows = S.days.slice(-10).reverse().map(d => `<tr><td>Day ${d.day + 1}</td><td>${fmtPrice(d.avg)}</td><td>${fmtPrice(d.max)}</td><td>${(d.share * 100).toFixed(1)}%</td><td class="${d.profit >= 0 ? 'up' : 'down'}">${fmtMoney(d.profit)}</td></tr>`).join('');
-    info('Recent days', rows ? `<table class="res"><thead><tr><th>Day</th><th>Average price</th><th>High</th><th>Your share</th><th>Profit</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="note">Totals so far: profit ${fmtMoney(S.totals.profit)} · energy ${Math.round(S.totals.energy).toLocaleString()} MWh · frequency control ${fmtMoney(S.totals.fcas)} · emissions ${Math.round(S.totals.emis).toLocaleString()} t</p>` : '<p>No full days yet. Check back tomorrow.</p>');
-  };
+    return `<h3>Recent days</h3>${rows ? `<table class="res" id="recent-days"><thead><tr><th>Day</th><th>Average price</th><th>High</th><th>Your share</th><th>Profit</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="note">Totals so far: profit ${fmtMoney(S.totals.profit)} · energy ${Math.round(S.totals.energy).toLocaleString()} MWh · frequency control ${fmtMoney(S.totals.fcas)} · emissions ${Math.round(S.totals.emis).toLocaleString()} t</p>` : '<p class="note">No full days yet. Check back tomorrow.</p>'}`;
+  }
   $('m-help').onclick = () => showHelp();
   $('m-tour').onclick = () => { if (S.challenge || S.scenario) { toast('Missions are for your own company.'); return; } Sim.startTour(S); missionKey = ''; closeSheets(); renderAll(); save(); };
   $('t-help').onclick = () => showHelp();
@@ -2144,6 +2204,7 @@
     if (closesText(p)) add('info', `<b>${closesText(p)}</b>, on the company's schedule.`);
     if (p.status === 'outage') add('bad', `<b>Broken down</b>: back in ${p.outLeft} day${p.outLeft > 1 ? 's' : ''}. Repairs are being charged.`);
     if (p.status === 'upgrading') add('info', `Offline for its upgrade: ${Math.max(0.1, p.upgLeft).toFixed(1)} days left.`);
+    if (p.status === 'overhaul') add('info', `Offline for an overhaul: ${Math.max(0.1, p.ohLeft).toFixed(1)} days left.`);
     if (p.status === 'retiring') add('info', `Closing in ${p.retireLeft} day${p.retireLeft > 1 ? 's' : ''}.`);
     if (p.status === 'online' || p.status === 'retiring') {
       if (p.tech === 'coal') {

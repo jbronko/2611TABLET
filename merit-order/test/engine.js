@@ -755,5 +755,57 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('Big Fish measures your best day and the last week', br.maxShare >= 0 && br.weekShare >= 0 && br.lines[0].parts[0].label === 'Your best day' && Sim.SCENARIOS.find(x => x.id === 'big-fish').shareNeeds.join() === '0.05,0.1,0.1');
 }
 
+// Plant ageing (multi-year scenarios): wear and age, past design life, overhaul, rebuild, starting fleets.
+{
+  const T = Sim.createScenario('energy-transition'); T.cash = 1e10;
+  for (const t of ['wind', 'ccgt', 'hydro']) T.unlocked[t] = true;
+  const w = Sim.build(T, 'wind', 240).plant, g = Sim.build(T, 'peaker', 150).plant;
+  for (const p of [w, g]) { p.status = 'online'; p.buildLeft = 0; }
+  w.age = w.wear = 10; g.age = g.wear = 10;
+  const ew = Sim.ageEffects(w), eg = Sim.ageEffects(g), close = (a, b) => Math.abs(a - b) < 1e-9;
+  check('ten years of wear: wind makes 12% less and costs 30% more to keep; a peaker costs 8% more to run and breaks down 1.8×',
+    close(ew.out, 0.88) && close(ew.up, 1.3) && close(eg.vc, 1.08) && close(eg.brk, 1.8) && close(eg.up, 1.25) && close(ew.vc, 1));
+  w.age = w.wear = 25;   // five years past a wind farm's 20-year design life: those years count three times
+  check('past design life each year counts three times', close(Sim.ageEffects(w).w, 35) && Sim.condition(w).past);
+  const price = Sim.priceOf(T, 'wind', 240, { site: w.site }), oc = Sim.overhaulCost(T, w), cash0 = T.cash;
+  const oh = Sim.overhaul(T, w);
+  check('an overhaul costs 12% of a new wind farm, takes it offline a day and leaves 30% of the wear (not the years past design life)',
+    oh.ok && oc === Math.round(price * 0.12 / 100) * 100 && cash0 - T.cash === oc && w.status === 'overhaul' && close(w.wear, 7.5) && close(Sim.ageEffects(w).w, 17.5));
+  for (let k = 0; k < 2 * Sim.IPD + 1; k++) { Sim.step(T); if (T.offer) Sim.declineOffer(T); }
+  check('…and it comes back online', w.status === 'online');
+  // a rebuild ten years in: today's design, the connection reused, the old plant salvaged
+  T.t = 10 * Sim.yearDays(T) * Sim.IPD + 5; w.bid = 'custom';
+  const rc = Sim.rebuildCost(T, w), was = { name: w.name, site: w.site, mw: w.mw, value: w.value }, n0 = T.plants.length, c1 = T.cash;
+  const rb = Sim.rebuild(T, w), np = rb.plant;
+  check('a rebuild: today’s price, less the reused connection and 40% of the old plant', rb.ok && rc.net === rc.price - rc.conn - Math.round(was.value * 0.4) && close(c1 - T.cash, rc.net) && rc.conn > 0, JSON.stringify(rc));
+  check('…a new plant on the same site, same size and name, the bids kept, no age, no upgrade (it had none), better turbines',
+    np.site === was.site && np.mw === was.mw && np.name === was.name && np.bid === 'custom' && !np.age && !np.wear && !np.upg && np.status === 'building' && close(np.vintage, 1.15));
+  check('…built alongside: the old one keeps running until it connects', T.plants.length === n0 + 1 && w.status === 'online' && w.replacedBy === np.id && w.value === 0 && !Sim.rebuild(T, w).ok);
+  for (let k = 0; k < (rc.days + 1) * Sim.IPD; k++) { Sim.step(T); if (T.offer) Sim.declineOffer(T); if (T.tender && !T.tender.accepted && !T.tender.declined) Sim.declineTender(T); }
+  check('…then the old one is knocked down', np.status === 'online' && !T.plants.includes(w) && T.plants.length === n0 && T.retired[0].name === was.name && T.retired[0].sold === Math.round(was.value * 0.4));
+  const up = Sim.build(T, 'peaker', 150).plant; up.status = 'online'; up.buildLeft = 0; up.wear = 12;
+  Sim.upgrade(T, up); up.status = 'online'; up.buildLeft = 0;
+  const upNew = Sim.rebuild(T, up).plant;
+  check('…an upgraded plant keeps its upgrade through a rebuild', !!up.upg && upNew && upNew.upg === up.upg, `${up.upg} ${upNew && upNew.upg}`);
+  const hy = Sim.build(T, 'hydro', 250).plant;
+  check('hydro is overhauled, not rebuilt (the dam stays); coal neither', Sim.rebuildCost(T, hy) === null && Sim.overhaulCost(T, hy) > 0 && Sim.rebuildCost(T, { tech: 'coal' }) === null);
+  // ageing happens once a game year, only in the multi-year scenarios
+  const Y = Sim.createScenario('energy-transition'); Y.cash = 1e9;
+  const yp = Sim.build(Y, 'solar', 100).plant;
+  for (let k = 0; k < 2 * Sim.yearDays(Y) * Sim.IPD + 2; k++) { Sim.step(Y); if (Y.offer) Sim.declineOffer(Y); if (Y.tender && !Y.tender.accepted && !Y.tender.declined) Sim.declineTender(Y); }
+  check('in the Energy Transition a plant ages a year each game year', yp.age === 2 && yp.wear === 2, `${yp.age} ${yp.wear}`);
+  const K = Sim.create(19, { cash: 1e8 }); const kp = Sim.build(K, 'solar', 100).plant;
+  for (let k = 0; k < 400 * Sim.IPD; k++) { Sim.step(K); if (K.offer) Sim.declineOffer(K); }
+  check('…and in the career it doesn’t age at all', !kp.age && Sim.ageEffects(kp).out === 1 && Sim.ageEffects(kp).up === 1);
+  // inherited fleets start old; an old save gets its ages
+  const H = Sim.createScenario('highcountry'), sn = H.plants.find(p => p.name === 'Snowgum Hydro'), ku = H.plants.find(p => p.name === 'Kurri Gas Turbines');
+  check('company scenarios start with old fleets: Snowgum Hydro 50 years, Kurri Gas Turbines 25 (half the wear: overhauled now and then)', sn.age === 50 && sn.wear === 25 && ku.age === 25 && ku.wear === 13);
+  const M = Sim.createScenario('coastline'); M.t = 2 * Sim.yearDays(M) * Sim.IPD + 3;
+  for (const p of M.plants) { delete p.age; delete p.wear; }
+  Sim.migrate(M);
+  const wo = M.plants.find(p => p.name === 'Wollemi Gas');
+  check('an old save’s plants get their ages: the starting age plus the years played', wo.age === 20 && wo.wear === 11, `${wo.age} ${wo.wear}`);
+}
+
 console.log(fails ? `\n${fails} check(s) failed` : '\nAll engine checks passed');
 process.exit(fails ? 1 : 0);
