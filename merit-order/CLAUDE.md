@@ -108,10 +108,11 @@ are built, tested and published); this file is what's specific to Merit Order. C
     - Gas use is in equivalent operating hours, as turbine makers count it: an hour running is 1, a
       start counts `start` more (peaker 2, combined-cycle 10), and a trip (a breakdown on a day it
       ran) counts as five starts. Storage use is full cycles (MWh discharged ÷ capacity).
-    - `typical` is the steady test player's average per game day (`typical.js`-style measurement,
-      Transition and company scenarios): peaker 2.5 equivalent hours, combined-cycle 16, battery 0.45
-      cycles. Long storage is set at 0.25 (the steady player builds none). Most of steady's peakers
-      sit idle (median under 1 hour a day) and a few run hard, so idle peakers now age slowly.
+    - `typical` is the test players' use per game day weighted by use (Transition and company
+      scenarios): peaker 4 equivalent hours, combined-cycle 27, battery 0.55 cycles, long storage 0.17.
+      Weighted, so the plants doing the work wear about a year a year at typical play. A plain
+      average (peaker 2.5, most peakers sit idle) made the busy ones, the earners, wear far faster
+      and cost the Transition's steady player 16%. Idle peakers now age slowly.
     - Counted in `p.use` (`countUse` each interval; starts where they happen; trips at the breakdown
       roll via `p.use.ran`), turned into wear in `transitionYear` and reset. `useSoFar` gives the
       year so far for the condition card ("This year so far: 41 starts, 96 hours running…"). An old

@@ -1142,18 +1142,19 @@ const Sim = (() => {
   // Repowering (v41): wind, offshore and solar can be rebuilt bigger on the same land, as modern
   // turbines and panels allow: REPOWER_RATE of its MW per year of age, up to REPOWER_CAP.
   // Gas and storage wear with use (v41, see yearWear): start = the hours of running a start counts as,
-  // typical = the steady test player's average use per game day (equivalent hours for gas, full cycles
-  // for storage; v41, Transition and company scenarios), so typical play wears about a year a year.
-  // Most of its peakers sit idle (median under 1 hour a day) and a few run hard (6+ hours).
+  // typical = the test players' use per game day weighted by use (equivalent hours for gas, full cycles
+  // for storage; v41, Transition and company scenarios), so the plants doing the work wear about a
+  // year a year at typical play. Most peakers sit idle (median about 1.5 hours a day): a plain
+  // average made the busy ones, the earners, wear far faster and cost the Transition player 16%.
   const AGEING = {
     solar:    { out: 0.006, up: 0.02, life: 25, oh: 0.08, ohDays: 1, vint: 0.01, repower: true },
     wind:     { out: 0.012, up: 0.03, life: 20, oh: 0.12, ohDays: 1, vint: 0.015, repower: true },
     offshore: { out: 0.010, up: 0.03, life: 25, oh: 0.12, ohDays: 1, vint: 0.01, repower: true },
-    peaker:   { vc: 0.008, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 2, typical: 2.5 },
-    ccgt:     { vc: 0.010, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 10, typical: 16 },
+    peaker:   { vc: 0.008, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 2, typical: 4 },
+    ccgt:     { vc: 0.010, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 10, typical: 27 },
     hydro:    { up: 0.01, life: 50, oh: 0.06, ohDays: 1, noRebuild: true },
-    battery:  { up: 0.02, life: 15, store: true, typical: 0.45 },
-    ldes:     { up: 0.02, life: 20, store: true, typical: 0.25 },
+    battery:  { up: 0.02, life: 15, store: true, typical: 0.55 },
+    ldes:     { up: 0.02, life: 20, store: true, typical: 0.17 },
   };
   const OVERHAUL_KEEPS = 0.3, VINTAGE_CAP = 0.25, WORN_AT = 1 / 3, REPOWER_RATE = 0.025, REPOWER_CAP = 0.5;
   // How much of each part of an estimated gain to count (see wearGain): more output, the newer design's
