@@ -95,6 +95,14 @@ const SEEDS = {
       await p.evaluate(() => [...document.querySelectorAll('#plants [data-plant]')].find(x => x.querySelector('.name').textContent === 'Kurri Gas Turbines').click());
       await p.waitForTimeout(150);
     },
+    // an old wind farm's page in Lakeside: a same-size rebuild and a repower to a bigger size
+    repower: async p => {
+      await p.click('#t-scenarios'); await p.click('[data-scenario="lakeside"]'); await p.click('#sc-go');
+      await p.waitForTimeout(150);
+      await p.evaluate(() => { const M = MeritOrder; M.setSpeed(0); M.state.cash = 1e9; M.renderAll(); document.getElementById('toast').hidden = true; });
+      await p.evaluate(() => [...document.querySelectorAll('#plants [data-plant]')].find(x => x.querySelector('.name').textContent === 'Kestrel Ridge Wind').click());
+      await p.waitForTimeout(150);
+    },
     // the career's Trophies and records sheet, with an award on the shelf and some records
     trophies: async p => {
       await p.evaluate(() => MeritOrder.startCareer(true, 'standard'));

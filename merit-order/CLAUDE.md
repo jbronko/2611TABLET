@@ -150,11 +150,26 @@ are built, tested and published); this file is what's specific to Merit Order. C
     (`p.margin` and `p.eDay`, averaged daily). The plant page shows it, because maintenance only
     pays where the plant earns. Worn solar in a late Transition full of cheap midday power often
     isn't worth it.
-    - The estimate (`wearGain`) is deliberately cautious: more output is discounted for the share
-      the zone would curtail, for your own share of the region (extra output lowers the price your
-      other plants get) and ×0.7 for falling prices; a newer design's extra output counts at half;
-      and the whole gain is × `GAIN_CAUTION` (0.6). An overhaul also counts what it misses
-      offline; a rebuild doesn't (it's built alongside).
+    - The estimate (`wearGain`): more output is discounted for the share the zone would curtail
+      and for your own share of the region (extra output lowers the price your other plants get),
+      then each part is counted at `GAIN_K`: output 0.4, a newer design's extra half of that, a
+      repower's extra size in full, running cost and breakdowns 0.5 (gas often sets the price, so a
+      lower cost partly lowers the price instead), upkeep 1 (a certain saving). A storage rebuild
+      counts the capacity it restores.
+    - **Days offline** cost `DOWNTIME` × the plant's daily earnings: wind and solar 0.1 (your other
+      plants sell more, at a slightly higher price), hydro and storage 0 (the energy waits), gas 1
+      (it earns at the peaks). Payback counts the days before the gain starts (offline, or building
+      alongside) and then cost plus lost earnings over the gain.
+    - **Calibrated (v41, `test/payback.js`, 234 forked samples: the Transition at years 6, 10, 14,
+      17 and each company scenario at years 2 and 4):** median realised ÷ estimated, overhauls 0.5–1.05,
+      same-size rebuilds 0.64–0.78 (totals about 1). Before v41 a day offline was charged in full,
+      so almost every overhaul looked like a loss.
+    - **What the forks taught:** outcomes swing with the market, not just the plant. Late in the
+      Transition the player sells most of the power, so a few MW of its own can head off a price
+      spike the rest of its fleet would have sold into: repowers there lost money at half the
+      checkpoints (every plant at a checkpoint the same way) and gained at the others, while in
+      Lakeside they paid 1.3–1.6× the estimate. Gas results swing hardest (a day offline can tip the
+      week over the cumulative price threshold, or break a reserve promise). Use medians.
     - **Balance (v40, `balance.js` steadyM/firmM):** a neglected fleet ends about 12% below no
       ageing in the Transition (steady $5.62B → $4.93B), and every bot keeps its stars. Acting on
       the estimates roughly breaks even (steadyM $4.79B, firmM $3.48B vs firm $3.41B): plants pay

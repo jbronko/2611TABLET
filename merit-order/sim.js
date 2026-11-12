@@ -1158,8 +1158,15 @@ const Sim = (() => {
   };
   const OVERHAUL_KEEPS = 0.3, VINTAGE_CAP = 0.25, WORN_AT = 1 / 3, REPOWER_RATE = 0.025, REPOWER_CAP = 0.5;
   // How much of each part of an estimated gain to count (see wearGain): more output, the newer design's
-  // share of it, cheaper running, fewer breakdowns, cheaper upkeep.
-  const GAIN_K = { out: 0.42, vint: 0.5, size: 1, vc: 0.6, brk: 0.6, up: 0.6 };
+  // share of it, a repower's extra size, cheaper running, fewer breakdowns, cheaper upkeep. Measured
+  // against forked games (test/payback.js, v41): with these, the median sample earned about what was
+  // estimated. Cheaper running counts half because gas often sets the price, so a lower cost partly
+  // lowers the price instead; upkeep is a certain saving.
+  const GAIN_K = { out: 0.4, vint: 0.5, size: 1, vc: 0.5, brk: 0.5, up: 1 };
+  // What a day offline really costs, as a share of the plant's recent daily earnings (measured, v41):
+  // wind and solar almost nothing (your other plants sell more, at a slightly higher price), hydro and
+  // storage nothing (the energy waits), gas all of it (it earns at the peaks).
+  const DOWNTIME = { vre: 0.1, thermal: 1, storage: 0 };
   // Years of wear that count: the wear, plus each year past design life twice more.
   function wearOf(p) { const A = AGEING[p.tech]; return A ? (p.wear || 0) + 2 * Math.max(0, (p.age || 0) - A.life) : 0; }
   // Use-based wear (v41). A year's wear = USE_CALENDAR (ageing even when idle) + the rest × this year's
@@ -1290,6 +1297,7 @@ const Sim = (() => {
     if (A.brk && T.outage) g += (now.brk - after.brk) * T.outage * diff(S).outage * (p.mw * 150 * diff(S).upkeep + 2 * margin) * K.brk;
     const mwh = T.kind === 'storage' ? (p.mwh ?? p.mw * hoursOf(p)) : undefined;
     g += (upkeepFor(S, p.tech, p.mw, mwh) * now.up - upkeepFor(S, p.tech, mw, mwh) * after.up) * K.up;
+    if (o.health && T.fade && (p.health ?? 1) < 1) g += margin * (1 / (p.health ?? 1) - 1) * K.out;   // storage rebuilt: its full capacity back
     return g;
   }
   const effectsAt = (A, wear, age) => { const w = wear + 2 * Math.max(0, age - A.life); return { out: Math.max(0.5, 1 - (A.out || 0) * w), vc: 1 + (A.vc || 0) * w, up: 1 + (A.up || 0) * w, brk: 1 + (A.brk || 0) * w }; };
@@ -1299,12 +1307,13 @@ const Sim = (() => {
     const A = AGEING[p.tech]; if (!A) return null;
     const now = ageEffects(p), known = p.margin != null, margin = Math.max(0, p.margin || 0), out = {};
     // payback: the days before the gain starts (offline, or building alongside), then cost and lost earnings over the gain
-    const pay = (cost, days, gain, delay = days) => ({ cost, lost: known ? days * margin : null, gain: known ? gain : null, payback: known && gain > 0 ? delay + (cost + days * margin) / gain : null, days, delay });
+    const down = DOWNTIME[TECH[p.tech].kind] ?? 1;
+    const pay = (cost, days, gain, delay = days) => ({ cost, lost: known ? days * margin * down : null, gain: known ? gain : null, payback: known && gain > 0 ? delay + (cost + days * margin * down) / gain : null, days, delay });
     const oc = overhaulCost(S, p);
     if (oc != null && (p.wear || 0) >= 1) out.overhaul = pay(oc, A.ohDays, wearGain(S, p, now, effectsAt(A, (p.wear || 0) * OVERHAUL_KEEPS, p.age || 0)));
     const rc = rebuildCost(S, p);
     const vint = vintageNow(S, p.tech) / (p.vintage || 1);
-    if (rc && !p.replacedBy) out.rebuild = pay(rc.net, 0, wearGain(S, p, now, effectsAt(A, 0, 0), { vint }), rc.days);
+    if (rc && !p.replacedBy) out.rebuild = pay(rc.net, 0, wearGain(S, p, now, effectsAt(A, 0, 0), { vint, health: true }), rc.days);
     const rm = repowerMW(S, p), rp = rm && rebuildCost(S, p, rm);
     if (rp && !p.replacedBy) out.repower = { ...pay(rp.net, 0, wearGain(S, p, now, effectsAt(A, 0, 0), { vint, mw: rm }), rp.days), mw: rm };
     return out;
@@ -2405,7 +2414,7 @@ const Sim = (() => {
     return { day: dayIndex(S) + 1, date: `${d + 1} ${months[m]}`, month: months[m], year, time: clock(hourOf(S)) };
   }
 
-  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, rivalInvestment, regionFull, fullNote, spikeNews, SPIKE, AWARDS, judgeAwards, freshMonth, AGEING, ageEffects, condition, repowerMW, GAIN_K, wearGain, effectsAt, OVERHAUL_KEEPS, useSoFar, yearWear, USE_CALENDAR, overhaul, overhaulCost, rebuild, rebuildCost, rebuildGain, vintageNow, maintenancePlan, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
+  return { minMW, stackTarget, yearDays: yearDaysOf, LOAN_SECURED, debt, loanRoom, loanQuote, takeLoan, repayLoan, LOAN_TERMS, LOAN_LTV, starsIf, LIGHTS_HOURS, starText, rivalInvestment, regionFull, fullNote, spikeNews, SPIKE, AWARDS, judgeAwards, freshMonth, AGEING, ageEffects, condition, repowerMW, GAIN_K, DOWNTIME, wearGain, effectsAt, OVERHAUL_KEEPS, useSoFar, yearWear, USE_CALENDAR, overhaul, overhaulCost, rebuild, rebuildCost, rebuildGain, vintageNow, maintenancePlan, lineOf, storeCap, refurbish, refurbishCost, CAP_STRIKES, TRANSITION, TRANSITION_YEARS, yearsOf, timelineOf, scenarioOf, siteOpensIn, isCompany, closesIn, ownFirm, coalAge, choiceView, choose, proposalView, buyProposal, PROPOSAL_POPUP_MW, TENDER_KINDS, acceptTender, declineTender, yearOf, CERT, NB, presetMW, setBandPrice, setBandMW, fillBands, upkeepFor, SITES, siteOf, siteRoom, siteFor, buildDays, buildProblem, canUpgrade, IPD, H, FLOOR, CAP, APC, CPT, REAL_CPT, TECH, TECH_ORDER, OTHER, GOALS, EVENTS, AWAY_CAP_DAYS, DIFFICULTY, UPGRADES, CONTRACT_DAYS,
     create, migrate, step, catchUp, build, retire, acceptOffer, declineOffer, priceOf, companyValue, firmCapacity, conditions,
     upgrade, upgradeCost, upkeepOf, plantProfit, signContract, contractRoom, SCENARIOS, createScenario, scenarioResult, scenarioOver, MISSIONS, missionNext, checkMissions, completeMission, startTour, skipTour, overdraftLimit, forecast, hoursOf, vcOf,
     fmtMoney, fmtMW, fmtPrice, clock, dateLabel, dayIndex, hourOf, rnd };
