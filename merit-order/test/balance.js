@@ -97,6 +97,15 @@ const STRATS = {
 // and only if it pays back by halfway through what's left of the scenario; storage gets new cells below
 // 80%. steadyM and firmM are steady and firm plus that. MAINT counts what it did (printed and reset with
 // each result line).
+// Results (v41: use-based wear, measured estimates, per-plant breakdown dice, Standard): Transition
+// steady $4.68B, steadyM $4.64B (52 overhauls, 139 rebuilds, 0 repowers); firm $3.36B, firmM $3.41B
+// (6 and 76); all 3 stars, no shortfall. Companies steady / steadyM: Highcountry $599M / $606M (1
+// overhaul), Lakeside $988M / $988M, Wellspring $1.15B / $1.15B, Coastline $636M / $636M (no moves);
+// handsoff 0 stars and below steady everywhere ($318M, $952M, $930M, $485M). With per-plant dice
+// these gaps are real, not the random stream. Repowers: the bot found none that paid back within a
+// year on the estimates (payback.js shows why: in the Transition the player is so big that its own
+// extra MW often cost it peak prices). Ageing costs a neglected fleet about 17% of the Transition
+// (steady $5.62B with no ageing); acting on the estimates is level within about 1.5% either way.
 // Results (v40, Standard): Energy Transition steady $4.93B, steadyM $4.79B (73 overhauls, 41 rebuilds);
 // firm $3.41B, firmM $3.48B (44 and 74); all 3 stars. Company scenarios steady vs steadyM: Coastline
 // $637M / $622M, Highcountry $608M / $603M, Lakeside $937M / $937M, Wellspring $1.24B / $1.16B, all
@@ -197,6 +206,8 @@ if (require.main === module && process.argv[2] === '--transition') {
   // v35 (lights-on limit per star), Standard: idle 0 (696 h short in year 20), steady 3 ($5.6B), firm 3 ($3.4B), both 0 h short.
   // Before ageing (v39): Standard steady 3 ($5.6B), firm 3 ($3.4B); Long steady 3 ($8.7B), firm 3 ($5.2B), idle 0.
   // v40 (ageing), Standard: steady 3 ($4.93B), steadyM 3 ($4.79B), firm 3 ($3.41B), firmM 3 ($3.48B), all 0 MWh short.
+  // v41 (use-based wear, per-plant dice), Standard: idle 0 (696 h short), steady 3 ($4.68B), steadyM 3 ($4.64B),
+  // firm 3 ($3.36B), firmM 3 ($3.41B), all 0 MWh short.
   const long = process.argv.includes('--long');
   const kinds = (process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : 'idle,steady,firm').split(',');
   for (const kind of kinds) {

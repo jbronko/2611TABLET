@@ -173,12 +173,14 @@ are built, tested and published); this file is what's specific to Merit Order. C
       checkpoints (every plant at a checkpoint the same way) and gained at the others, while in
       Lakeside they paid 1.3–1.6× the estimate. Gas results swing hardest (a day offline can tip the
       week over the cumulative price threshold, or break a reserve promise). Use medians.
-    - **Balance (v40, `balance.js` steadyM/firmM):** a neglected fleet ends about 12% below no
-      ageing in the Transition (steady $5.62B → $4.93B), and every bot keeps its stars. Acting on
-      the estimates roughly breaks even (steadyM $4.79B, firmM $3.48B vs firm $3.41B): plants pay
-      back in weeks, so fixing an old one gains little against building another. Rebuilds pay where
-      a plant earns well, isn't curtailed and is far behind today's design. In the company
-      scenarios the bots make 0–2 maintenance moves, so differences there are the random stream.
+    - **Balance (v41, `balance.js` steadyM/firmM):** a neglected fleet ends about 17% below no
+      ageing in the Transition (steady $5.62B → $4.68B; v40 was 12% before use-based wear), and
+      every bot keeps its stars. Acting on the estimates is level within about 1.5% (steadyM $4.64B,
+      firmM $3.41B vs firm $3.36B; Highcountry +1%; the other companies make no moves). Plants pay
+      back in weeks, so fixing an old one gains little against building another, and in the
+      Transition the player is so big that more of its own output often costs it peak prices: the
+      maintainer found no repower worth it there. Repowering pays where you're not dominant
+      (Lakeside forks: 1.3–1.6× the estimate) and when every site is full.
   - **Inherited fleets start old** (`age` in `owns`; `wear` is half the age).
   - **Telling the player:** a worn tag on the plant cards, a condition card on the plant page, a
     yearly ageing news line (one line, the most worn plant), and a "Plant condition" row in the year
