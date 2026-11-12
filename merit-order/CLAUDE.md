@@ -129,8 +129,10 @@ are built, tested and published); this file is what's specific to Merit Order. C
     twice as fast then.
   - Output wear applies after the output cap (`vreMW`), so an upgraded or newer farm still loses it.
   - **Better technology:** wind, offshore and solar built later in a scenario make more (`p.vintage`:
-    +1.5%, +1% and +1% a year, capped at +25%). Gas built later runs cheaper (v41: 0.5% a year, capped at
-    10%, `vcap`; `vcOf` divides by `p.vintage`).
+    +1.5%, +1% and +1% a year, capped at +25%). Gas doesn't: v41 tried newer gas running 0.5% a year
+    cheaper, and it cost the Transition's steady player about 10%. Cheaper gas bids lower, so it
+    lowered the price everyone got, and the player sells most of the power. (`vcOf` still divides by
+    `p.vintage` and `vintageNow` takes a `vcap`, should a technology ever want it.)
   - **Overhaul** (`overhaul`): 6–12% of today's price (hydro: of its turbines), a day offline,
     leaves 30% of the wear. Storage keeps its "new cells" refurbish, which now also cuts wear.
   - **Rebuild** (`rebuild`): a new plant of today's design on the same site, same size, built

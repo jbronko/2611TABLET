@@ -847,7 +847,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('wind, solar and hydro age by the calendar', Sim.yearWear(U, ws) === 1 && !ws.use);
 }
 
-// Repowering (v41): wind, offshore and solar rebuilt bigger on the same land; newer gas runs cheaper.
+// Repowering (v41): wind, offshore and solar rebuilt bigger on the same land.
 {
   const R = Sim.createScenario('energy-transition'); R.cash = 1e10; R.unlocked.wind = true;
   const w = Sim.build(R, 'wind', 240, { site: 'tablelands' }).plant; w.status = 'online'; w.buildLeft = 0;
@@ -867,11 +867,9 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('…and when it connects the old one is knocked down, and the land is the same', np.status === 'online' && !R.plants.includes(w) && R.plants.length === n0 && Sim.siteRoom(R, 'wind', 'tablelands') === 0);
   const plan = (w.age = 20, fill.age = 20, Sim.maintenancePlan(R, fill));
   check('the plant page’s plan offers a repower beside a same-size rebuild', !!plan.rebuild && !!plan.repower && plan.repower.mw === 240 && plan.repower.cost > plan.rebuild.cost);
-  // newer gas runs cheaper: 0.5% a year, up to 10%
+  // gas doesn't improve with the years (v41 tried it: cheaper new gas bid lower and lowered prices for the whole market)
   const g0 = Sim.build(R, 'peaker', 150).plant;
-  R.t = 30 * Sim.yearDays(R) * Sim.IPD;
-  const gN = Sim.build(R, 'peaker', 150).plant;
-  check('gas built in year 11 burns 5% less than year-one gas; never more than 10% less', Math.abs(g0.vintage - 1.05) < 1e-9 && Math.abs(gN.vintage - 1.1) < 1e-9 && Math.abs(Sim.vcOf(R, g0) * 1.05 / Sim.vcOf(R, Object.assign({}, g0, { vintage: undefined })) - 1) < 1e-9);
+  check('gas built later is the same design', !g0.vintage && Sim.vintageNow(R, 'peaker') === 1);
   function close2(a, b) { return Math.abs(a - b) < 1e-6; }
 }
 

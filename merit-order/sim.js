@@ -1123,7 +1123,7 @@ const Sim = (() => {
   // ---- upgrades: one per plant ----
   const UPGRADES = {
     solar:   { name: 'Single-axis trackers', cost: 0.3, days: 0.5, blurb: 'Panels follow the sun for about 20% more energy, mostly early and late in the day when prices are better.' },
-    wind:    { name: 'Repower with taller turbines', cost: 0.35, days: 1, blurb: 'Bigger rotors catch lighter winds for about 20% more energy.' },
+    wind:    { name: 'Taller turbines', cost: 0.35, days: 1, blurb: 'Bigger rotors catch lighter winds for about 20% more energy.' },
     battery: { name: 'Add 2 hours of storage', days: 1, blurb: 'More cells on the same connection, so it can cover more of the evening peak and hold a reserve.' },
     peaker:  { name: 'Fast-start controls', cost: 0.2, days: 0.5, blurb: 'Offers twice as much frequency control and breaks down half as often.' },
     ccgt:    { name: 'Efficiency upgrade', cost: 0.2, days: 1, blurb: 'New blades and controls cut running cost and emissions by about 12%.' },
@@ -1139,7 +1139,6 @@ const Sim = (() => {
   // oh = overhaul cost as a share of today's build price (hydro: of its turbines), ohDays offline (a
   // day: done in the quiet hours). A rebuild is built alongside: the old plant runs until it connects.
   // Coal keeps its own ageing (more breakdowns each year, coalAge) and its closure dates.
-  // Gas built later runs cheaper (vint a year, up to vcap): newer turbines burn less gas.
   // Repowering (v41): wind, offshore and solar can be rebuilt bigger on the same land, as modern
   // turbines and panels allow: REPOWER_RATE of its MW per year of age, up to REPOWER_CAP.
   // Gas and storage wear with use (v41, see yearWear): start = the hours of running a start counts as,
@@ -1150,8 +1149,8 @@ const Sim = (() => {
     solar:    { out: 0.006, up: 0.02, life: 25, oh: 0.08, ohDays: 1, vint: 0.01, repower: true },
     wind:     { out: 0.012, up: 0.03, life: 20, oh: 0.12, ohDays: 1, vint: 0.015, repower: true },
     offshore: { out: 0.010, up: 0.03, life: 25, oh: 0.12, ohDays: 1, vint: 0.01, repower: true },
-    peaker:   { vc: 0.008, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 2, typical: 2.5, vint: 0.005, vcap: 0.1 },
-    ccgt:     { vc: 0.010, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 10, typical: 16, vint: 0.005, vcap: 0.1 },
+    peaker:   { vc: 0.008, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 2, typical: 2.5 },
+    ccgt:     { vc: 0.010, up: 0.025, brk: 0.08, life: 30, oh: 0.10, ohDays: 1, start: 10, typical: 16 },
     hydro:    { up: 0.01, life: 50, oh: 0.06, ohDays: 1, noRebuild: true },
     battery:  { up: 0.02, life: 15, store: true, typical: 0.45 },
     ldes:     { up: 0.02, life: 20, store: true, typical: 0.25 },
