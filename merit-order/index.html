@@ -100,6 +100,7 @@
   ol.timeline li.done { opacity: 0.6; } ol.timeline li.now { background: rgba(242, 163, 58, 0.12); border: 1px solid rgba(242, 163, 58, 0.45); }
   button.chip { cursor: pointer; min-height: 44px; } .chip.warn { border-color: rgba(242, 163, 58, 0.55); } .chip.warn svg { color: var(--amber); }
   .upgrade b { font-size: 15.5px; } .upgrade p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+  .upgrade p.use { margin-top: 6px; }
   .icon-btn { flex: none; width: 44px; height: 44px; border-radius: 12px; display: inline-grid; place-items: center; background: var(--raise); border: 1px solid var(--line); }
 
   /* ---------- title ---------- */
@@ -1427,7 +1428,7 @@
       const vc = Sim.vcOf(S, p);
       const sm = T.startMargin || 0;
       bid = `<h3>How it bids</h3>${seg('bid', p.bid, [['cost', sm ? 'Cover costs and start-ups' : 'Cover running costs', fmtPrice(vc + sm)], ['peak', 'Peaks only', fmtPrice(Math.max(300, vc * 2.5))], ['ladder', 'Ladder', 'cost, $300, $1k'], ['custom', 'Custom', 'your bands']])}
-        ${T.startCost ? `<p class="note">Each start costs ${fmtMoney(T.startCost * p.mw)} (wear and fuel to warm up), and once started it runs at least ${T.minRun * 5 >= 60 ? `${T.minRun * 5 / 60} hours` : `${T.minRun * 5} minutes`} at ${Math.round(T.stableLoad * 100)}% or more, whatever the price. ${(p.today && p.today.starts) || 0} start${(p.today && p.today.starts) === 1 ? '' : 's'} today. "Peaks only" starts least but runs least.</p>` : ''}
+        ${T.startCost ? `<p class="note">Each start costs ${fmtMoney(T.startCost * p.mw)} (wear and fuel to warm up), and once started it runs at least ${T.minRun * 5 >= 60 ? `${T.minRun * 5 / 60} hours` : `${T.minRun * 5} minutes`} at ${Math.round(T.stableLoad * 100)}% or more, whatever the price. ${(p.today && p.today.starts) || 0} start${(p.today && p.today.starts) === 1 ? '' : 's'} today. "Peaks only" starts least but runs least${S.transition ? ', and wears it least: gas wears with starts and hours running' : ''}.</p>` : ''}
         ${p.tech === 'coal' ? `<p class="note">Band 1 is fixed at −$1,000 with at least ${fmtMW(Sim.minMW(p))}: coal must keep ${p.upg ? 30 : 45}% running at all times. It can change output by only ${fmtMW(p.mw * (p.upg ? 0.1 : 0.05))} each 5 minutes, climbing through your other bands as the price passes each one and ramping back down when it falls below.</p>` : ''}
         <h3>Bid stack</h3>${stackBlock(p, 'g')}${stackNote}`;
     } else {
@@ -1478,13 +1479,24 @@
     const have = S.plants.reduce((a, p) => a + (p.site === st.id && Sim.SITES[p.tech] === Sim.SITES[t] ? p.mw : 0), 0);
     return ` · line carries ${fmtMW(line)}${have ? `, you have ${fmtMW(have)} here` : ''}`;
   }
-  // Ageing (multi-year scenarios): how worn it is, and the two ways back: an overhaul or a rebuild.
+  // Gas and storage wear with use: this year's so far, and what a year at this rate does.
+  function useLine(p) {
+    const u = Sim.useSoFar(S, p), A = Sim.AGEING[p.tech];
+    if (!u || u.days < 1) return '';
+    const n = (k, one, many = one + 's') => `${k.toLocaleString()} ${k === 1 ? one : many}`;
+    if (A.store) {
+      const f = TECH[p.tech].fade || 0;
+      return `<p class="use">This year so far: ${n(Math.round(u.cycles), 'full cycle')} in ${Math.floor(u.days)} days. A year at this rate fades it about ${(f * u.wear * 100).toFixed(1)}% (typical ${(f * 100).toFixed(1)}%): storage wears with use.</p>`;
+    }
+    return `<p class="use">This year so far: ${n(u.starts, 'start')}, ${n(Math.round(u.hours), 'hour')} running${u.trips ? `, ${n(u.trips, 'trip')}` : ''} in ${Math.floor(u.days)} days. A year at this rate is about ${u.wear.toFixed(1)} years of wear (typical 1.0): each start counts as ${A.start} hours of running, a trip as ${A.start * 5}.</p>`;
+  }
+  // Ageing (multi-year scenarios): how worn it is, and the ways back: an overhaul, a rebuild or a repower.
   function conditionCard(p) {
     const c = S.transition ? Sim.condition(p) : null;
     if (!c || p.status === 'retiring') return '';
     const T = TECH[p.tech], A = Sim.AGEING[p.tech], pct = x => `${Math.round(x * 100)}%`;
     let html = `<div class="upgrade cond"><b>Condition: ${c.past ? 'past its design life' : c.worn ? 'worn' : 'good'}</b>
-      <p>Age ${c.age} year${c.age === 1 ? '' : 's'} (design life ${c.life}) · ${c.text}.${c.past ? ' Past its design life it wears three times as fast, and an overhaul can’t undo that part.' : ''}</p>`;
+      <p>Age ${c.age} year${c.age === 1 ? '' : 's'} (design life ${c.life}) · ${c.text}.${c.past ? ' Past its design life it wears three times as fast, and an overhaul can’t undo that part.' : ''}</p>${useLine(p)}`;
     const nb = p.replacedBy && S.plants.find(x => x.id === p.replacedBy);
     if (nb) html += `<p>Being replaced: it keeps running until the new one connects in ${Math.max(0.1, nb.buildLeft).toFixed(1)} days, then it’s knocked down.</p>`;
     else if (p.status === 'overhaul') html += `<p>Overhaul under way: back in ${Math.max(0.1, p.ohLeft).toFixed(1)} days.</p>`;
@@ -1500,13 +1512,21 @@
         html += `<p class="num">Overhaul: ${fmtMoney(oc)} · offline for ${A.ohDays === 1 ? 'a day' : `${A.ohDays} days`} · takes away 70% of the wear</p>${worth(plan.overhaul)}
           <button type="button" class="btn btn-quiet" data-overhaul ${can ? '' : 'disabled'}>${p.status !== 'online' ? 'Available once it’s running' : S.cash < oc ? `Need ${fmtMoney(oc - S.cash)} more` : `Overhaul for ${fmtMoney(oc)}`}</button>`;
       }
-      const rc = Sim.rebuildCost(S, p), g = rc && Sim.rebuildGain(S, p);
-      if (rc && (c.worn || g.out >= 0.1)) {
-        const can = S.cash >= rc.net && ['online', 'outage'].includes(p.status);
-        const gain = T.kind === 'vre' ? `about ${pct(g.out)} more output` : T.kind === 'thermal' ? 'running cost and breakdowns back to new' : 'new cells and no wear';
-        html += `<p class="num" style="margin-top:10px">Rebuild: ${fmtMoney(rc.net)} · built alongside in ${rc.days} day${rc.days === 1 ? '' : 's'}</p>
+      const rc = Sim.rebuildCost(S, p), g = rc && Sim.rebuildGain(S, p), rm = Sim.repowerMW(S, p);
+      const running = ['online', 'outage'].includes(p.status);
+      if (rc && (c.worn || g.out >= 0.1 || (rm && rm >= p.mw * 1.1))) {
+        const can = S.cash >= rc.net && running;
+        const newer = Sim.vintageNow(S, p.tech) > (p.vintage || 1) + 0.005;
+        const gain = T.kind === 'vre' ? `about ${pct(g.out)} more output` : T.kind === 'thermal' ? `running cost ${pct(g.cheaper)} lower (no wear${newer ? ', and today’s design burns less gas' : ''}) and breakdowns back to new` : 'new cells and no wear';
+        html += `<p class="num" style="margin-top:10px">Rebuild${rm ? ', same size' : ''}: ${fmtMoney(rc.net)} · built alongside in ${rc.days} day${rc.days === 1 ? '' : 's'}</p>
           <p>Build a new ${T.name.toLowerCase()} of today’s design here, then knock the old one down (it keeps running until the new one connects): ${gain}${p.upg ? ', with its upgrade built in' : ''}. Today’s price ${fmtMoney(rc.price)}, less ${fmtMoney(rc.conn)} for the connection it reuses and ${fmtMoney(rc.salvage)} for the old plant.</p>${worth(plan.rebuild)}
-          <button type="button" class="btn btn-quiet" data-rebuild ${can ? '' : 'disabled'}>${!['online', 'outage'].includes(p.status) ? 'Available once it’s running' : S.cash < rc.net ? `Need ${fmtMoney(rc.net - S.cash)} more` : `Rebuild for ${fmtMoney(rc.net)}`}</button>`;
+          <button type="button" class="btn btn-quiet" data-rebuild ${can ? '' : 'disabled'}>${!running ? 'Available once it’s running' : S.cash < rc.net ? `Need ${fmtMoney(rc.net - S.cash)} more` : `Rebuild for ${fmtMoney(rc.net)}`}</button>`;
+        if (rm) {
+          const rp = Sim.rebuildCost(S, p, rm), gr = Sim.rebuildGain(S, p, rm), canR = S.cash >= rp.net && running;
+          html += `<p class="num" style="margin-top:10px">Repower to ${fmtMW(rm)}: ${fmtMoney(rp.net)} · built alongside in ${rp.days} day${rp.days === 1 ? '' : 's'}</p>
+          <p>Today’s ${p.tech === 'solar' ? 'panels' : 'bigger turbines'} fit ${fmtMW(rm)} on the land this ${fmtMW(p.mw)} stands on, so it needs no site room: about ${pct(gr.out)} more output before any curtailment${p.upg ? ', with its upgrade built in' : ''}. Today’s price ${fmtMoney(rp.price)}, less the same ${fmtMoney(rp.conn)} for the connection and ${fmtMoney(rp.salvage)} for the old plant.</p>${worth(plan.repower)}
+          <button type="button" class="btn btn-quiet" data-rebuild="${rm}" ${canR ? '' : 'disabled'}>${!running ? 'Available once it’s running' : S.cash < rp.net ? `Need ${fmtMoney(rp.net - S.cash)} more` : `Repower for ${fmtMoney(rp.net)}`}</button>`;
+        }
       }
     }
     return html + '</div>';
@@ -1643,9 +1663,10 @@
     }
     const rb = e.target.closest('[data-rebuild]');
     if (rb) {
-      if (rb.dataset.confirm !== '1') { rb.dataset.confirm = '1'; rb.textContent = 'Tap again to knock it down and rebuild'; return; }
-      const r = Sim.rebuild(S, p);
-      if (r.ok) { plantOpen = r.plant.id; toast(`${p.name} is being rebuilt.`); renderPlantSheet(); renderAll(); save(); }
+      const mw = Number(rb.dataset.rebuild) || undefined;
+      if (rb.dataset.confirm !== '1') { rb.dataset.confirm = '1'; rb.textContent = `Tap again to knock it down and ${mw ? 'repower' : 'rebuild'}`; return; }
+      const r = Sim.rebuild(S, p, { mw });
+      if (r.ok) { plantOpen = r.plant.id; toast(`${p.name} is being ${mw ? 'repowered' : 'rebuilt'}.`); renderPlantSheet(); renderAll(); save(); }
       return;
     }
     if (e.target.closest('[data-upgrade]')) {

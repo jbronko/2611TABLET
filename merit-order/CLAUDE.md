@@ -102,6 +102,22 @@ are built, tested and published); this file is what's specific to Merit Order. C
 - **Plant ageing (v40):** only in the multi-year scenarios (the Energy Transition and the company
   scenarios), once a game year in `transitionYear`. The career and the short scenarios never age.
   - Each plant has `p.age`, which only a rebuild resets, and `p.wear`, which an overhaul cuts to 30%.
+  - **Wear from use (v41):** gas and storage wear with use, everything else by the calendar.
+    - A year's wear = `USE_CALENDAR` (0.3, ageing even when idle) + 0.7 × this year's use ÷ typical use,
+      capped at 3 (`yearWear`). A battery's capacity fade scales the same way.
+    - Gas use is in equivalent operating hours, as turbine makers count it: an hour running is 1, a
+      start counts `start` more (peaker 2, combined-cycle 10), and a trip (a breakdown on a day it
+      ran) counts as five starts. Storage use is full cycles (MWh discharged ÷ capacity).
+    - `typical` is the steady test player's average per game day (`typical.js`-style measurement,
+      Transition and company scenarios): peaker 2.5 equivalent hours, combined-cycle 16, battery 0.45
+      cycles. Long storage is set at 0.25 (the steady player builds none). Most of steady's peakers
+      sit idle (median under 1 hour a day) and a few run hard, so idle peakers now age slowly.
+    - Counted in `p.use` (`countUse` each interval; starts where they happen; trips at the breakdown
+      roll via `p.use.ran`), turned into wear in `transitionYear` and reset. `useSoFar` gives the
+      year so far for the condition card ("This year so far: 41 starts, 96 hours running…"). An old
+      save's uncounted part of the year counts as typical.
+    - The year's hardest-worked gas plant gets a news line and a mention in the Plant condition row
+      (`S.hardUse`), and the bid note says "Peaks only" wears gas least.
   - Per year of wear (`AGEING`):
     - wind and offshore: −1.2% and −1.0% output; solar −0.6%
     - gas: +0.8–1% running cost and +8% breakdowns
@@ -113,7 +129,8 @@ are built, tested and published); this file is what's specific to Merit Order. C
     twice as fast then.
   - Output wear applies after the output cap (`vreMW`), so an upgraded or newer farm still loses it.
   - **Better technology:** wind, offshore and solar built later in a scenario make more (`p.vintage`:
-    +1.5%, +1% and +1% a year, capped at +25%).
+    +1.5%, +1% and +1% a year, capped at +25%). Gas built later runs cheaper (v41: 0.5% a year, capped at
+    10%, `vcap`; `vcOf` divides by `p.vintage`).
   - **Overhaul** (`overhaul`): 6–12% of today's price (hydro: of its turbines), a day offline,
     leaves 30% of the wear. Storage keeps its "new cells" refurbish, which now also cuts wear.
   - **Rebuild** (`rebuild`): a new plant of today's design on the same site, same size, built
@@ -123,6 +140,12 @@ are built, tested and published); this file is what's specific to Merit Order. C
       once; the old plant's value drops to 0).
     - Keeps the name, bids, storage and FCAS settings and the upgrade; age 0, today's vintage.
     - Not offered for hydro or coal.
+  - **Repower (v41, `repowerMW`):** wind, offshore and solar can be rebuilt bigger on the same land:
+    +2.5% of the original MW per year of age, up to +50%, rounded down to 5 MW (a 20-year-old 240 MW
+    farm → 360 MW). `p.land` keeps the original footprint and `siteUsed` counts it, so a repower
+    needs no site room and frees none. `rebuild(S, p, { mw })`; custom bid bands scale with the size.
+    The plant page shows "Rebuild, same size" and "Repower to N MW" side by side, each with its payback.
+    It's a growth move that works when every site is full (`fullNote` says how many farms could).
   - `maintenancePlan` estimates each option's daily gain and payback at the plant's recent earnings
     (`p.margin` and `p.eDay`, averaged daily). The plant page shows it, because maintenance only
     pays where the plant earns. Worn solar in a late Transition full of cheap midday power often
@@ -160,6 +183,8 @@ are built, tested and published); this file is what's specific to Merit Order. C
   bids, loans, scenarios, …).
 - `index.html`: the UI (one file). `window.MeritOrder` is a debug/test handle (`state`, `Sim`,
   `setSpeed`, `renderAll`, `save`, `meritNew`, …).
+- `test/payback.js`: are the maintenance estimates true? Forks the game at checkpoints and compares
+  what an overhaul, rebuild or repower really earned with the estimate; `--sum` fits `GAIN_K`.
 - `test/engine.js` (engine checks), `test/ui.js` (Playwright, `--shots <dir>` saves screenshots),
   `test/balance.js` (simulated players: `node test/balance.js` career; `--scenarios`;
   `--transition [bots] [--long]`; `--companies [bots] [ids]`).
@@ -252,6 +277,15 @@ fast-forwarding `main` to the working branch.
   - `emisOf` now uses `|| 0`, and `engine.js` checks the totals stay finite.
 - A "never overdrawn" objective didn't work: you can't build on the overdraft, so it never bit.
   Calibrate any new objective with the test players before writing it into a scenario.
+- Random draws shared between plants make every action reshuffle every later breakdown. Before v41
+  one player stream fed every plant's daily breakdown roll, so building, overhauling or selling one
+  plant changed everyone's luck from then on: balance comparisons between bots swung ±3–7% from that
+  alone, and a forked game moved by about $400k a day. Now each plant draws its own (`plantRnd`: seed,
+  plant, day; a rebuild inherits `rkey`), and the player stream only makes contract offers.
+- Check any estimate shown to the player against forked games (`test/payback.js`), not guesses: a
+  game clones exactly through JSON (`Sim.migrate(JSON.parse(JSON.stringify(S)))`). Freeze rival
+  proposals in the window (a day's prices can flip a 300 MW decision), and remember that JSON turns
+  `Infinity` into `null`.
 
 ## Ideas not built yet
 Backup and restore of saves (all progress lives in this browser's storage: `merit-order` plus a

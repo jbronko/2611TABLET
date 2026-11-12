@@ -358,6 +358,7 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   const P = R.proposal;
   check('a rival proposes a plant when prices run high', !!P && P.mw >= 300 && P.decideAt === Sim.dayIndex(R) + 7 && P.hurdle > 0, P && `${P.dev}: ${P.mw} MW ${P.tech}, hurdle $${P.hurdle}`);
   const before = R.rivals.length;
+  P.hurdle = 1e5;   // prices won't reach it
   for (let k = 0; k < 7 * Sim.IPD; k++) Sim.step(R);
   check('…and shelves it when prices fall below its hurdle', !R.proposal && R.rivals.length === before && R.news.some(n => /has shelved/.test(n.text)));
   const B = Sim.createScenario('lakeside');
@@ -527,11 +528,11 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   check('…and upgrading the line lifts the cap', Sim.lineOf(S, Sim.siteOf('solar', 'cw-rez')) === 2500 && peak2 > 1500, `peak ${Math.round(peak2)} MW`);
   // ageing storage: a year takes 2.5% off a battery; refurbishing restores it as capital spending
   const h0 = bat.health ?? 1;
-  while (Sim.dayIndex(S) % S.yearDays !== 0) run(1);
-  Sim.step(S);
+  let yw = 1;   // the year's wear at the step that ends it: 1 at typical use (v41: storage fades with cycles)
+  for (let k = 0; k < 2 * S.yearDays * Sim.IPD && (bat.health ?? 1) === h0; k++) { yw = Sim.yearWear(S, bat); Sim.step(S); if (S.offer) Sim.declineOffer(S); }
   let socOK = true;
   for (let k = 0; k < 2 * Sim.IPD; k++) { Sim.step(S); if (bat.soc > Sim.storeCap(bat) + 1e-6) socOK = false; }
-  check('storage wears out once a year and never holds more than it can', Math.abs(bat.health - (h0 - 0.025)) < 1e-9 && socOK && Sim.storeCap(bat) < 200, `health ${bat.health}`);
+  check('storage wears out once a year (2.5% at typical use, more the more it cycles) and never holds more than it can', Math.abs(bat.health - (h0 - 0.025 * yw)) < 0.0011 && yw > 0.3 && socOK && Sim.storeCap(bat) < 200, `health ${bat.health} wear ${yw}`);
   const early = Sim.refurbish(S, bat);
   bat.health = 0.7;
   const cash1 = S.cash, cap1 = bat.capital, cost = Sim.refurbishCost(S, bat), ref = Sim.refurbish(S, bat);
@@ -805,6 +806,73 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
   Sim.migrate(M);
   const wo = M.plants.find(p => p.name === 'Wollemi Gas');
   check('an old save’s plants get their ages: the starting age plus the years played', wo.age === 20 && wo.wear === 11, `${wo.age} ${wo.wear}`);
+}
+
+// Use-based wear (v41): gas by hours running, starts and trips; storage by cycles; the rest by the calendar.
+{
+  const U = Sim.createScenario('energy-transition'); U.cash = 1e10; U.unlocked.ccgt = true;
+  const yd = Sim.yearDays(U), A = Sim.AGEING.peaker, close = (a, b) => Math.abs(a - b) < 1e-9;
+  const pk = () => { const p = Sim.build(U, 'peaker', 150).plant; p.status = 'online'; p.buildLeft = 0; return p; };
+  const year = (p, u) => { p.use = { since: U.t - yd * Sim.IPD, hours: 0, starts: 0, trips: 0, mwh: 0, ...u }; return Sim.yearWear(U, p); };
+  const idle = pk(), many = pk(), few = pk(), trip = pk(), hard = pk(), old = pk(), half = pk();
+  const typ = A.typical * yd;   // a typical year's equivalent hours
+  check('a peaker that never runs wears only the calendar part (0.3 years a year)', close(year(idle, {}), Sim.USE_CALENDAR));
+  check('typical use is a year of wear a year', close(year(many, { hours: typ }), 1));
+  check('starts wear more than hours: the same hours with many starts wear more than with few', year(many, { hours: 60, starts: 60 }) > year(few, { hours: 60, starts: 6 }) + 0.3);
+  check('a trip counts as five starts', close(year(trip, { hours: 60, starts: 6, trips: 1 }) - year(few, { hours: 60, starts: 6 }), 0.7 * 5 * A.start / typ));
+  check('…and a year’s wear is capped at 3', year(hard, { hours: 100000 }) === 3);
+  check('an old save with no count yet wears the usual year', (delete old.use, Sim.yearWear(U, old)) === 1);
+  half.use = { since: U.t - yd * Sim.IPD / 2, hours: 0, starts: 0, trips: 0, mwh: 0 };
+  check('…and one counted for half the year counts the rest as typical', close(Sim.yearWear(U, half), 0.3 + 0.7 * 0.5));
+  // counting in play: starts as they happen; trips only on a day it ran
+  const P = Sim.createScenario('energy-transition'); P.cash = 1e10;
+  const g = Sim.build(P, 'peaker', 300).plant, g2 = Sim.build(P, 'peaker', 300).plant;
+  for (const p of [g, g2]) { p.status = 'online'; p.buildLeft = 0; }
+  for (let k = 0; k < 4 * Sim.IPD; k++) { Sim.step(P); if (P.offer) Sim.declineOffer(P); }
+  const st = Sim.TECH.peaker.startCost * 300;
+  check('starts and hours running are counted as they happen', !!g.use && Math.abs(g.use.starts - g.life.starts / st) < 1e-6 && g.use.hours >= 0, JSON.stringify(g.use));
+  Sim.step(P); while (P.t % Sim.IPD !== 0) { Sim.step(P); if (P.offer) Sim.declineOffer(P); }   // midnight: the day ends at the next step
+  const t0 = g.use.trips, t1 = g2.use.trips, out0 = Sim.TECH.peaker.outage;
+  g.today.energy = 50; g2.today.energy = 0; g.status = g2.status = 'online';
+  Sim.TECH.peaker.outage = 10;   // both break down at midnight
+  Sim.step(P);
+  Sim.TECH.peaker.outage = out0;
+  check('a breakdown on a day it ran is a trip; one while idle isn’t', g.status === 'outage' && g2.status === 'outage' && g.use.trips === t0 + 1 && g2.use.trips === t1, `${g.use.trips} ${g2.use.trips}`);
+  // storage: cycles
+  const b1 = Sim.build(U, 'battery', 100).plant, b2 = Sim.build(U, 'battery', 100).plant;
+  for (const p of [b1, b2]) { p.status = 'online'; p.buildLeft = 0; }
+  const cap = Sim.storeCap(b1);
+  check('a battery that cycles twice a day wears faster than one that idles', year(b1, { mwh: 2 * cap * yd }) === 3 && close(year(b2, {}), Sim.USE_CALENDAR) && close(year(b2, { mwh: Sim.AGEING.battery.typical * cap * yd }), 1));
+  const ws = Sim.build(U, 'wind', 120).plant; ws.status = 'online';
+  check('wind, solar and hydro age by the calendar', Sim.yearWear(U, ws) === 1 && !ws.use);
+}
+
+// Repowering (v41): wind, offshore and solar rebuilt bigger on the same land; newer gas runs cheaper.
+{
+  const R = Sim.createScenario('energy-transition'); R.cash = 1e10; R.unlocked.wind = true;
+  const w = Sim.build(R, 'wind', 240, { site: 'tablelands' }).plant; w.status = 'online'; w.buildLeft = 0;
+  const fill = Sim.build(R, 'wind', 160, { site: 'tablelands' }).plant; fill.status = 'online'; fill.buildLeft = 0;
+  check('repowering grows with age: none when new, +2.5% a year, up to +50%',
+    Sim.repowerMW(R, w) === null && (w.age = 1, Sim.repowerMW(R, w)) === 245 && (w.age = 10, Sim.repowerMW(R, w)) === 300 && (w.age = 30, Sim.repowerMW(R, w)) === 360);
+  w.age = 20; w.wear = 20; w.bid = 'custom'; w.bands.mw = [0, 0, 240, 0, 0, 0, 0, 0, 0, 0];
+  R.t = 10 * Sim.yearDays(R) * Sim.IPD + 5;
+  check('the site is full', Sim.siteRoom(R, 'wind', 'tablelands') === 0);
+  check('…a size that isn’t on offer is refused', Sim.rebuild(R, w, { mw: 400 }).why === 'size');
+  const rc = Sim.rebuildCost(R, w, 360), c0 = R.cash, n0 = R.plants.length, v0 = w.value;
+  const r = Sim.rebuild(R, w, { mw: 360 }), np = r.plant;
+  check('a repower needs no site room: today’s price for the bigger size, less the reused connection and salvage',
+    r.ok && np.mw === 360 && np.land === 240 && close2(c0 - R.cash, rc.net) && rc.net === Sim.priceOf(R, 'wind', 360, { site: 'tablelands' }) - rc.conn - Math.round(v0 * 0.4) && Sim.siteRoom(R, 'wind', 'tablelands') === 0, JSON.stringify(rc));
+  check('…its own bids spread over the bigger size', np.bid === 'custom' && np.bands.mw.reduce((a, v) => a + v, 0) === 360);
+  for (let k = 0; k < (rc.days + 1) * Sim.IPD; k++) { Sim.step(R); if (R.offer) Sim.declineOffer(R); if (R.tender && !R.tender.accepted && !R.tender.declined) Sim.declineTender(R); }
+  check('…and when it connects the old one is knocked down, and the land is the same', np.status === 'online' && !R.plants.includes(w) && R.plants.length === n0 && Sim.siteRoom(R, 'wind', 'tablelands') === 0);
+  const plan = (w.age = 20, fill.age = 20, Sim.maintenancePlan(R, fill));
+  check('the plant page’s plan offers a repower beside a same-size rebuild', !!plan.rebuild && !!plan.repower && plan.repower.mw === 240 && plan.repower.cost > plan.rebuild.cost);
+  // newer gas runs cheaper: 0.5% a year, up to 10%
+  const g0 = Sim.build(R, 'peaker', 150).plant;
+  R.t = 30 * Sim.yearDays(R) * Sim.IPD;
+  const gN = Sim.build(R, 'peaker', 150).plant;
+  check('gas built in year 11 burns 5% less than year-one gas; never more than 10% less', Math.abs(g0.vintage - 1.05) < 1e-9 && Math.abs(gN.vintage - 1.1) < 1e-9 && Math.abs(Sim.vcOf(R, g0) * 1.05 / Sim.vcOf(R, Object.assign({}, g0, { vintage: undefined })) - 1) < 1e-9);
+  function close2(a, b) { return Math.abs(a - b) < 1e-6; }
 }
 
 console.log(fails ? `\n${fails} check(s) failed` : '\nAll engine checks passed');

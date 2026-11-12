@@ -882,6 +882,26 @@ const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} 
     await p.keyboard.press('Escape'); await p.waitForTimeout(150);
     check('…its card says it’s being replaced', /Being replaced · [\d.]+ days/.test(await card('Coastal Peakers')));
     await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    // use-based wear (v41): this year's starts, hours and trips on a gas plant's page; cycles on a battery's
+    await state(p, () => { const S = MeritOrder.state, q = S.plants.find(x => x.name === 'Kurri Gas Turbines'); q.use = { since: S.t - 10 * MeritOrder.Sim.IPD, hours: 20, starts: 8, trips: 1, mwh: 0 }; MeritOrder.renderAll(); });
+    await open('Kurri Gas Turbines');
+    const use = await p.textContent('#p-actions');
+    check('a gas plant’s page shows this year’s use and the wear it adds', /This year so far: 8 starts, 20 hours running, 1 trip in 10 days\. A year at this rate is about [\d.]+ years of wear \(typical 1\.0\)/.test(use), use.slice(0, 300));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    const bat = await state(p, () => { const S = MeritOrder.state, Sim = MeritOrder.Sim, r = Sim.build(S, 'battery', 50); if (!r.ok) return null; const q = r.plant; q.status = 'online'; q.buildLeft = 0; q.name = 'Test Battery'; q.use = { since: S.t - 10 * Sim.IPD, hours: 0, starts: 0, trips: 0, mwh: 12 * Sim.storeCap(q) }; MeritOrder.renderAll(); return q.id; });
+    if (bat) { await open('Test Battery'); check('…and a battery’s shows its cycles', /This year so far: 12 full cycles in 10 days\. A year at this rate fades it about [\d.]+%/.test(await p.textContent('#p-actions'))); await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+    // repowering (v41): an old wind farm can come back bigger on its own land
+    await state(p, () => { const S = MeritOrder.state, Sim = MeritOrder.Sim; S.unlocked.wind = true; const q = Sim.build(S, 'wind', 120, { site: 'tablelands' }).plant; q.status = 'online'; q.buildLeft = 0; q.age = 20; q.wear = 20; q.name = 'Old Ridge Wind'; q.margin = 30000; q.eDay = 600; MeritOrder.renderAll(); });
+    await open('Old Ridge Wind');
+    check('an old wind farm offers a repower to a bigger size beside a same-size rebuild', !!(await p.$('[data-rebuild="180"]')) && !!(await p.$('[data-rebuild=""]')) && /Repower to 180 MW/.test(await p.textContent('#p-actions')));
+    await p.$eval('[data-rebuild="180"]', x => x.scrollIntoView()); await p.waitForTimeout(100);
+    await shot(p, 'plant-repower');
+    await p.click('[data-rebuild="180"]'); await p.waitForTimeout(100);
+    check('…asks for a second tap', /Tap again to knock it down and repower/.test(await p.textContent('[data-rebuild="180"]')));
+    await p.click('[data-rebuild="180"]'); await p.waitForTimeout(250);
+    check('…and builds the bigger farm alongside on the same land', await state(p, () => { const q = MeritOrder.state.plants.filter(x => x.name === 'Old Ridge Wind'); return q.length === 2 && q[1].mw === 180 && q[1].land === 120 && q[1].status === 'building' && !!q[0].replacedBy; }));
+    await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+    check('…its card shows the new size', /180 MW/.test(await p.evaluate(() => [...document.querySelectorAll('#plants [data-plant]')].filter(x => x.querySelector('.name').textContent === 'Old Ridge Wind').map(x => x.textContent).join(' '))));
     // the menu: sections, a different icon for Goals and Trophies, Recent days in the Company report
     await p.click('#open-menu'); await p.waitForTimeout(150);
     const heads = await p.$$eval('#sh-menu .menu-h', xs => xs.map(x => x.textContent).join('|'));

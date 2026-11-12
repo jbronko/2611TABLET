@@ -93,9 +93,10 @@ const STRATS = {
 };
 // Plant ageing (v40, multi-year scenarios): a maintainer reads each plant's page once a day and acts
 // on its payback estimates (Sim.maintenancePlan: at recent earnings, counting what's lost offline):
-// an overhaul or a rebuild that pays back within a game year (the rebuild if it's sooner), and either
-// only if it pays back by halfway through what's left of the scenario; storage gets new cells below
-// 80%. steadyM and firmM are steady and firm plus that.
+// an overhaul, a rebuild or (v41) a repower that pays back within a game year (whichever is soonest),
+// and only if it pays back by halfway through what's left of the scenario; storage gets new cells below
+// 80%. steadyM and firmM are steady and firm plus that. MAINT counts what it did (printed and reset with
+// each result line).
 // Results (v40, Standard): Energy Transition steady $4.93B, steadyM $4.79B (73 overhauls, 41 rebuilds);
 // firm $3.41B, firmM $3.48B (44 and 74); all 3 stars. Company scenarios steady vs steadyM: Coastline
 // $637M / $622M, Highcountry $608M / $603M, Lakeside $937M / $937M, Wellspring $1.24B / $1.16B, all
@@ -103,14 +104,17 @@ const STRATS = {
 // Ageing itself: a neglected fleet ends about 12% below no ageing at all (Transition steady $5.62B
 // before v40). Maintenance on these estimates roughly breaks even: plants pay back in weeks, so the
 // gain from fixing an old one is small next to building another, and the estimates are cautious.
+const MAINT = { overhaul: 0, rebuild: 0, repower: 0 };
+const maintText = () => { const t = MAINT.overhaul + MAINT.rebuild + MAINT.repower ? `  (${MAINT.overhaul} overhauls, ${MAINT.rebuild} rebuilds, ${MAINT.repower} repowers)` : ''; MAINT.overhaul = MAINT.rebuild = MAINT.repower = 0; return t; };
 function maintain(S) {
   const yr = Sim.yearDays(S), left = S.scenario.days - Sim.dayIndex(S);
   for (const p of [...S.plants]) {
-    if (p.status !== 'online' || !Sim.AGEING[p.tech]) continue;
-    const m = Sim.maintenancePlan(S, p), o = m.overhaul, r = m.rebuild;
-    const ok = (x, lim) => x && x.payback != null && x.payback <= Math.min(lim, left / 2) && S.cash > x.cost * 1.5;
-    if (ok(r, yr) && (!ok(o, yr) || r.payback < o.payback)) { Sim.rebuild(S, p); continue; }
-    if (ok(o, yr)) Sim.overhaul(S, p);
+    if (p.status !== 'online' || !Sim.AGEING[p.tech] || p.replacedBy) continue;
+    const m = Sim.maintenancePlan(S, p);
+    const ok = x => x && x.payback != null && x.payback <= Math.min(yr, left / 2) && S.cash > x.cost * 1.5;
+    const best = ['repower', 'rebuild', 'overhaul'].filter(k => ok(m[k])).sort((a, b) => m[a].payback - m[b].payback)[0];
+    if (best === 'overhaul') { if (Sim.overhaul(S, p).ok) MAINT.overhaul++; }
+    else if (best) { if (Sim.rebuild(S, p, best === 'repower' ? { mw: m.repower.mw } : {}).ok) MAINT[best]++; continue; }
     if (Sim.AGEING[p.tech].store && (p.health ?? 1) < 0.8 && S.cash > Sim.refurbishCost(S, p) * 2) Sim.refurbish(S, p);
   }
 }
@@ -185,7 +189,7 @@ function run(kind, seed, difficulty, days) {
   return out;
 }
 STRATS.steadyM = withUpkeep('steady'); STRATS.firmM = withUpkeep('firm');
-module.exports = { run, runScenario, STRATS };
+module.exports = { run, runScenario, STRATS, MAINT };
 if (require.main === module && process.argv[2] === '--transition') {
   // node merit-order/test/balance.js --transition [strategies] [--long]
   // Targets: idle 0 stars and the region runs short without the player; players who keep building
@@ -203,7 +207,7 @@ if (require.main === module && process.argv[2] === '--transition') {
       const y = S.years[d / S.yearDays - 1];
       if ((d / S.yearDays) % 2 === 0) console.log(`  year ${String(d / S.yearDays).padStart(2)} value ${Sim.fmtMoney(Sim.companyValue(S)).padStart(7)} plant ${String(Math.round(S.plants.reduce((a, p) => a + p.mw, 0))).padStart(6)} MW shortfall ${y.shedHours.toFixed(1).padStart(6)} h clean share ${(y.clean / Math.max(1, y.region) * 100).toFixed(0)}% curtailed ${Math.round(curtailed / 1000)} GWh`);
     }, { length: long ? 'long' : 'standard' });
-    console.log(`  ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} value ${Sim.fmtMoney(r.value)} final-year shortfall ${r.finalShed.toFixed(0)} MWh, clean share ${(r.cleanShare * 100).toFixed(0)}%${r.bust ? ' BUST' : ''}`);
+    console.log(`  ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} value ${Sim.fmtMoney(r.value)} final-year shortfall ${r.finalShed.toFixed(0)} MWh, clean share ${(r.cleanShare * 100).toFixed(0)}%${r.bust ? ' BUST' : ''}${maintText()}`);
   }
 } else if (require.main === module && process.argv[2] === '--companies') {
   // node merit-order/test/balance.js --companies [strategies] [scenario ids]
@@ -220,7 +224,7 @@ if (require.main === module && process.argv[2] === '--transition') {
   // Handsoff still 0★ everywhere (short of its own firm plant), steady, firm, buyer, quitcoal ★★.
   const kinds = (process.argv[3] || 'handsoff,steady,firm,gouge,quitcoal,buyer').split(',');
   const ids = process.argv[4] ? process.argv[4].split(',') : Sim.SCENARIOS.filter(sc => sc.group === 'company').map(sc => sc.id);
-  const line = (label, r, yrs) => console.log(`  ${label.padEnd(16)} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}  value ${Sim.fmtMoney(r.value).padStart(7)}  worst year ${Sim.fmtMoney(r.minYearProfit).padStart(7)}  final short ${r.finalShed.toFixed(0).padStart(6)} MWh  own firm ${String(Math.round(r.ownFirm)).padStart(5)}/${r.firm}  own clean ${(r.ownClean * 100).toFixed(0)}%${r.tunnelOn ? '  tunnel on' : ''}${r.bust ? '  BUST' : ''}  [${yrs.join(' ')}]`);
+  const line = (label, r, yrs) => console.log(`  ${label.padEnd(16)} ${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}  value ${Sim.fmtMoney(r.value).padStart(7)}  worst year ${Sim.fmtMoney(r.minYearProfit).padStart(7)}  final short ${r.finalShed.toFixed(0).padStart(6)} MWh  own firm ${String(Math.round(r.ownFirm)).padStart(5)}/${r.firm}  own clean ${(r.ownClean * 100).toFixed(0)}%${r.tunnelOn ? '  tunnel on' : ''}${r.bust ? '  BUST' : ''}  [${yrs.join(' ')}]${maintText()}`);
   const yearly = yrs => (S, d) => { const Y = S.years[d / S.yearDays - 1]; yrs.push(`${Sim.fmtMoney(Y.value)}/${Y.shedHours.toFixed(0)}h`); };
   for (const id of ids) {
     const sc = Sim.SCENARIOS.find(x => x.id === id);
