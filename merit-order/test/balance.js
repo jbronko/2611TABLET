@@ -191,7 +191,8 @@ if (require.main === module && process.argv[2] === '--transition') {
   // Targets: idle 0 stars and the region runs short without the player; players who keep building
   // firm and clean plant reach 3, and still have places to build after year 10.
   // v35 (lights-on limit per star), Standard: idle 0 (696 h short in year 20), steady 3 ($5.6B), firm 3 ($3.4B), both 0 h short.
-  // Last run: Standard steady 3 ($5.6B), firm 3 ($3.4B); Long steady 3 ($8.7B), firm 3 ($5.2B), idle 0.
+  // Before ageing (v39): Standard steady 3 ($5.6B), firm 3 ($3.4B); Long steady 3 ($8.7B), firm 3 ($5.2B), idle 0.
+  // v40 (ageing), Standard: steady 3 ($4.93B), steadyM 3 ($4.79B), firm 3 ($3.41B), firmM 3 ($3.48B), all 0 MWh short.
   const long = process.argv.includes('--long');
   const kinds = (process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : 'idle,steady,firm').split(',');
   for (const kind of kinds) {
